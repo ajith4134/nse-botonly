@@ -2167,6 +2167,70 @@ ladders, all ~210 stock-option underlyings.
 **R.11**  No silent skips — every deferral recorded, surfaced at sign-off, and cleared before unrelated
 work begins.
 
+**R.14**  **Self-describing names.** Every file, module, function, class and variable reveals its role by
+name alone. No `utils.py`, `helper()`, `data`, `manager`. *Evidence for restoring it: the strongest of any
+rule. In this session I navigated a 288-module codebase I had never seen — `variance_risk_premium_engine`,
+`component_failure_hazard_model`, `deficit_driven_replay_session_selector` — and knew what each did from
+its name. That is measurable value, not a style preference.* (was Rule C)
+
+**R.15**  **Research, planning and decisions are saved to files, every time, without fail.** Never left in
+chat. *Evidence: overwhelming, and this rule is the reason this project still exists. The code was deleted;
+280 documents survived — and from them came the §53 allocation post-mortem, the denominator correction, the
+16-trunk atlas, the 682-entry plan. Without this rule the reset would have destroyed the project instead of
+clarifying it.* Pairs with the decision-log protocol. (was Rule D)
+
+**R.16**  **Never compromise a feature down to what is on hand — acquire what it needs.** If a feature
+needs data, a tool, a source, a library or a capability the project lacks: name it, search for it, acquire
+and integrate it. If genuinely unobtainable, log an explicit blocker; never silently ship a degraded
+version. *Evidence: five broker adapters instead of one, crawl4ai, Camoufox, the whole data-sourcing
+programme. This rule is why the project has breadth of capability at all.* (was Rule I)
+
+**R.17**  **OSS rejection needs mechanical evidence, never README prose.** Triage on facts: does it
+install here, is it maintained, what do the actual signatures look like, does it run on real input.
+Tier-1 facts (won't install · archived · yanked · wrong I/O shape · stale past a stated threshold) may
+disqualify alone; any rejection on quality or depth requires having read the implementing source or run it.
+*Evidence: `mlfinlab` being a stub, `pandas-ta` going paid, Pollinations hard-402ing on structured calls —
+all caught mechanically, all now in Part III. README-reading would have caught none of them.* (was Rule O.1)
+
+**R.18**  **One engine at a time; sign off out loud before advancing.** The unit of work is a complete
+engine-grade feature, not a thin slice. After each: run the checklist, confirm decision-grade and complete
+(only a logged live-data blocker may remain), then advance. (was Rule A)
+
+**R.19**  **Ambiguity is interviewed, never assumed.** When something mid-build is genuinely ambiguous,
+stop and ask rather than picking and hoping. *Operator decision 2026-08-10, chosen over "decide and flag."*
+Pair with R.20 on how the options are presented.
+
+**R.20**  **Recommendation honesty — the "(Recommended)" mark is earned, not reflexive.** When presenting
+options: give the **full set**, not a token two or three. Mark one "(Recommended)" **only after genuinely
+weighing every option shown**, and only when it is actually the best choice. If no option is clearly best,
+mark none and say why the call is close. *Operator correction 2026-08-10: the mark was being applied by
+habit rather than by judgement, which makes it noise and quietly steers decisions it has not earned.*
+
+**R.21**  **Three strikes, then stop and report.** Try, try a different way, try a third — then stop.
+Report what was attempted, what the evidence says, and what is blocked. Never grind silently against an
+unwinnable problem. *Operator decision 2026-08-10.*
+
+**R.22**  **Two-key rule for live capital.** No instruction reaches real money without **both** keys:
+(1) it has **graduated** — demonstrated repeatable profit in paper under the full statistical bar
+(sample N · net of cost · Deflated Sharpe on effective trials · BY-FDR · regime coverage · holdout), and
+(2) an **explicit operator arm**. Neither alone is sufficient, and **the system can never self-promote to
+live.** Repeatable paper profit is the *clearance to be considered*, not the authority to trade.
+*Operator decision 2026-08-10.*
+
+---
+
+### Rules deliberately RETIRED (with the reason, so they are not silently resurrected)
+
+- **Rule B — living flow-chart notes.** Superseded by the plan and todo, which carry the same information
+  in one place rather than twelve.
+- **Rule E — license is never a filter.** Near-vacuous for a private, never-distributed project; it never
+  once changed a decision.
+- **Rule H / H.1 — keep SYSTEM_MAP current.** Superseded: `ajith_final_plan.md` is now the structural
+  source of truth. The enforcing hook was a maintenance tax that outlived its subject.
+- **Rule M — plan altitude.** Folded into **R.13**. *Evidence for why it was not enough: M existed, and
+  MASTER_PROGRESS was read — and the system still spent 97% of its practice on its losing strategy. M was a
+  reminder; R.13 is a check. A reminder did not prevent the exact failure it was written to prevent.*
+
 **R.13**  **Correctness of execution is not evidence of correctness of allocation.** The old market
 simulation passed its own verification — it replayed faithfully, filled realistically and calibrated well —
 and still destroyed value, because nothing ever asked *what it should be practising*. A verification that
