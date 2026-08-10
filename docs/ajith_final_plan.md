@@ -2270,6 +2270,31 @@ physical or regulatory fact, and then it is sourced in a comment.
 **⑥ ⚠️ Guard on iteration.** Unmonitored iterative refinement **increases critical vulnerabilities 37.6%
 over five rounds** without human gates. Refinement passes are gated by tests and review, never run open-loop.
 
+**R.24**  **SEARCH BY DELEGATION — breadth goes to a subagent, only the verdict comes back.**
+Standing method for every search, established 2026-08-10 and permanent.
+
+**The principle:** context is the scarce resource, not tokens. A subagent burns its own context reading
+files and returns a conclusion; the file dumps never enter mine. The adversarial review of `0.8` cost
+~74k subagent tokens and returned ~2k of findings — a 37× compression, and the findings were better than
+anything a context-constrained read would have produced.
+
+**The ladder, cheapest first:**
+1. **`rg` / `grep` with a targeted pattern** — for a known string. Never read a file to find a line.
+2. **`Read` with `offset`/`limit`** — when the region is known. Never read 2,000 lines for 40.
+3. **`cavecrew-investigator`** — for "where is X defined", "what calls Y", "map this directory".
+   Returns caveman-compressed `file:line` tables, ~60% fewer tokens than a vanilla explore.
+4. **`Explore` agent** — for broad fan-out across many files and naming conventions when only the
+   conclusion matters.
+5. **A full subagent** — for work needing judgement as well as location: adversarial review, audits,
+   multi-file synthesis.
+
+**Hard rules:**
+- **Never re-run a search already delegated.** Waiting for the agent is cheaper than doing it twice.
+- **Independent searches go in ONE message**, in parallel — never sequentially.
+- **Delegate whenever answering means reading across several files.** Keep the conclusion, not the corpus.
+- **Ask for `file:line` tables, not content**, unless the content is the answer.
+- A subagent's report is not shown to the operator — **relay what matters**, never assume they saw it.
+
 ---
 
 ### Rules deliberately RETIRED (with the reason, so they are not silently resurrected)
@@ -2404,6 +2429,12 @@ used unasserted string replacements that no-op'd silently when the anchor text d
 entries landed; the decision records did not. **Every future edit to this file asserts its anchor matched,
 and the decision count is verified after each session.** Caught by the operator asking whether everything
 was actually saved — which is the reason that question is worth asking after any long session.
+
+**A.33 · Search-by-delegation adopted as permanent standing method (R.24).** Context is the scarce
+resource, not tokens: a subagent burns its own context and returns only a verdict. Measured on this
+session's first adversarial review — ~74k subagent tokens in, ~2k of findings out, a 37× compression, and
+better findings than a context-constrained read would have produced. Operator instruction: apply without
+being asked, in every session, indefinitely.
 
 **A.32 · Enforcement hooks rewritten to match the new rules (2026-08-10).** The hooks embedded the old
 rule text inline and checked deleted paths, so retired rules kept being injected. Now: **kept** the three
