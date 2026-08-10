@@ -1965,8 +1965,25 @@ works without it.
 **B.07**  **Per-source API endpoints, rate limits and free-vs-paid** for data targets 2–9 were never
 freshly verified (the research budget was exhausted mid-pass).
 **B.08**  **GIFT Nifty data source and licence** unverified, as are global-index and ADR free feeds.
-**B.09**  **Environment**: system Python is 3.9 and the venv is gone. Kronos, DeepLOB, current
-LightGBM/PyTorch on ARM64 need a newer interpreter. 20 GB free disk, with 21 GB held by ollama.
+**B.09**  ✅ **RESOLVED 2026-08-10.** Environment settled and verified end to end.
+- **Python 3.12.13** was already installed at `/usr/bin/python3.12`; only the `python3` default pointed at
+  3.9. New venv built on 3.12 at `nse-algo-trader/.venv` (1.3 GB), baseline pinned in
+  `requirements-baseline.txt` (96 packages).
+- **The full engine stack works on ARM64, verified by import and by function**, not just installed:
+  numpy 2.5 · pandas 3.0 · scipy 1.18 · scikit-learn 1.9 · **LightGBM 4.7 (trained a model)** ·
+  statsmodels 0.14 · arch 8.0 · **CVXPY 1.9 (solved a program)** · river 0.25 · SHAP 0.52 · hmmlearn 0.3 ·
+  polars 1.43 · duckdb 1.5 · FastAPI · uvicorn · matplotlib.
+- **TA-Lib 0.7.1 installed cleanly** — no C build required, so L4.01's indicator library is unblocked.
+  `pandas-ta-classic` 0.6.52 also present as the L4.02 fallback.
+- **PyTorch 2.13 is available** for ARM64 when DeepLOB or Kronos are eventually wanted (A.09 defers both).
+- **All 11 retained survivor files compile clean on 3.12** — the Kite TOTP login and the Claude
+  subscription provider carried across the interpreter change without edits.
+- **Disk: 19 GB → 29 GB free.** Reclaimed 3.4 GB of pip cache and 9 GB by removing `deepseek-r1:14b`,
+  which **this project's own measured benchmark had already REJECTED** (0.96 tok/s warm, 209–289 s per
+  200-token answer, and it got *slower* on the second run as its 9 GB working set thrashed —
+  `docs/research/local_llm_on_box_benchmark_2026-07-27.md`). Local LLM tier retained and intact:
+  **qwen3:4b** (9.78 tok/s warm — the measured default), **deepseek-r1:7b** (~6 tok/s, the judgement
+  rung), **granite4:micro**. Re-pullable via `ollama pull` if ever wanted.
 
 **B.10**  **⚠️ SECURITY — the GitHub PAT pasted into the 2026-08-10 session transcript is still live and
 must be revoked** at github.com/settings/tokens, with a fresh one issued via `gh auth login` so it never
