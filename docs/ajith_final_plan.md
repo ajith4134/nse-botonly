@@ -67,6 +67,21 @@ is their project and their money — but the override must be an informed decisi
 as `operator-override: <date> <reason>`. *Part III exists precisely so an expensive lesson is only paid
 for once.*
 
+### DECISION LOG PROTOCOL — binding (operator instruction 2026-08-10)
+
+**Every decision of consequence is recorded in this file, at the moment it is made, as a numbered `A.`
+entry in Part IV.** Never left in chat, never held only in memory, never implied by a code change. Each
+entry carries: **what was decided · the date · the reasoning · what it supersedes (if anything)**.
+
+The reasoning is not decoration. A decision recorded without it can only be overturned by mood; a decision
+recorded with it can be overturned by *evidence* — which is the entire point, because several of these
+will turn out wrong and need reversing cleanly. Decisions already reversed in this file
+(`A.01` futures/commodities, twice in one day) stay visible as strikethrough rather than being deleted, so
+the history of the thinking survives.
+
+This applies to scope changes, architecture choices, rule amendments, adopted recommendations, policy
+calls and sign-offs — anything a future session would otherwise have to guess at or re-litigate.
+
 **Applies to partial matches too.** If an idea overlaps an existing entry without being identical, say
 which entry it touches and whether the right move is enrich (①), replace (②) or insert-adjacent (③).
 When genuinely uncertain between two verdicts, present both readings and let the operator decide rather
