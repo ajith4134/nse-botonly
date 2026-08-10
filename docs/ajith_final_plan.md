@@ -1994,6 +1994,42 @@ constraint discovered. Each names its reasoning so it can be overturned by evide
 if the mean-reversion family fails its real-data gate, A.07 is wrong and premium-selling moves up; that is
 the intended behaviour, not a failure of the plan.
 
+**A.19 · Regime playbook instructions adopted; the 2-point scalping example rejected on arithmetic.**
+The instruction generator is built (L11.96–L11.105): the brain authors executable instructions per
+(regime × segment) cell rather than routing to fixed engines. The operator's specific example — repeatedly
+capturing 1–2 *absolute* points — was rejected as D.01 at the time. **Partially reversed by A.20 the same
+day.** The surviving corrections: targets stated in basis points rather than absolute points, and theta
+harvest rather than noise scalping as the primary flat-regime mechanism, because selling time is how flat
+markets are monetised.
+
+**A.20 · Denominator correction — my error, operator-caught.** The D.01 arithmetic was computed against
+the *index level* (~24,000) rather than the *traded contract* (~₹100 premium). A 5-point move on a ₹100
+premium is **5%** against a ~1% round-trip cost on the ticket — comfortably viable, not fatal. **D.01 is
+narrowed** to cash-equity and index-denominated targets, where the Carver and SEBI evidence actually
+applies. Three denominators are now named explicitly on every instruction (L11.106): **notional** for
+exposure, **ticket** for cost-as-percentage and scalp viability, **margin** for return on capital. Two new
+hard preconditions follow: minimum ticket value (L11.107 — ₹40 flat brokerage is 0.31% of a ₹13,000 ticket
+but **6.15%** of a ₹650 one, which inverts the instinct that cheap far-OTM options are safer) and a live
+spread gate (L11.108).
+
+**A.21 · Paper is the instruction proving ground; graduated winners run live.** Each of the six holons
+continuously paper-trades its own instruction subset and promotes the survivors (L11.115–L11.124).
+**"Repeated profit" is defined statistically, not as a win count** — minimum sample N rather than
+consecutive wins, net of cost under the correct denominator, Deflated Sharpe on *effective* trials
+counting every failure, BY-FDR across the instruction population, regime coverage including a real
+drawdown, and holdout confirmation. Running ~110 instructions across 6 holons and 4 regimes is a
+several-hundred-trial multiple-testing problem in which some will look profitable by pure chance, and
+"it made money several times in paper" is exactly what a false positive looks like. A shadow stage sits
+between paper and live; live instructions keep paper-trading in parallel so decay surfaces before it costs
+money; decayed instructions demote to paper rather than retiring, since decay is usually regime-dependent
+rather than terminal.
+
+**A.22 · Process fix — silent edit failures.** A.19–A.21 were initially lost because three catalog edits
+used unasserted string replacements that no-op'd silently when the anchor text did not match. The catalog
+entries landed; the decision records did not. **Every future edit to this file asserts its anchor matched,
+and the decision count is verified after each session.** Caught by the operator asking whether everything
+was actually saved — which is the reason that question is worth asking after any long session.
+
 
 ---
 
