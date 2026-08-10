@@ -1735,6 +1735,73 @@ six private research agents. Six holons each running their own browser fleet wou
 ban exposure by six for no informational gain. ⟨XVI⟩ · base · idea · operator 2026-08-10
 
 
+### L13a · INTROSPECTION DASHBOARD + PROJECT CHAT (operator 2026-08-10)
+
+*Full design: `docs/ideas/introspection_dashboard_and_chat.md`. Supersedes L13.04/L13.05 (feature
+catalogue — status only) and L13.23 (chat assistant — no LLM ladder, no reasoning surface).*
+
+**L13.29**  **⚠️ THE DECISION-TRACE CONTRACT — build this BEFORE any panel.** Reasoning **cannot be
+reconstructed after the fact.** A "why did it trade?" panel built by inspecting the trade record afterwards
+shows what a reasonable bot *might* have thought, not what this one did — a confident fiction. Every bot
+therefore emits, at decision time, an append-only point-in-time record of: **inputs consulted (with
+provenance and timestamps) · candidate actions considered · gates evaluated and their verdicts · chosen
+action · confidence · mechanism invoked · the counterfactual that would have changed the decision.**
+**This extends Rule R from "status is measured, never hand-authored" to "reasoning is recorded, never
+reconstructed."** ⟨XIII · V⟩ · base · idea · operator 2026-08-10
+**L13.30**  **Level 0 — organism at a glance** — hero P&L number (paper/live split, a headline not a
+chart) · six holon cards (live activity line · regime read + confidence · armed instructions · open
+positions · residency · today's P&L · health) · the conductor strip showing who is resident, queued and
+evicted, and why. ⟨VI⟩ · base · idea · design §2
+**L13.31**  **Level 1 — inside one holon** — what it is doing right now in words · universe-scan funnel
+(scanned → liquidity-passed → cost-passed → triggered) · regime read over the session · BULL / BEAR /
+TRAIL organ states side by side · armed instructions with live track records · open positions each with
+its opening mechanism · the research agent's active hypotheses · budget burn.
+⟨VI · V⟩ · adv · idea · design §2
+**L13.32**  **Level 2 — inside one engine** — inputs consumed · algorithm and parameters in force · state
+carried · outputs produced · last run and what changed. Plus **research details** (what was read, what was
+concluded, with provenance), the **hypothesis board** (every instruction on its lifecycle stage with
+sample N, DSR and holdout status), and **learning progress** (calibration reliability diagrams, Brier
+decomposition, drift-detector state, model version history). ⟨XIII · XV⟩ · adv · idea · design §2
+**L13.33**  **Level 3 — the decision trace** — replayable per-trade timeline: signal → evidence consulted
+→ each gate and its verdict → sizing → entry → exits considered and rejected → exit, with SHAP attribution
+and **which gate came closest to blocking it**. The near-miss is usually more informative than the pass.
+⟨XIII⟩ · adv · idea · design §2
+**L13.34**  **Form selection — the data's job picks the chart, and several are deliberately not charts.**
+Hero number for the P&L headline · line for session P&L · horizontal bar for per-holon comparison · stage
+bars for the scan funnel · stacked area for regime probability · **small multiples of sparklines** for
+instruction track records (never one crowded chart) · reliability diagram for calibration · stacked bar
+for cost attribution · scatter with quadrant lines for MFE/MAE · single-hue heatmap for cross-holon
+exposure · **status palette with icon and label** for residency and health · and **plain live-updating
+text** for "what it is doing right now" — the single most valuable panel here is not a chart at all.
+⟨VI⟩ · base · idea · design §3
+**L13.35**  **Colour rules fixed at design time** — six holons get six categorical hues in **fixed order,
+never cycled**, and **colour follows the holon, not its rank**, so filtering to three must not repaint the
+survivors. **Status colours are reserved** for health and residency and are never reused as a seventh
+series. Sequential = one hue light→dark; diverging = two hues with a neutral grey midpoint for P&L above
+and below zero; never a rainbow. **One axis always — P&L and trade count are two charts, never a
+dual-axis.** Text wears text tokens, never the series colour. **Validate the palette with the script in
+both light and dark mode — never eyeball colourblind-safety.** Legend for ≥2 series, ≤4 also directly
+labelled, a table view for every chart, dark mode a designed variant rather than an inversion, and a hover
+layer by default. ⟨VI⟩ · base · idea · design §3
+**L13.36**  **Project chat panel, LLM-laddered** — streaming, routed ① Claude Max subscription → ②
+free-tier cloud → ③ local, matching L11.64. ⟨VI · XVI⟩ · adv · idea · operator 2026-08-10
+**L13.37**  **Grounded, never generative about facts** — the assistant answers only from read-only state
+tools and **cites what it read**: `get_holon_state · get_positions · get_pnl · get_regime ·
+explain_last_trade · get_instruction_status · get_hypotheses · get_engine_health · query_ledger ·
+get_research_findings · get_conductor_state · get_backlog`. **It never states a number it did not read
+from a tool.** An assistant that sometimes says "I don't have that" is worth more than a fluent one that
+invents plausible figures about real money. ⟨VII · XIII⟩ · base · idea · design §4
+**L13.38**  **Gated action layer** — it may propose (pause an engine, flatten a position, change a
+parameter); the operator confirms; the order still routes through the risk gate. Default read-only, and no
+path to capital that skips the deterministic gate. ⟨VII⟩ · base · idea · design §4
+**L13.39**  **Chat security** — a privileged reader of internal state: never exposes `.env` or
+credentials, tools are an explicit allowlist, operator input is trusted while everything the research
+organs ingested stays behind the dual-LLM quarantine (L11.36). ⟨VII⟩ · base · idea · design §4
+**L13.40**  **Proactive assistant (ultra)** — surfaces without being asked ("the stock-futures bot's edge
+has decayed three sessions running — demote it?"), narrates the ledger into lessons, and lets the dashboard
+reorganise around what currently matters rather than a fixed layout. ⟨VI · XII⟩ · ultra · idea · design §5
+
+
 ---
 
 # PART II — THE COGNITIVE AXIS (16 trunks · 197 branches)
@@ -2161,6 +2228,14 @@ used unasserted string replacements that no-op'd silently when the anchor text d
 entries landed; the decision records did not. **Every future edit to this file asserts its anchor matched,
 and the decision count is verified after each session.** Caught by the operator asking whether everything
 was actually saved — which is the reason that question is worth asking after any long session.
+
+**A.29 · Ultra-advanced introspection dashboard + project chat adopted.** Shows what each bot is
+*thinking* — research, hypotheses, learning — not merely its status, plus a chat panel to interrogate the
+whole project on the L11.64 ladder. **The binding constraint recorded with it: reasoning cannot be
+reconstructed after the fact**, so the decision-trace contract (L13.29) is built *before* any panel.
+A "why did it trade?" panel assembled from trade records afterwards is a confident fiction — which extends
+Rule R from "status is measured, never hand-authored" to **"reasoning is recorded, never reconstructed."**
+See L13.29–L13.40.
 
 **A.28 · LLM routing ladder reversed: Claude Max subscription is PRIMARY.** Order is now subscription →
 free-tier cloud → local. Supersedes the original cost-minimising ladder (local → free cloud → paid last).
