@@ -1158,6 +1158,80 @@ segment is **evidence for a hypothesis elsewhere, never a transferred licence**.
 ⟨VI · XIII⟩ · adv · idea · operator 2026-08-10
 
 
+### L11i · THE PROFIT-TRAIL LEARNING GATE — the third organ (operator 2026-08-10)
+
+*A per-holon learned exit engine, first-class alongside the BULL and BEAR pair. Supersedes L5.32, which
+was a single static profit-trail gate with MFE/MAE tracking. **The architecture previously had two entry
+specialists and zero exit specialists** — exits were parameters hanging off a strategy rather than an organ
+with its own model, state and track record. Entry is a classification problem; exit is optimal stopping.
+They are not the same problem and should not share an owner.*
+
+**L11.125**  **Profit-trail learning gate, one per holon** — the third directional organ. BULL decides
+buy/CE, BEAR decides sell/PE/short, and this decides **when to get out**: tighten, give room, scale out,
+or exit now. Owns its own model, state, memory and track record exactly as the directional pair does.
+⟨I MIND · III WILL⟩ · adv · idea · operator 2026-08-10
+*supersedes: L5.32 "profit-trail gating + MFE/MAE excursion tracking" — a static gate, now a learning organ.*
+
+**L11.126**  **The exit problem stated honestly** — trail too tight and winners are cut before they pay;
+trail too loose and realized profit is given back. This single tension destroys more edge than entry
+selection does, because a correct directional call exited badly still loses. MFE/MAE is the measurement
+that exposes which error is being made: **MFE far above realized** means exits are too loose or too late;
+**MAE clustering just beyond the stop** means stops are too tight and are being hunted.
+⟨XIII⟩ · base · idea · operator 2026-08-10
+
+**L11.127**  **Trail-policy family, all as candidates rather than a chosen one** — fixed percentage · ATR
+multiple · chandelier (from the extreme, not from entry) · parabolic SAR · breakeven shift after 1R ·
+partial scale-out with a runner · time-based tightening · volatility-scaled · regime-conditional. Each is
+a hypothesis the gatekeeper judges, exactly as instructions are. ⟨III⟩ · adv · idea · operator 2026-08-10
+
+**L11.128**  **Learned exit policy — the core model.** Predicts `P(further favourable move | current
+state)` and exits when that expectation drops below the cost of continuing to hold. State includes:
+unrealized P&L in bps, elapsed time in trade, current MFE and MAE, regime, distance to the instruction's
+declared target, remaining session time, and — for options — accumulated theta. Trained on **realized
+outcomes only**, never self-graded. ⟨I · IX⟩ · adv · idea · operator 2026-08-10
+
+**L11.129**  **⭐ The counterfactual advantage of paper — exits are the one place it is available.** After
+an exit, the *actual forward path* is observable: what the position would have done had it been held.
+Entry decisions have no such counterfactual (you cannot know what an untaken trade would have done without
+taking it), but **every exit generates a complete counterfactual for free**. The paper laboratory should
+record the full post-exit path for every trade, turning each exit into a labelled training example of what
+the optimal exit *would have been*. This is a genuinely richer training signal than entry learning can
+ever get, and it is currently unused. ⟨XII CURIOSITY · IX⟩ · adv · idea · operator 2026-08-10
+
+**L11.130**  **Per-segment exit asymmetries — why this must be per-holon and not global:**
+- **Options:** theta means *holding costs money every hour*. The exit calculus includes decay against the
+  remaining horizon, and the trail is on the **premium**, not on the underlying (L11.106). A directional
+  call that is right but slow still loses.
+- **Cash intraday:** trails are ATR- or VWAP-relative; the last-hour momentum window and the square-off
+  clock both compress the decision.
+- **Cash with carry:** the exit decision becomes a *carry* decision at the square-off window (L5.47) —
+  exit, or promote and re-evaluate tomorrow.
+- **Index / stock futures:** margin efficiency means an early exit *frees capital* for another expression,
+  so the opportunity cost of holding is explicit and computable.
+- **MCX:** a session running to 23:30 IST, with international markets moving underneath it, changes what
+  "hold longer" means entirely.
+⟨III · IV⟩ · adv · idea · operator 2026-08-10
+
+**L11.131**  **Regime-conditional trailing** — trending regimes need loose trails to let winners run;
+ranging regimes need tight ones because the move reverses. A single global trail parameter is wrong in
+both regimes at once. The holon's own regime reader (L14.37) conditions its exit policy.
+⟨I · III⟩ · adv · idea · operator 2026-08-10
+
+**L11.132**  **Partial scale-out with a runner** — take a portion at the instruction's declared target,
+trail the remainder. Converts the all-or-nothing exit into a distribution and is often the honest answer
+to the trail-tension in L11.126. ⟨III⟩ · adv · idea · operator 2026-08-10
+
+**L11.133**  **Exit quality feeds the instruction track record** — an instruction's measured edge is a
+*joint* property of its entry and its exit. When an instruction underperforms, the proving ground must
+attribute the failure between the two, or a sound entry gets retired for a bad exit policy. This makes the
+exit organ a first-class input to L11.116's graduation statistics. ⟨XIII⟩ · base · idea · operator 2026-08-10
+
+**L11.134**  **Offline RL as the frontier form** — exit timing is a textbook optimal-stopping problem, and
+Decision Transformer (L11.92) trained on the system's own trade logs is the most defensible reinforcement
+learning application in this entire project: offline, on proprietary data, with a dense and unambiguous
+reward. Gated behind the LightGBM-class baseline like everything else. ⟨I⟩ · ultra · idea · operator 2026-08-10
+
+
 ## L12 · GOVERNANCE, SAFETY & COMPLIANCE
 
 *Trunk VII reached 14/14 complete — the only trunk finished before any deeper autonomy was granted.*
@@ -2046,6 +2120,13 @@ used unasserted string replacements that no-op'd silently when the anchor text d
 entries landed; the decision records did not. **Every future edit to this file asserts its anchor matched,
 and the decision count is verified after each session.** Caught by the operator asking whether everything
 was actually saved — which is the reason that question is worth asking after any long session.
+
+**A.27 · Profit-trail learning gate added as the third directional organ, per holon.** The architecture
+had two entry specialists (BULL, BEAR) and no exit specialist; exits were parameters on a strategy rather
+than an organ. Entry is classification, exit is optimal stopping — different problems, different owners.
+Supersedes L5.32's static trail gate. Notable consequence: **paper trading generates a free counterfactual
+for every exit** (the actual forward path after exiting), which entry learning can never obtain — the
+richest unused training signal in the system. See L11.125–L11.134.
 
 **A.23 · The foundational answers (interview round 1, 2026-08-10).** These govern everything above and
 were previously recorded only in `INTERVIEW_RECORD_ajith_final_plan.md`:
