@@ -193,6 +193,12 @@ is visible *which* is eating the return. ⟨XIII⟩ · adv · spec · atlas L8
 than an accounting output. ⟨IV⟩ · ultra · planned · atlas trunk IV
 **L1.13**  Tax-lot record (STT/CTT/stamp/GST), exportable — the compliance artefact. ⟨VII⟩ · adv ·
 planned · atlas L12
+**L1.15**  **Dual cost regime — intraday vs delivery.** The two are materially different and the carry
+decision must be priced under the regime it is *moving into*, not the one it opened in. Equity delivery
+carries STT on **both** legs versus sell-side only for intraday, different brokerage treatment, and
+different margin economics (CNC requires 100% cash; MIS leverage disappears on conversion). A carry
+decision priced with intraday costs is wrong in the unsafe direction. ⟨IV⟩ · base · idea · operator 2026-08-10
+
 **L1.14**  Maker-order spread capture — limit orders that *earn* the spread instead of paying it. The
 single durable lever that makes small edges survivable. ⟨IV⟩ · adv · planned · r/164
 
@@ -281,8 +287,12 @@ Crossing it changes the regulatory category. ⟨VII⟩ · base · archived · `o
 archived · `trading_control_config`
 **L3.08**  Corrigibility off-switch — an engaged off-switch blocks all orders and self-halts on a
 constitutional breach. ⟨VII⟩ · adv · archived · r/111
-**L3.09**  Intraday square-off executor — the dead-man's switch. No overnight carry, ever, in any segment.
-⟨IV⟩ · base · archived · `intraday_square_off_executor`
+**L3.09**  Intraday square-off executor — the dead-man's switch. **Now selective rather than universal
+(2026-08-10):** it squares off everything *except* an explicit, per-position carry whitelist signed by the
+supervisor. Safety-critical inversion — the whitelist is opt-in and expires daily, so a bug, a crash or a
+stale state results in *square-off*, never in an accidental overnight position. Options are never
+whitelistable. ⟨IV · VII⟩ · base · archived (needs rework) · `intraday_square_off_executor` + L5.47
+*supersedes: "No overnight carry, ever, in any segment."*
 **L3.10**  Daily Kite token auto-refresh via TOTP — hands-off broker login. **One of three survivors of
 the reset.** ⟨XVI⟩ · base · **retained** · `kite_totp_auto_login`
 **L3.11**  Kite access-token store + authenticated client builder. ⟨XVI⟩ · base · **retained** ·
@@ -466,6 +476,34 @@ archived · r/26
 **L5.44**  Prequential learning + provenance-separable memory (§53 slice 3). ⟨XV · XIII⟩ · adv · archived · §53
 **L5.45**  Session/regime replay curriculum store — 5 replayed session regimes recorded. ⟨XII⟩ · adv ·
 archived · `replay_curriculum`
+### L5 · position-horizon governance (added 2026-08-10)
+
+**L5.47**  **Overnight-carry decision engine** — the mechanism that promotes a cash-equity position from
+intraday to multi-day. Default is square-off; promotion is an active, evidenced decision taken before the
+square-off window, requiring: a next-day profit forecast above threshold, confidence above threshold, net
+expected edge computed under the **delivery** cost structure (not the intraday one), full cash
+affordability under CNC, and no veto from the risk bot. Re-evaluated every subsequent day the position is
+held. ⟨III WILL · IX⟩ · adv · idea · operator 2026-08-10
+**L5.48**  **Next-day return forecast model** — a genuinely *different* prediction problem from every
+intraday model in this project: different horizon, different features, different label, its own
+validation. It must clear the L2 gate on multi-day data before it may authorise a single carry. The
+corpus's measured intraday findings (naive momentum losing ~0.23%/trade) say nothing about this horizon
+either way. ⟨IX · I⟩ · adv · idea · operator 2026-08-10
+**L5.49**  **Carry whitelist + daily expiry** — the signed, per-position authorisation the square-off
+executor consults. Expires every day and must be re-earned; absence of a valid entry means square off.
+⟨VII · IV⟩ · base · idea · operator 2026-08-10
+**L5.50**  **Options never carry — hard structural rule.** Index-option and stock-option holons square off
+unconditionally, with no promotion path in the code at all rather than a flag set to false. Rationale:
+theta works against a held long, short premium carries unbounded gap risk, stock options are physically
+settled with escalating expiry-week margin, and the ITM auto-exercise STT trap fires on positions held
+into settlement. ⟨VII⟩ · base · policy · operator 2026-08-10
+**L5.51**  **Carry re-confirmation loop** — each held position is re-judged daily against a fresh forecast;
+losing conviction triggers exit, not drift. A position must keep *earning* its carry.
+⟨III⟩ · adv · idea · operator 2026-08-10
+**L5.52**  **Carry horizon cap + exit ladder** — a maximum number of days a promoted position may be held
+before forced exit regardless of forecast, so "multi-day" cannot silently become "investing".
+⟨VII · III⟩ · adv · idea · operator 2026-08-10
+
 **L5.46**  HFT / latency arbitrage — **explicitly out of scope**; the prior build proved it is closed from
 a retail cloud VM. ⟨—⟩ · — · disproved · atlas L4
 
@@ -583,6 +621,20 @@ still queued at reset. ⟨IX · VII⟩ · adv · blocked · r/107
 dominance. ⟨VII⟩ · adv · archived · r/117
 **L7.21**  Scalable oversight — tiers each decision by stakes × confidence; high-stakes and low-confidence
 gets deferred to the human. ⟨VII⟩ · adv · archived · r/116
+**L7.23**  **Overnight gap risk engine** — the single largest risk change introduced by carry. Stops do
+not execute while the market is closed, so a gap-down can and does exceed any intraday stop. Requires
+gap-distribution modelling per name, overnight VaR/CVaR, and position sizing derived from gap risk rather
+than intraday volatility. ⟨VII · IX⟩ · adv · idea · operator 2026-08-10
+**L7.24**  **Maximum aggregate overnight exposure cap** — a hard ceiling on total carried notional,
+independent of how confident any individual forecast is. Many small confident carries are still one large
+overnight bet. ⟨VII⟩ · base · idea · operator 2026-08-10
+**L7.25**  **Overnight event guard** — refuse or force-exit carry into known overnight risk: results due,
+ex-dividend, board meetings, budget, RBI policy, index rebalance, and any name in ASM/GSM or approaching a
+circuit. Consumes the calendar and filings bots. ⟨VII · II⟩ · adv · idea · operator 2026-08-10
+**L7.26**  **Corporate-action exposure on held positions** — ex-dividend, splits and bonuses now affect
+*positions*, not merely historical data adjustment. The corp-action engine gains a live-position consumer.
+⟨VII · II⟩ · adv · idea · operator 2026-08-10
+
 **L7.22**  Market-data integrity defense — screens signal-input bars for adversarial or corrupt values
 before they reach the strategy. ⟨VII · II⟩ · adv · archived · r/121
 
@@ -641,6 +693,14 @@ The most defensible RL application here, since it trains on the system's own log
 planned · `_FEATURE_UNIVERSE_MAP` phase 2
 **L9.10**  Broker state reconciler in the execution path. ⟨IV⟩ · base · archived · r/168
 **L9.11**  Order-intent WAL in the execution path. ⟨IV⟩ · base · archived · r/168
+**L9.12**  **MIS → CNC position conversion** — the actual broker mechanism behind carry. Kite Connect
+exposes `convert_position()`, but conversion only succeeds with the full delivery margin available, so the
+supervisor must verify cash *before* promising a carry. A promotion that fails at conversion time and
+leaves the position un-squared-off past the square-off window is the worst outcome in this whole feature;
+conversion must therefore be attempted early and fall back to square-off on any failure.
+⟨IV⟩ · base · idea · operator 2026-08-10
+**L9.13**  **T+1 settlement awareness** — delivered shares settle T+1, which constrains when a carried
+position can be exited and how BTST-style exits behave. ⟨IV⟩ · adv · idea · operator 2026-08-10 ⟨IV⟩ · base · archived · r/168
 
 ## L10 · OPERATIONS & SELF-MAINTENANCE
 
@@ -1327,7 +1387,16 @@ universe via multi-key sharding?
 
 **A.01**  **Futures and commodities: IN, but last and optional.** Built only after the rest of the project
 is complete, and only if still wanted then. MCX is treated as a near-separate organism, not a tenth holon.
-**A.02**  **Hardware contention: solved by the conductor bot (L14.11).** Bots do not assume residency;
+**A.02**  **Cash equity may carry overnight; options never.** Default remains intraday for everything.
+The top-level supervisor may promote a **cash** position to multi-day when it forecasts next-day profit
+with sufficient confidence; index and stock options square off unconditionally with no promotion path.
+Amends the former intraday-only non-negotiable (R.01) and makes the square-off executor selective (L3.09).
+Full mechanism: L5.47–L5.52, L7.23–L7.26, L9.12–L9.13, L1.15.
+**A.03**  **Two distinct top-level bots, not one.** The **conductor** (L14.11) governs *hardware* —
+who runs, who sleeps. The **supervisor/treasurer** (L8.14) governs *capital* — who trades, how much, and
+what carries overnight. Conflating them would let a resource scheduler make capital decisions; they stay
+separate, and the risk bot holds a veto over both.
+**A.04**  **Hardware contention: solved by the conductor bot (L14.11).** Bots do not assume residency;
 they are woken when needed and suspended when not, and the hardware is a shared space the conductor
 allocates. Idle bots rest cold or warm rather than occupying RAM.
 
@@ -1351,7 +1420,15 @@ LightGBM/PyTorch on ARM64 need a newer interpreter. 20 GB free disk, with 21 GB 
 
 ## Standing rules that governed all prior work
 
-**R.01**  Intraday only — every position squares off before close, in every segment, without exception.
+**R.01**  **Intraday by default; overnight carry only by explicit promotion — AMENDED 2026-08-10.**
+Every position is opened intraday and squares off before close *unless* the top-level supervisor
+explicitly promotes it to multi-day. **Options — index and stock — are ALWAYS intraday and can never be
+promoted.** Only **cash equity** is promotable, and only when the supervisor predicts next-day profit with
+sufficient confidence, net of the *delivery* cost structure, and the risk bot does not veto. Square-off
+remains the **default and the failure mode**: anything not explicitly promoted, and anything promoted
+whose promotion cannot be re-confirmed, is squared off. See `L5.47`–`L5.52`.
+*supersedes: "Intraday only — every position squares off before close, in every segment, without
+exception." — the previous non-negotiable, in force for the whole prior build.*
 **R.02**  Never commit secrets; `.env` is gitignored and credentials load from environment only.
 **R.03**  No hardcoded values — every threshold derived from data (percentile, calibration, optimisation,
 Bayesian, online), never a magic constant.
