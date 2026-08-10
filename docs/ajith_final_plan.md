@@ -2288,6 +2288,20 @@ entries landed; the decision records did not. **Every future edit to this file a
 and the decision count is verified after each session.** Caught by the operator asking whether everything
 was actually saved — which is the reason that question is worth asking after any long session.
 
+**A.32 · Enforcement hooks rewritten to match the new rules (2026-08-10).** The hooks embedded the old
+rule text inline and checked deleted paths, so retired rules kept being injected. Now: **kept** the three
+safety guards that were still correct and path-agnostic (secret-file write denial, dangerous-bash denial
+covering `rm -rf /` / force-push / `curl|sh` / `chmod 777` / secret exfiltration, and the dataviz gate on
+chart and dashboard code) plus the research-doc sourcing gate. **Replaced** the two rule injections with a
+single gate carrying **R.01–R.13**, the idea-intake protocol and the decision-log rule. **Replaced** all
+four Stop hooks — which called a deleted script and a deleted source tree — with three that are verified
+to fire and clear: quality (ruff/mypy on changed source), **todo-sync** (source changed but
+`ajith_final_todo.md` untouched → block, enforcing R.11), and **test-pairing** (source `.py` changed with
+no test change → block, enforcing R.07). Backup at `~/.claude/settings.json.bak_2026-08-10`.
+*Bug found and fixed during testing: `git status --porcelain` collapses an untracked directory to `?? src/`,
+so the `.py$` match never hit and test-pairing silently never fired. `--untracked-files=all` fixes it —
+the reason hooks get pipe-tested rather than assumed.*
+
 **A.31 · The old governing docs are deleted; these two files govern alone.** `CLAUDE.md`,
 `docs/RULES.md` and `GLOBAL_CLAUDE.md` were deleted 2026-08-10 once `ajith_final_plan.md` and
 `ajith_final_todo.md` existed and were verified complete. All three remain recoverable from commit
