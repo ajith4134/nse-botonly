@@ -1,0 +1,125 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nse-algo-trader"
+version = "2.0.0"
+description = "Autonomous NSE trading organism — six segment holons under a portfolio supervisor"
+requires-python = ">=3.12"
+dependencies = [
+  # broker + auth (the three retained survivors depend on these)
+  "kiteconnect",
+  "pyotp",
+  "requests",
+  "python-dotenv",
+  # numerics
+  "numpy",
+  "pandas",
+  "scipy",
+  # models
+  "scikit-learn",
+  "lightgbm",
+  "statsmodels",
+  "arch",
+  "hmmlearn",
+  "river",
+  "shap",
+  # optimisation
+  "cvxpy",
+  # indicators
+  "TA-Lib",
+  "pandas-ta-classic",
+  # scanning / storage
+  "polars",
+  "duckdb",
+  # service
+  "fastapi",
+  "uvicorn",
+  "matplotlib",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "hypothesis", "ruff", "mypy"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# ---------------------------------------------------------------------------
+# Ruff — the static half of the R.23 execution gate.
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",      # pycodestyle
+  "F",           # pyflakes
+  "I",           # import sorting
+  "N",           # pep8-naming — supports R.14 self-describing names
+  "UP",          # pyupgrade
+  "B",           # bugbear
+  "A",           # builtin shadowing
+  "C4",          # comprehensions
+  "SIM",         # simplification
+  "ARG",         # unused arguments
+  "PTH",         # pathlib over os.path
+  "RUF",
+  "TRY",         # exception antipatterns
+  "BLE",         # blind except — R.23(e): never swallow errors silently
+  "S",           # bandit security
+  "DTZ",         # naive datetimes — IST/UTC correctness is a financial requirement
+  "NPY", "PD",
+]
+ignore = [
+  "TRY003",  # long messages inside raise — we want them explicit
+  "S101",    # assert: allowed, tests rely on it
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S", "ARG", "PD901"]
+
+[tool.ruff.lint.flake8-builtins]
+builtins-allowed-modules = ["types"]
+
+# ---------------------------------------------------------------------------
+# Mypy — strict. Signatures come before bodies (R.23 loop, step 2).
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+files = ["src", "tests"]
+strict = true
+warn_unreachable = true
+warn_no_return = true
+disallow_any_generics = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+show_error_codes = true
+pretty = true
+
+[[tool.mypy.overrides]]
+module = [
+  "kiteconnect.*", "pyotp.*", "talib.*", "pandas_ta_classic.*",
+  "lightgbm.*", "hmmlearn.*", "river.*", "shap.*", "arch.*",
+  "cvxpy.*", "statsmodels.*", "duckdb.*", "sklearn.*",
+]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------------------
+# Pytest — R.23 loop step 3. Markers name the test KINDS the rule requires.
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-q --strict-markers --strict-config"
+markers = [
+  "unit: isolated behaviour of one unit",
+  "property: property-based invariant (hypothesis)",
+  "adversarial: degenerate, hostile or boundary input",
+  "real_data: runs against REAL market data — the R.05 gate",
+  "hermetic: injected fake behind a DI seam (R.05); never substitutes for real_data",
+  "market_gated: needs an open market session; expected to skip out of hours",
+]
+filterwarnings = ["error::DeprecationWarning"]

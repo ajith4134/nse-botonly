@@ -42,8 +42,8 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [x] **0.3** Python 3.12 venv; ARM64 stack verified by function (LightGBM trains, CVXPY solves, TA-Lib imports) — `B.09`
 - [x] **0.4** Reclaim disk — 43 GB free — `B.09`
 - [ ] **0.5** **Revoke the leaked GitHub PAT**; reissue via `gh auth login` — `B.10` ⚠️ *operator action*
-- [ ] **0.6** Repo skeleton: package layout, `pyproject.toml`, ruff + mypy + pytest config, pre-commit hooks
-- [ ] **0.7** Quality-gate hooks — ruff, mypy and tests block a sign-off — `L2.32`
+- [x] **0.6** Repo skeleton — `src/nse_algo_trader` package, `pyproject.toml` with ruff (security, naming, datetime-awareness, blind-except bans) + strict mypy + pytest markers naming the R.23 test kinds; installed editable
+- [x] **0.7** Execution gate — the Stop hook now runs **ruff + mypy + pytest** and blocks the turn on any failure (`L2.32`, R.23 step 6)
 - [ ] **0.8** Capital as a runtime parameter across ₹1 lakh → ₹1 crore, with **no rupee constant anywhere** — `A.23`, `R.03`
 - [ ] **0.9** Secrets from environment only; `.env` gitignored; never committed — `R.02`
 - [ ] **0.10** Decision-log discipline: every decision recorded as an `A.` entry in the plan, with reasoning — `A.22`
