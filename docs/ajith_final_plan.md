@@ -2332,6 +2332,32 @@ anything a context-constrained read would have produced.
 - **Ask for `file:line` tables, not content**, unless the content is the answer.
 - A subagent's report is not shown to the operator — **relay what matters**, never assume they saw it.
 
+**R.25**  **OPINIONS ARE RECORDED, NOT SPOKEN.** Every judgement, verdict or recommendation I give goes
+into `docs/CLAUDE_OPINIONS.md` at the moment it is formed, as a numbered `O.` entry carrying: the opinion ·
+the reasoning · **the confidence, stated honestly** (`measured` = data I ran · `reasoned` = argued from
+evidence I did not gather · `judgement` = pattern, no direct evidence) · and **what would change my mind**.
+Three kinds of claim, three homes, never mixed: measured facts → `docs/research/` · operator decisions →
+plan Part IV `A.` entries · **my judgement → the opinion file**.
+**Wrong opinions are corrected in place, dated, with the original left visible** — the history of a
+mistaken judgement is more useful than a clean file, and O.11 already records one I reversed.
+*Operator instruction 2026-08-10: so opinions can be referred back to and checked against what happened.*
+
+**R.26**  **SUBAGENT MODEL SELECTION — cheapest model that reliably does the job.** Match the model to the
+task's difficulty, not to habit, and prefer the cheaper one whenever output quality is equivalent.
+- **Location and mechanical work** — "where is X", "what calls Y", "map this directory", file:line tables,
+  grep-shaped questions: **haiku or sonnet**. There is no judgement in the task; a larger model buys
+  nothing.
+- **Broad fan-out reading** — Explore-style sweeps where only the conclusion matters: **sonnet**.
+- **Judgement-heavy work** — adversarial review, audits, multi-file synthesis, anything requiring the
+  agent to *run* code and reason about what the output means: **opus**, on current evidence.
+*Evidence for the split, stated honestly: the two adversarial reviews in this session ran on opus and
+found 14 and 24 real defects with empirical reproductions, mutation testing and restored working trees.
+That is genuinely judgement-heavy work. **I have not A/B tested sonnet on the same task**, so the opus
+choice for review is reasoned, not measured.*
+**Standing obligation:** when a cheaper model is plausible for a task, try it and compare. If sonnet
+produces equivalent findings on a review, sonnet becomes the default for reviews and this rule is updated
+with the measurement. Never pay for a larger model out of habit.
+
 ---
 
 ### Rules deliberately RETIRED (with the reason, so they are not silently resurrected)
@@ -2476,6 +2502,13 @@ is learned by trading them rather than chosen** — each of 15 combinations is a
 record, gated by the effective-trials estimator because they are heavily correlated. Focus-set sizing was
 delegated to me: **derived from the cost floor, capped by executable capacity** — no fixed N (R.03).
 See L5.21–L5.21d, r/201.
+
+**A.37 · Opinions get their own file (R.25) and subagents get a model-selection rule (R.26).**
+Operator instructions 2026-08-10. `docs/CLAUDE_OPINIONS.md` holds every judgement I give with its
+reasoning, an honest confidence label and what would change my mind — back-filled with the 14 formed this
+session. Model selection: cheapest model that reliably does the job — haiku/sonnet for location and
+mechanical work, sonnet for fan-out reading, opus for judgement-heavy review — with a standing obligation
+to try the cheaper option and update the rule with the measurement rather than paying for opus by habit.
 
 **A.36 · Measured: watch-everything is affordable in ONE Kite key (~6,100 instruments).** Before measuring,
 the 9,000-instrument ceiling looked like the binding constraint on the whole idea. It is not. Index options
