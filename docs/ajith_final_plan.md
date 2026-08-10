@@ -1314,9 +1314,11 @@ are COLD or WARM at any moment. ⟨IV⟩ · base · idea · audit 2026-08-10
 
 ⟨—⟩ · base · idea · audit 2026-08-10
 
-**L14.27**  **⚠️ OPERATOR SIGN-OFF REQUIRED.** These counts — **46 agents · 15 services · ~80–95 instances**
-— are the audit's derivation, not yet a decision. Approve, or adjust any classification, and the number
-becomes fixed for the build. ⟨—⟩ · base · **awaiting decision** · audit 2026-08-10
+**L14.27**  ✅ **SIGNED OFF 2026-08-10 — the register is FIXED for the build.** **46 agent bots · 15
+service bots · ~490 capabilities · ~80–95 live instances.** The todo list is generated against these
+numbers. Any later change to the roster goes through the org-designer (L14.14) or an explicit operator
+decision recorded here — the count is no longer open for casual drift.
+⟨—⟩ · base · **decided** · audit 2026-08-10
 
 ### L14 · expression selection — one conviction, one instrument (operator 2026-08-10)
 
@@ -1332,8 +1334,14 @@ chosen** and the others stand down. The paper book is what generates the evidenc
 netted away. It is a hazard **in live** and a measurement opportunity **in paper**.*
 **L14.29**  **Expression-selection engine** — given a conviction on an underlying and its confidence, rank
 the available vehicles (cash · futures · CE/PE · spread structures) by **realized net edge per rupee of
-capital and per unit of risk**, using each vehicle's own accrued track record for that regime, and select
-one. Inputs that make the ranking honest: full round-trip cost under the correct regime (L1.15), margin
+capital consumed** ✅ *(objective fixed by operator 2026-08-10)*, using each vehicle's own accrued track
+record for that regime, and select one. Capital efficiency is the ranking metric: the same directional
+exposure costs 100% cash in equity, SPAN margin in futures, and only premium in options.
+**⚠️ Known consequence, guarded not ignored:** ranking on capital efficiency structurally favours options,
+which are also the vehicle carrying theta decay and the fattest tails. The selector is therefore **not**
+the last word — the risk gate (L3.05) and the overnight/gap engine (L7.23) veto independently and are
+never overridden by a capital-efficiency score. A vehicle that wins on efficiency and fails on risk does
+not trade. Inputs that make the ranking honest: full round-trip cost under the correct regime (L1.15), margin
 consumed (cash needs 100% on carry, futures need SPAN, options premium differs), theta decay against the
 holding horizon, gap exposure, and liquidity at the size required. ⟨III · IV⟩ · adv · idea · operator 2026-08-10
 **L14.30**  **Per-vehicle conversion track record** — the accrued statistic the selector consumes: for each
