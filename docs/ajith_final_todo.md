@@ -44,10 +44,13 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **0.5** **Revoke the leaked GitHub PAT**; reissue via `gh auth login` — `B.10` ⚠️ *operator action*
 - [x] **0.6** Repo skeleton — `src/nse_algo_trader` package, `pyproject.toml` with ruff (security, naming, datetime-awareness, blind-except bans) + strict mypy + pytest markers naming the R.23 test kinds; installed editable
 - [x] **0.7** Execution gate — the Stop hook now runs **ruff + mypy + pytest** and blocks the turn on any failure (`L2.32`, R.23 step 6)
-- [ ] **0.8** Capital as a runtime parameter across ₹1 lakh → ₹1 crore, with **no rupee constant anywhere** — `A.23`, `R.03`
-- [ ] **0.9** Secrets from environment only; `.env` gitignored; never committed — `R.02`
-- [ ] **0.10** Decision-log discipline: every decision recorded as an `A.` entry in the plan, with reasoning — `A.22`
-- [ ] **0.11** Idea-intake protocol wired into the working habit — four verdicts before anything is written
+- [~] **0.8** Capital as a runtime parameter across ₹1 lakh → ₹1 crore, with **no rupee constant anywhere** — `A.23`, `R.03`
+      · built: `capital_configuration` (Decimal money, high-precision context, validated in `__post_init__`) + `rupee_literal_detector` (26/26 evasion corpus caught, was 0)
+      · spec `docs/research/200`; 42 tests; gate green; 3 mutants verified caught
+      · ⚠️ **NOT R.11-done — primary consumer queued**: the position sizer (`L1.10`) and risk sizer (`L7.01`) in Phases 1–2 are the first real callers. Tick to [x] when one consumes it.
+- [x] **0.9** Secrets from environment only — capital loads from `NSE_TRADING_CAPITAL_RUPEES` with no default; `.env` gitignored and asserted by a skeleton guard — `R.02`
+- [x] **0.10** Decision-log discipline: every decision recorded as an `A.` entry in the plan, with reasoning — `A.22`
+- [x] **0.11** Idea-intake protocol wired into the working habit — four verdicts before anything is written
 - [x] **0.12** Deleted `CLAUDE.md`, `docs/RULES.md`, `GLOBAL_CLAUDE.md` — `ajith_final_plan.md` + `ajith_final_todo.md` are now the only governing docs (recoverable from `f5bc843` and the GitHub archive)
 - [x] **0.13** Enforcement hooks reconciled in `~/.claude/settings.json` — the old rule text and dead-path checks are gone; the gate now injects R.01–R.13, the idea-intake protocol and the decision-log rule, and three Stop gates enforce quality, todo-sync and test-pairing (backup at `settings.json.bak_2026-08-10`)
 

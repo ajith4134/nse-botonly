@@ -72,6 +72,7 @@ select = [
   "S",           # bandit security
   "DTZ",         # naive datetimes — IST/UTC correctness is a financial requirement
   "NPY", "PD",
+  "PLR2004",     # magic-value comparisons (partial cover for R.03; see research/200)
 ]
 ignore = [
   "TRY003",  # long messages inside raise — we want them explicit
@@ -80,6 +81,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S", "ARG", "PD901"]
+"tests/fixtures_rupee_literal_evasions/*" = ["ALL"]  # deliberate violations, by design
 
 [tool.ruff.lint.flake8-builtins]
 builtins-allowed-modules = ["types"]
@@ -90,6 +92,7 @@ builtins-allowed-modules = ["types"]
 [tool.mypy]
 python_version = "3.12"
 files = ["src", "tests"]
+exclude = ["tests/fixtures_rupee_literal_evasions/"]
 strict = true
 warn_unreachable = true
 warn_no_return = true
