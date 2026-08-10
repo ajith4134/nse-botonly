@@ -1728,6 +1728,77 @@ ladders, all ~210 stock-option underlyings.
 **R.11**  No silent skips — every deferral recorded, surfaced at sign-off, and cleared before unrelated
 work begins.
 
+## Recommendations adopted (operator: "I follow your recommendation on all the above", 2026-08-10)
+
+**A.07 · First strategy family (resolves Q.01) → intraday MEAN-REVERSION on cash equity.**
+Chosen over premium-selling, basis and event-driven for four reasons. (a) It is the one family this
+project measured on *its own* NSE data rather than borrowing from literature — the prior build found
+intraday NSE-adjacent markets mean-revert while naive momentum lost ~0.23%/trade. (b) Cash equity has the
+lowest cost floor (~6–11 bps versus 25–65 bps on option premium), so a small real edge survives contact
+with costs. (c) It needs no Greeks or IV-surface prerequisite, so it can be built before L6 exists.
+(d) It lives in the cash-intraday holon, the only one that can carry overnight, so it exercises the carry
+machinery too. **Premium-selling is family #2** — it has the cleanest theoretical edge (the variance risk
+premium) but requires the whole Greeks, margin and defined-risk stack first.
+
+**A.08 · Regime engines at launch (resolves Q.03) → build all four, arm ONE.**
+Per Rule Q: the four-regime brain is built complete from day one; engines arm individually as each clears
+its real-data gate. The brain routes among whatever is armed, and an unarmed regime means abstain — no
+code change when it arms. First armed engine is the one matching family #1.
+
+**A.09 · Model class (resolves Q.04) → LightGBM only; DeepLOB stays catalogued and gated.**
+(a) The corpus's own research is that trees beat neural nets on medium tabular data (Grinsztajn 2022).
+(b) DeepLOB needs raw limit-order-book depth, and Kite provides only 5 levels — the input fidelity simply
+is not there, so it would be a deep model fed a proxy. (c) The mandatory baseline gate means DeepLOB must
+beat LightGBM before shipping anyway, so the thing it must beat gets built first. (d) ARM64, 5 cores and
+no GPU makes PyTorch training genuinely painful on this box.
+
+**A.10 · Decision cadence (resolves Q.05) → split cadence: per-BAR entries, per-TICK exits.**
+Entry deliberation runs on the 1m/5m bar close, because per-tick decisioning across ~2,000 names is
+infeasible on 5 cores and signal decay is measured in minutes, not seconds. Exits, stops and risk checks
+run per tick, because a stop that waits for a bar close is not a stop. This is also how real desks
+operate: slow deliberate entry, fast reactive exit.
+
+**A.11 · Radar universe at launch (resolves Q.06) → liquid subset first, shard later.**
+Top ~200–500 cash names plus ATM-weekly NIFTY on one WebSocket connection. Kite's ceiling is 3,000
+instruments per connection and 3 connections per key; the option chain is what blows it, not the 2,000
+cash names. Scale to the full universe via multi-key sharding once the radar has proven it surfaces
+cost-clearing candidates.
+
+**A.12 · Minimum edge above the cost floor (resolves Q.07) → start at 1.5×, calibrate from realized data.**
+The research range was 1.5–2×. Per the no-hardcoded-values rule this is a *prior*, not a constant: the
+realized-versus-modelled slippage tracker (L1.07) moves it per segment as evidence accrues, tightening
+where fills disappoint and relaxing where they beat the model.
+
+**A.13 · Self-evolution timing (resolves Q.08) → strictly after a live edge exists.**
+Unambiguous in the corpus: evolution and validation must ship together or evolution is simply an
+overfitting machine — which is precisely how the prior attempt died. The gatekeeper is built first; the
+breeder bot is Phase 5 and never runs without it.
+
+**A.14 · Atlas scope (resolves Q.09) → the three completed trunks are in scope NOW as infrastructure;
+the rest re-enter as they earn it.** VII CONSCIENCE, VIII SENTIENCE and X AUTOPOIESIS are no longer
+optional cognitive ambition — under the bot architecture they are the governance, the bus and the
+lifecycle manager, so they are load-bearing from the start. Next in are XIII EPISTEMICS and XV MEMORY
+(they serve the gatekeeper and the librarian), then XII CURIOSITY (the teacher bot). III WILL, V SELF,
+XI GENERATIVITY and XIV AXIOLOGY follow the money.
+
+**A.15 · Stock-option premium selling (resolves Q.10) → stays OFF.** Confirmed: single-name gap risk,
+physical settlement, the ITM auto-exercise STT trap and corporate-action risk. Stock options remain
+directional, vertical or covered-call only.
+
+**A.16 · Bank Nifty (resolves Q.11) → directional and hedged mid-cycle; theta only in the final expiry
+week.** Monthly-only since Nov 2024, higher beta than NIFTY (daily range ~1.3–1.8% versus 0.7–1%) and IV
+30–50% higher, so decay is too slow mid-cycle to pay for the exposure.
+
+**A.17 · Ultra-tier items (resolves Q.12) → catalogued, unscheduled, revisited by evidence.** No ultra item
+is committed now. Once the breeder and org-designer are running, they propose ultra items from measured
+gaps rather than from a wish list written before anything worked.
+
+**A.18 · The verdict on all of the above.** Every one of these is a *recommendation adopted*, not a
+constraint discovered. Each names its reasoning so it can be overturned by evidence rather than by mood —
+if the mean-reversion family fails its real-data gate, A.07 is wrong and premium-selling moves up; that is
+the intended behaviour, not a failure of the plan.
+
+
 ---
 
 # PART V — SOURCE INDEX
