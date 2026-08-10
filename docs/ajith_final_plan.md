@@ -1379,6 +1379,73 @@ accruing and the live selector keeps improving, including for vehicles live capi
 using. ⟨XII · XIII⟩ · adv · idea · operator 2026-08-10
 
 
+### L14 · HOLON INTERNAL ANATOMY — what each of the six main bots owns (operator 2026-08-10)
+
+**L14.33**  **Every main bot owns a full internal organ set.** A holon is not a strategy wrapper; it is a
+complete trading operation for its segment. Expanding the operator's "scanner, news, strategies, research
+etc" as a direction pointer, the twenty-one organs each of the six owns:
+
+**Perception & universe** — ① its own **universe scanner** (its universe definition, liquidity tiering,
+eligibility and exclusion rules) · ② its own **relevance filter** over shared news and evidence · ③ its own
+**online research agent** (hypothesis generation for its own domain) · ④ its own **feature/signal pipeline**
+· ⑤ its own **regime reader** · ⑥ its own **liquidity model** · ⑦ its own **calendar view**.
+**Decision** — ⑧ its own **strategy library** · ⑨ its own **BULL/BEAR directional pair** · ⑩ its own
+**labelling scheme** · ⑪ its own **entry/exit policy** · ⑫ its own **hypothesis and experiment queue**.
+**Economics & risk** — ⑬ its own **cost profile** · ⑭ its own **risk sub-limits** inside portfolio limits ·
+⑮ its own **position and lifecycle manager** · ⑯ its own **execution preferences** · ⑰ its own **budget**
+(capital, compute, API calls).
+**Identity** — ⑱ its own **experience memory** of its own closed trades · ⑲ its own **track record and
+calibration** · ⑳ its own **dashboard surface** · ㉑ its own **on/off switch and autonomy level**.
+⟨III · VI⟩ · base · idea · operator 2026-08-10
+
+**L14.34**  **⚠️ REFINEMENT OF THE SHARING RULE (L14.03) — sharing is per DATA DOMAIN, not global.** The
+earlier formulation ("acquisition is always shared, interpretation is always owned") was too blunt and
+would have been wrong for scanners. The correct rule has three tiers:
+- **Tier 1 · UNIVERSAL facts — acquired ONCE, shared by all six.** News, corporate filings, macro, global
+  cues, FII/DII flows, the trading calendar. The same event is the same event for every holon; six
+  crawlers fetching it would mean six costs, six ban exposures and six contradictory world-states.
+- **Tier 2 · CROSS-HOLON instrument data — acquired ONCE, shared by the holons that need it.** RELIANCE
+  bars and quotes are consumed by cash-intraday, stock-options and stock-futures alike. One fetch, three
+  consumers.
+- **Tier 3 · HOLON-EXCLUSIVE data — acquired and OWNED by that holon alone.** MCX commodity contracts and
+  inventory reports are of no use to any NSE equity holon; index option chains are of no use to the
+  stock-futures bot. Here a private pipeline is correct, not duplication.
+**Universe scanning is Tier 3 and therefore genuinely per-holon** — the six universes are largely disjoint
+(≈2,000 cash names · 5 index underlyings with ladders · ~210 stock-option underlyings · index futures ·
+a few dozen liquid stock futures · MCX contracts). Six scanners is the right answer, not six copies of one.
+**Interpretation is owned in all three tiers, always.**
+⟨XVI · XV⟩ · base · idea · operator 2026-08-10
+*supersedes: L14.03's global "acquisition is shared, interpretation is owned" — refined into three data
+tiers so holon-exclusive acquisition is not wrongly forbidden.*
+
+**L14.35**  **Per-holon online research agent** — each main bot autonomously researches its own domain:
+reads about its instruments, hunts published edges, forms hypotheses and queues them for testing. A
+commodity bot researching crude-oil inventory cycles and an index-options bot researching expiry-day
+pinning are doing genuinely different work, so this is owned rather than shared. Runs behind the same
+dual-LLM quarantine (L11.36) and the same anti-bot acquisition ladder as the news bot — untrusted web
+content reaching a bot with trading authority is the lethal trifecta regardless of which bot it is.
+⟨XII CURIOSITY · XVI⟩ · adv · idea · operator 2026-08-10
+
+**L14.36**  **⚠️ Hypothesis validation stays CENTRAL and shared — never per holon.** Each bot may generate
+its own hypotheses, but every one is judged by the single deterministic gatekeeper (Class B service,
+L14.23). Per-holon validators would mean each bot grading its own homework, which is precisely the
+self-correction failure recorded in Part III (D.14) and the fastest route back to the overfitting that
+killed the prior attempt. **Generation is distributed; judgement is centralised and identical for all
+six.** ⟨XIII · VII⟩ · base · idea · operator 2026-08-10
+
+**L14.37**  **Per-holon regime readers are legitimately different models.** Commodity regimes are driven by
+inventory cycles, OPEC decisions and the dollar; index-option regimes by IV rank, expiry proximity and
+event calendars; cash-equity regimes by breadth and sector rotation. A single global regime classifier
+would be a lowest-common-denominator model serving none of them well. The shared layer is the *regime
+vocabulary* (trend / mean-revert / volatile / flat), so holons can still communicate; the models producing
+it are private. ⟨I MIND · II⟩ · adv · idea · operator 2026-08-10
+
+**L14.38**  **Shared research substrate under the private research agents** — one crawler fleet, one
+browser pool, one anti-bot ladder, one point-in-time evidence store, one rate-limit budget, consumed by
+six private research agents. Six holons each running their own browser fleet would multiply cost and
+ban exposure by six for no informational gain. ⟨XVI⟩ · base · idea · operator 2026-08-10
+
+
 ---
 
 # PART II — THE COGNITIVE AXIS (16 trunks · 197 branches)
