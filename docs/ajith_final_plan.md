@@ -113,8 +113,14 @@ a sequencing decision for the todo file, not a reason to delete either.
 
 **L0.01**  Kite instrument master + daily `/instruments` NFO dump ingest — the authoritative universe of
 tradable contracts, refreshed ~08:30 IST and cached. ⟨II SENSES⟩ · base · archived · r/176
-**L0.02**  Instrument-token reuse guard — Kite reuses `instrument_token` after a contract expires; key on
-`exchange + tradingsymbol` instead. A silent primary-key corruption trap. ⟨II⟩ · base · archived · r/176
+**L0.02**  Instrument-token reuse guard — Kite reuses `instrument_token` after a contract expires, so it
+cannot be the primary key. **Key on `(exchange, segment, tradingsymbol)`.**
+*supersedes: "key on `exchange + tradingsymbol`" — corrected 2026-08-10 by measurement against the real
+dump before any code was written. That pair collides: `BSE:INFRA` is both a Mirae ETF (`segment=BSE`) and
+a BSE index (`segment=INDICES`), two different instruments with two different tokens. Measured across all
+113,955 contracts: `(exchange, tradingsymbol)` → 1 collision; `(exchange, segment, tradingsymbol)` → 0.
+Building on the documented key would have silently dropped one row on every ingest.*
+⟨II⟩ · base · archived · r/176
 **L0.03**  Historical bar store (SQLite) — 1m/5m OHLCV across cash and F&O. 659,990 bars retained.
 ⟨II⟩ · base · archived · `market_data_sqlite_store`
 **L0.04**  Bitemporal availability-time on the bar store — event time vs ingestion time vs *availability*
@@ -445,8 +451,39 @@ NSE-adjacent markets mean-revert while naive momentum loses ~0.23%/trade. ⟨III
 one-at-a-time as each clears its real-data gate. ⟨III⟩ · adv · spec · `main_ai_brain` §8
 **L5.20**  Intraday tradable cash-universe filter — scan only names that can actually be traded intraday
 today (excludes ASM/GSM, T2T, circuit-banded). ⟨II · III⟩ · base · archived · r/b1
-**L5.21**  Universe scanning 2,000+ → ~150–500 tradeable, by liquidity and turnover, order ≤1–2% of ADV.
-⟨II⟩ · adv · archived · `main_ai_brain` §7f
+**L5.21**  **Cash focus set — derived from the cost floor, never a fixed count.** A name enters when its
+expected move, given today's volatility and live spread, clears `cost × 1.5` (A.12); the set is ~40 names
+on a quiet day and ~300 on a volatile one, then capped by what configured capital and Kite's 10/sec ·
+400/min budget can actually act on. ⟨II⟩ · adv · archived (needs rework) · r/201
+*supersedes: "universe scanning 2,000+ → ~150–500 tradeable, by liquidity and turnover" — a fixed count is
+the hardcoded constant R.03 forbids, and it applied the filter to the WATCH path. Corrected 2026-08-10:
+cash keeps a focus set (operator decision), the five derivative segments do not pre-exclude anything.*
+**L5.21a**  **Cash filter families — all four, combination LEARNED not chosen.** Activity (turnover, RVOL,
+volume surge, delivery %) · volatility and range (ATR%, realised vol, intraday range, gap %) · extremes
+and events (upper/lower circuit, band proximity, news flag, results due, bulk/block deals) · relative
+strength and structure (gainers/losers, sector rank, index membership, spread/depth/ADV). Each of the 15
+non-empty combinations is a **hypothesis with its own track record**, graduated on the same statistical bar
+as an instruction (L11.116). ⚠️ They are heavily correlated, so the **effective-trials estimator (L2.08)
+is mandatory** — otherwise the "winner" is whichever combination got luckiest, which is the 7,846-rule
+trap. ⟨II · XIII⟩ · adv · idea · operator 2026-08-10
+**L5.21b**  **Watch-everything applies to the five DERIVATIVE segments; cash keeps its focus set.** The
+split is structural, not arbitrary: a derivatives universe is an enumerable lattice around a known
+underlying, while cash is ~2,000 independent names — which is exactly where false discovery is worst.
+⟨II⟩ · base · idea · operator 2026-08-10
+**L5.21c**  **⭐ MEASURED: the watch-everything ambition costs ~6,100 instruments — one Kite key.** From
+the retained bhavcopy: index options are **93.81% of all F&O volume** in 5,042 contracts, NIFTY is
+**98.54%** of that, and the nearest weekly is **92.8%** of NIFTY — so **NIFTY nearest-weekly ≈ 87% of all
+NSE F&O volume**, and **80 contracts carry 99.28%** of it. Per-segment: index options watch every strike of
+the nearest 2 expiries on all 5 underlyings (~2,000) · index futures all 15 · stock futures all 622 ·
+stock options tiered (top ~30 underlyings streamed, rest snapshotted — the only long tail, top 30 of 208
+is just 56.53%) · MCX near-month streamed. **Total ≈6,100, inside one key's 9,000 ceiling** — no sharding
+needed. ⟨II⟩ · base · idea · r/201
+**L5.21d**  **⚠️ MEASURED: the volume peak is 0.5–1% OTM, not ATM.** ATM ±0.5% is 15.57% of NIFTY weekly
+volume; **0.5–1% out is 41.27%** — 2.6× more. Centring a watch window on ATM misses the busiest strikes.
+Volume and open interest also have *different* distributions: volume clusters near spot, OI is deepest
+2–5% out (107M) — positioning sits further from the money than trading does, which matters for any
+max-pain or gamma-positioning instruction. ATM ±2% captures 80.42% of volume, ±5% captures 95.02%.
+⟨II⟩ · base · idea · r/201
 **L5.22**  Full-universe opportunity radar — continuous streaming scan of the whole cash and option
 universe, firing on any qualifying setup. Reshaped by research into a *triage* layer feeding the brain,
 not a standalone scalper. ⟨II · XII⟩ · adv · spec · `full_universe_opportunity_radar`
@@ -2429,6 +2466,31 @@ used unasserted string replacements that no-op'd silently when the anchor text d
 entries landed; the decision records did not. **Every future edit to this file asserts its anchor matched,
 and the decision count is verified after each session.** Caught by the operator asking whether everything
 was actually saved — which is the reason that question is worth asking after any long session.
+
+**A.35 · Watch-everything moves to the five derivative segments; cash keeps a filter-based focus set.**
+Operator decision. The stated build order (index options → stock options → futures → commodities) is a
+**tie-break reference only** — otherwise the five carry equal weight (R.10). Rationale beyond preference:
+a derivatives universe is an enumerable lattice around a known underlying; cash is ~2,000 independent
+names, where false discovery is worst. All four cash filter families are in, and **the winning combination
+is learned by trading them rather than chosen** — each of 15 combinations is a hypothesis with a track
+record, gated by the effective-trials estimator because they are heavily correlated. Focus-set sizing was
+delegated to me: **derived from the cost floor, capped by executable capacity** — no fixed N (R.03).
+See L5.21–L5.21d, r/201.
+
+**A.36 · Measured: watch-everything is affordable in ONE Kite key (~6,100 instruments).** Before measuring,
+the 9,000-instrument ceiling looked like the binding constraint on the whole idea. It is not. Index options
+are 93.81% of F&O volume in 5,042 contracts; NIFTY nearest-weekly is ≈87% of the entire market and **80
+contracts hold 99.28% of it**. Only stock options need tiering (top 30 of 208 underlyings is 56.53% — the
+one genuine long tail). **A second measured finding corrects folklore: the volume peak is 0.5–1% OTM, not
+ATM** (41.27% vs 15.57%), and open interest peaks further out still. Both from the retained bhavcopy —
+evidence the reset preserved and that would otherwise have been guessed at.
+
+**A.34 · Instrument-master primary key corrected before implementation (2026-08-10).** The plan
+specified `(exchange, tradingsymbol)`; measurement against the real 113,955-row dump found it collides on
+`BSE:INFRA` — a Mirae ETF and a BSE index sharing a symbol on the same exchange, distinguished only by
+`segment`. The key is now `(exchange, segment, tradingsymbol)`, measured collision-free. **Found by doing
+the R.05 real-data pass *before* writing code rather than after**, which is the cheaper order: the wrong
+key would have silently dropped a row on every daily ingest and looked entirely healthy.
 
 **A.33 · Search-by-delegation adopted as permanent standing method (R.24).** Context is the scarce
 resource, not tokens: a subagent burns its own context and returns only a verdict. Measured on this

@@ -285,7 +285,14 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **3.50** Sector rotation — `L5.18`
 - [ ] **3.51** The four regime engines as one committed set — `L5.19`
 - [ ] **3.52** Intraday tradable cash-universe filter — `L5.20`
-- [ ] **3.53** Universe scanning 2,000+ → ~150–500 tradeable, by liquidity and turnover, order ≤1–2% of ADV — `L5.21`
+- [ ] **3.53** Cash focus set — derived from the cost floor, capped by executable capacity; no fixed N — `L5.21`
+- [ ] **3.53a** Cash filter families, all four (activity · volatility+range · extremes+events · relative-strength+structure) — `L5.21a`
+- [ ] **3.53b** Filter-combination proving ground — all 15 combinations traded as hypotheses, winner becomes default, gated by the effective-trials estimator — `L5.21a`, `L2.08`
+- [ ] **3.53c** Watch-everything scoped to the five DERIVATIVE segments; cash keeps its focus set — `L5.21b`
+- [ ] **3.53d** Per-segment observation tiers — index options: every strike, nearest 2 expiries, all 5 underlyings (~2,000) · index futures: all 15 · stock futures: all 622 · stock options: top ~30 streamed + tail snapshotted · MCX: near-month streamed. Total ~6,100, one Kite key — `L5.21c`
+- [ ] **3.53e** Moneyness watch window from the measurement: volume peaks 0.5–1% OTM (41.27%) not ATM (15.57%); OI peaks 2–5% out. ATM ±2% = 80.42% of volume, ±5% = 95.02% — `L5.21d`
+- [ ] **3.53f** Recompute observation tiers from a trailing window, never a single session — `r/201` §5
+- [ ] **3.53g** ⚠️ Verify MCX liquidity against real MCX data before that holon arms — inferred, not measured — `r/201` §5
 - [ ] **3.54** Full-universe opportunity radar — `L5.22`
 - [ ] **3.55** Setup/condition library — `L5.23`
 - [ ] **3.56** Signal decay TTL — `L5.24`
