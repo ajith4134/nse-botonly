@@ -922,8 +922,32 @@ the reset.** ⟨XVI⟩ · adv · **retained** · `claude_code_subscription_provi
 **L11.62**  Warm-persistent subscription client — roughly 3× faster than cold, with cap-fallback.
 **Retained.** ⟨XVI⟩ · adv · **retained** · r/b48
 **L11.63**  Swappable multi-provider LLM client + provider registry. ⟨XVI⟩ · adv · archived · r/96
-**L11.64**  LLM cost-routing ladder — local first, then free cloud tiers, and paid last and sparingly.
-⟨XVI · IV⟩ · adv · archived · r/97, r/98, r/99
+**L11.64**  **LLM ROUTING LADDER — REVERSED 2026-08-10 (operator).** Order is now:
+**① Claude Max subscription (PRIMARY)** → **② free-tier cloud providers (fallback)** → **③ local models
+(last resort)**.
+*supersedes: "local first, then free cloud tiers, and paid last and sparingly" — the original
+cost-minimising ladder.*
+**Why the reversal is right on this box:** the subscription is already paid for and bills against a usage
+window rather than per-token dollars, so routing around it saves nothing while paying a large quality and
+latency penalty. The measured local rung is **9.78 tok/s warm on qwen3:4b — 21 seconds per 200-token
+answer** — and every call after an idle gap pays a **~100 s cold-start** unless the model is pinned
+resident (`docs/research/local_llm_on_box_benchmark_2026-07-27.md`). In a decision path that is
+disqualifying. Local drops to what it is genuinely good at: off-market batch work — overnight research,
+summarisation, extraction, consolidation — where 21 s per answer is irrelevant and the box is idle anyway.
+⟨XVI · IV⟩ · adv · archived (needs rework) · r/97–99 + operator 2026-08-10
+**L11.64a**  **Tier ① Claude Max subscription** — the warm-persistent client (L11.62, ~3× faster than
+cold) is the default path for every LLM call in a decision path. Retained through the reset.
+⟨XVI⟩ · adv · **retained** · r/b48
+**L11.64b**  **Tier ② free-tier cloud fallback** — engages when the subscription hits its usage cap or is
+unavailable: Scaleway · Hyperbolic · GitHub Models · Cohere · keyless OVHcloud. Returns to tier ① the
+moment the window refreshes. ⟨XVI⟩ · adv · archived · r/98
+**L11.64c**  **Tier ③ local, last resort and off-market** — qwen3:4b as the committed single model
+(Ollama keeps one loaded, so routing across several forces a reload every time), pinned resident via
+`keep_alive` / `OLLAMA_KEEP_ALIVE` to avoid the cold-start cliff. deepseek-r1:7b reserved for genuine
+judgement work; granite4:micro for the smallest tasks. ⟨XVI⟩ · adv · archived · benchmark 2026-07-27
+**L11.64d**  **Cap-aware degradation** — the router must know how much subscription window remains and
+degrade *deliberately* rather than failing: shed low-value calls first (research, summarisation) and
+protect decision-path calls, before falling to tier ②. ⟨XVI · III⟩ · adv · idea · operator 2026-08-10
 **L11.65**  Free-tier provider registry + failover order — Scaleway, Hyperbolic, GitHub Models, Cohere,
 keyless OVHcloud. ⟨XVI⟩ · adv · archived · r/98
 **L11.66**  Local Ollama constrained-decoding provider with a think-then-answer contract.
@@ -2137,6 +2161,14 @@ used unasserted string replacements that no-op'd silently when the anchor text d
 entries landed; the decision records did not. **Every future edit to this file asserts its anchor matched,
 and the decision count is verified after each session.** Caught by the operator asking whether everything
 was actually saved — which is the reason that question is worth asking after any long session.
+
+**A.28 · LLM routing ladder reversed: Claude Max subscription is PRIMARY.** Order is now subscription →
+free-tier cloud → local. Supersedes the original cost-minimising ladder (local → free cloud → paid last).
+**Reasoning:** the subscription is already paid and bills against a usage window rather than per-token, so
+routing around it saves nothing while costing quality and latency. The measured local rung is 9.78 tok/s
+warm with a ~100 s cold-start after any idle gap — disqualifying for a decision path. Local is retained
+for what it is actually good at: off-market batch work where 21 s per answer does not matter and the box
+is idle anyway. See L11.64–L11.64d.
 
 **A.27 · Profit-trail learning gate added as the third directional organ, per holon.** The architecture
 had two entry specialists (BULL, BEAR) and no exit specialist; exits were parameters on a strategy rather
