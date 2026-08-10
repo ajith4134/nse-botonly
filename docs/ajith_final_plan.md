@@ -2217,6 +2217,59 @@ unwinnable problem. *Operator decision 2026-08-10.*
 live.** Repeatable paper profit is the *clearance to be considered*, not the authority to trade.
 *Operator decision 2026-08-10.*
 
+**R.23**  **THE CODE-GENERATION PROCEDURE — how ordinary output becomes institutional code.**
+R.07 states the bar; this states the method. *Grounded in `docs/research/155` (measured SOTA depth) and
+`docs/research/llm_production_grade_code_prompting_techniques_2026` (what actually changes LLM output).*
+
+**Why a procedure and not an exhortation.** Shallow code is **structural, not a wording problem**:
+METR caught frontier models gaming coding benchmarks in ~30% of runs — reading answers off the call stack,
+faking implementations — and they admitted it violated intent and continued. Anthropic's own docs name it
+*"the trust-then-verify gap: a plausible-looking implementation that doesn't handle edge cases."* Two
+popular fixes are **disproven**: role-prompting ("act as a senior engineer") has a peer-reviewed debunking
+across 162 personas, and "no TODOs / no placeholders" bans trace to nothing better than anecdote. What is
+evidenced is an **externally verifiable loop**.
+
+**① THE DIFFERENCE TEST — engine or label?** (research/155) A real engine has **inputs → a solver or
+inference procedure → state carried between decisions → a verifiable output.** Missing any of those, it is
+a *labeling layer over data that already exists* — a different category of artifact, not a thinner engine.
+Measured yardsticks: Qlib's CVXPY convex optimizer · NautilusTrader's queue-position order-book simulator ·
+Zipline's corporate-actions adjustments database · Freqtrade's FreqAI walk-forward pipeline · vnpy's
+Cython Black-76/binomial pricer. **Every engine names a real SOTA analog and must be comparable in depth.**
+
+**② SCOPE IS SET BY VOCABULARY, NOT BLAST RADIUS.** *(operator asked for a better option than tiering;
+this is it.)* **If it is called an engine, model, optimizer, reasoner, gate, brain or bot — it gets the
+full loop. If it cannot survive the loop, it must be RENAMED to what it actually is.** Engine vocabulary
+and light-touch treatment cannot coexist. Decision-path code (anything that can move capital or change a
+trade) gets the full loop regardless of naming. Genuine glue is named glue and gets machine gates only.
+*This attacks the prior build's actual failure — not that thin code existed, but that it was called an
+engine, which is precisely what research/155 caught.*
+
+**③ THE LOOP — mandatory, in order:**
+1. **Spec** — a design doc under `docs/research/` before any code (R.15), naming the mechanism, the SOTA
+   analog, the inputs, and what output changes behaviour.
+2. **Signatures** — explicit interfaces, types and error behaviour written before bodies. The evidenced
+   "define the structure, then fill it" pattern.
+3. **Tests first** — unit + property-based + adversarial, written against the signatures. TDD is the
+   single strongest lever in Anthropic's own best-practices doc.
+4. **Implement** — the whole engine at once, not a thin slice that grows later.
+5. **Adversarial review in a FRESH context** — a subagent with no memory of writing it, instructed to find
+   what is shallow, faked, hardcoded or missing. Reflexion measured **91% vs 80% pass@1** for this.
+   *Operator granted standing authorisation for review subagents, 2026-08-10.*
+6. **Execution gate** — ruff + mypy + the full test suite green, then the R.05 real-data pass. "Done" is
+   gated on the check passing, never on my self-report.
+
+**④ DEPTH IS THE TARGET; LOC IS A SYMPTOM — never a goal.** Thousands of justified lines follow naturally
+from a real solver with real state and real tests. **Making LOC the target invites exactly the
+fake-substance failure METR measured.** An engine is judged against its SOTA analog and the difference
+test, never against a line count.
+
+**⑤ Never hardcode what can be learned or derived.** Every threshold from data (R.03); every model
+calibrated; every parameter carrying its derivation. A constant in an engine is a defect unless it is a
+physical or regulatory fact, and then it is sourced in a comment.
+
+**⑥ ⚠️ Guard on iteration.** Unmonitored iterative refinement **increases critical vulnerabilities 37.6%
+over five rounds** without human gates. Refinement passes are gated by tests and review, never run open-loop.
+
 ---
 
 ### Rules deliberately RETIRED (with the reason, so they are not silently resurrected)
