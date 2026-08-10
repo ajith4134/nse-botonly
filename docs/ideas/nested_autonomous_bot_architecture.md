@@ -311,3 +311,55 @@ This is a **② SUPERIOR VERSION** verdict against the organizing principle, not
 5. **How many bots at launch** — the full nine segments, or one holon proven end-to-end first?
 6. **Does the org-designer bot ever run unsupervised?** A system that can spawn and retire its own
    agents is the single largest autonomy grant in this whole plan.
+
+---
+
+## 9. The CONDUCTOR bot — hardware as a governed resource (operator, 2026-08-10)
+
+**Operator's words:** *"the hardware problem on 5 cores and 28 GB — bake it so that the bots are run when
+they are necessary, and if they are not, the bot will be idle, using the hardware like a shared space; a
+bot on top of all the bots controls when to run these bots and when to stop and give space to other bots."*
+
+**Verdict: ② SUPERIOR VERSION of `L14.11`**, which existed as a passive budget. This upgrades it into an
+autonomous **resource governor** — the single owner of CPU, RAM, model-cache space, API-call budget and
+the broker rate-limit budget, deciding admission, suspension and eviction across the population.
+
+### Why this is the correct instinct, not a workaround
+
+Nothing about "58 bots" implies 58 processes resident at once. Bots are mostly **event-driven**: a
+premium-seller is meaningless outside a flat regime, an expiry specialist matters on one day in five, an
+MCX bot is irrelevant during NSE hours, and research bots want the box precisely when trading bots do not.
+The population's *logical* size and its *physical* footprint are different numbers, and the conductor is
+what separates them. This is the standard answer — an OS scheduler, a Kubernetes control plane and a
+thread pool all exist for the same reason.
+
+### The mechanisms (each an L14.11x entry)
+
+| Mechanism | Why it is needed |
+|---|---|
+| **Residency states** COLD → WARM → HOT | waking from warm is cheap, from cold is not; the conductor picks each idle bot's resting tier |
+| **Model cache + LRU eviction** | the real memory cost is *models*, not bots — LightGBM is megabytes, Kronos is not; models load lazily and evict independently of their bot |
+| **Admission control** | refusing to start a bot you cannot afford beats starting it and thrashing |
+| **Priority classes** pinned / elastic / opportunistic | risk, cost, compliance, execution and the kill-switch watchdog **never sleep**; a dormant risk bot is a catastrophe |
+| **Event-triggered wake** | regime, calendar and feed events are *wake sources*, not merely filters |
+| **Minimum residency + hysteresis** | without it the conductor thrashes — all time loading, none deciding |
+| **Deadline awareness** | signals decay in minutes; a bot that cannot wake in time to act should not be woken |
+| **cgroups v2 enforcement** | kernel-enforced CPU shares and memory ceilings — a budget bots honour voluntarily is not a budget |
+| **Shared-space substrate** | one evidence store, one model cache, one instrument master, one memory — mapped, not copied per bot |
+| **Rate-limit arbitration** | prevents priority inversion where an opportunistic bot holds broker budget a pinned bot needs |
+| **Fail-safe semantics** | the conductor is a single point of failure over everything: if it dies, pinned bots continue on their last grant, nothing new is admitted, and it may **never** suspend the kill switch |
+| **Off-hours reallocation** | perception, research, training and replay own the box outside 09:15–15:30 IST; segment and execution bots own it inside |
+
+### The two failure modes to design against
+
+1. **Thrashing** — swapping bots faster than they can do useful work. Guarded by minimum residency,
+   hysteresis and admission control.
+2. **Sleeping something vital** — the conductor suspending a safety bot to make room. Guarded structurally
+   by the pinned class, which is not a priority number but a hard category the conductor cannot touch.
+
+### Scope decision recorded the same day
+
+**Futures and commodities: IN, but last and optional** — built only after the rest of the project is
+complete, and only if still wanted then. MCX in particular is closer to a **second organism** than a tenth
+holon: different exchange, hours to 23:30 IST, own margin regime and own holiday calendar. Treating it as
+"just another segment bot" would understate it.

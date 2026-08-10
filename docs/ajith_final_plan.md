@@ -1031,9 +1031,50 @@ over advisory signals into the coordination substrate of a bot population. ⟨VI
 without it. ⟨IV · VI⟩ · base · idea · §2 Tier D
 **L14.10**  Portfolio-level risk above all bots — nine bots each inside their own limit can breach the
 portfolio limit together. Correlated-risk aggregation is mandatory, not optional. ⟨VII⟩ · base · idea · §4
-**L14.11**  Bot compute scheduler + budget — 5 cores and 28 GB will not host 30+ bots each with its own
-model. Bots hold compute, API-call and risk budgets they can exhaust; most stay dormant until their regime
-appears. ⟨III WILL · IV⟩ · base · idea · §8
+**L14.11**  **CONDUCTOR BOT — the resource governor over the whole population.** One bot above all bots
+that decides who runs, who sleeps and who is evicted, and hands the freed hardware to whoever needs it.
+5 cores and 28 GB cannot host 58 bots simultaneously, so residency is a *scarce resource the conductor
+allocates* rather than something each bot assumes. It is the single owner of CPU, RAM, model-cache space,
+API-call budget and the broker rate-limit budget.
+⟨III WILL · IV BODY · X⟩ · base · idea · `nested_autonomous_bot_architecture` §9
+*supersedes: "bot compute scheduler + budget — bots hold budgets they can exhaust; most stay dormant until
+their regime appears" — upgraded 2026-08-10 from a passive budget to an autonomous governor.*
+**L14.11a**  Bot residency states — `COLD` (not loaded, state on disk) → `WARM` (state in RAM, model
+unloaded) → `HOT` (running). Waking is cheap from warm, expensive from cold; the conductor chooses which
+tier each idle bot rests in. ⟨IV⟩ · base · idea · §9
+**L14.11b**  Model cache with LRU eviction — the real memory cost is *models*, not bots. A LightGBM model
+is a few MB; a Kronos transformer is not. Models load lazily on wake and are evicted by least-recent-use
+when the cache is full, independently of whether their bot is warm. ⟨IV⟩ · base · idea · §9
+**L14.11c**  Admission control — the conductor refuses to start a bot whose resource claim it cannot meet,
+rather than starting it and thrashing. ⟨IV⟩ · base · idea · §9
+**L14.11d**  Priority classes + preemption — **pinned** (risk, cost, compliance, execution, kill-switch
+watchdog: never sleep, never preempted — a dormant risk bot is a catastrophe), **elastic** (segment and
+decision bots: run when their regime or segment is live), **opportunistic** (research, scout, breeder,
+historian: fill idle capacity, first to be evicted). ⟨VII · III⟩ · base · idea · §9
+**L14.11e**  Event-triggered wake — bots sleep until their trigger fires: a premium-seller wakes on a flat
+regime, an expiry bot on expiry day, a news bot on a feed event, an MCX bot on MCX hours. Regime and
+calendar are wake sources, not just filters. ⟨II · III⟩ · adv · idea · §9
+**L14.11f**  Minimum residency + hysteresis — a bot that just woke cannot be evicted immediately.
+Without this the conductor thrashes: all time spent loading and unloading, none spent deciding.
+⟨IV⟩ · base · idea · §9
+**L14.11g**  Deadline awareness — trading decisions have hard deadlines because signals decay in minutes.
+Scheduling here is closer to real-time deadline scheduling than to fair-share; a bot that cannot be woken
+in time to act should not be woken at all. ⟨III⟩ · adv · idea · §9
+**L14.11h**  cgroups v2 enforcement — CPU shares and memory ceilings enforced by the kernel, so a
+misbehaving bot cannot starve the pinned ones. Advisory budgets that bots honour voluntarily are not
+budgets. ⟨IV · VII⟩ · adv · idea · §9
+**L14.11i**  Shared-space substrate — one evidence store, one model cache, one instrument master, one
+memory, mapped rather than copied per bot. The counterpart to L14.03: bots share *space*, not just
+*acquisition*. ⟨XV · XVI⟩ · base · idea · §9
+**L14.11j**  Rate-limit budget arbitration — the broker's 10 orders/sec and 400/min are a shared scarce
+resource; the conductor prevents priority inversion where an opportunistic bot holds budget a pinned bot
+needs. ⟨VII · IV⟩ · adv · idea · §9
+**L14.11k**  Conductor failure semantics — the conductor is a single point of failure over the whole
+population, so it must **fail safe**: if it dies, pinned bots keep running on their last grant and no new
+bot is admitted. It is never permitted to suspend the kill switch. ⟨VII⟩ · base · idea · §9
+**L14.11l**  Overnight / off-hours reallocation — the population's shape changes by clock: perception,
+research, training and replay bots own the box outside 09:15–15:30 IST; segment and execution bots own it
+inside. ⟨IV · XII⟩ · adv · idea · §9
 **L14.12**  Bot track record + defunding — each bot scored on realized outcomes; capital and compute follow
 the record. No bot self-grades. ⟨XIII⟩ · adv · idea · §5
 **L14.13**  Disagreement-as-uncertainty — inter-bot disagreement shrinks position size rather than
@@ -1049,11 +1090,14 @@ breeder bot and the red-team bot. ⟨XI⟩ · ultra · idea · §6
 
 ### L14 · the bot roster (what becomes a bot)
 
-**L14.17**  **Segment holons (9):** cash-intraday **[exists]** · index-options **[exists]** ·
-stock-options **[exists]** · index-futures **[scope change]** · stock-futures **[scope change]** ·
-commodity/MCX **[scope change, different exchange]** · currency-derivatives · BSE index-options (the only
-weekly expiry outside NIFTY) · ETF. Plus flagged-for-decision: cash-delivery/multi-day (**would violate
-the intraday-only rule**), SME/illiquid, pre-open auction, expiry-day specialist.
+**L14.17**  **Segment holons.** **Core set (in scope now):** cash-intraday **[exists]** ·
+index-options **[exists]** · stock-options **[exists]** · currency-derivatives · BSE index-options (the
+only weekly expiry outside NIFTY) · ETF.
+**Deferred-optional set (operator decision 2026-08-10 — build only AFTER the whole project is complete,
+and only if wanted then):** index-futures · stock-futures · **commodity / MCX** (⚠️ a different exchange:
+own hours to 23:30 IST, own margin regime, own holiday calendar — closer to a second organism than a
+tenth holon). Still flagged for decision: cash-delivery/multi-day (**would violate the intraday-only
+non-negotiable**), SME/illiquid, pre-open auction, expiry-day specialist.
 ⟨III⟩ · base→ultra · idea · §2 Tier A
 **L14.18**  **Perception bots (15):** news-research · corporate-filings · expert/analyst-call ·
 tipster/social · global-markets · macro · flow (FII/DII, participant OI) · options-surface ·
@@ -1278,6 +1322,14 @@ universe via multi-key sharding?
 **Q.10**  Stock-option premium selling — confirm the default-OFF policy or override it?
 **Q.11**  Bank Nifty (monthly-only) — premium-seller in the final expiry week, or directional/hedged only?
 **Q.12**  Which ultra-tier items are genuinely wanted rather than nice-to-have?
+
+## Decisions made (2026-08-10)
+
+**A.01**  **Futures and commodities: IN, but last and optional.** Built only after the rest of the project
+is complete, and only if still wanted then. MCX is treated as a near-separate organism, not a tenth holon.
+**A.02**  **Hardware contention: solved by the conductor bot (L14.11).** Bots do not assume residency;
+they are woken when needed and suspended when not, and the hardware is a shared space the conductor
+allocates. Idle bots rest cold or warm rather than occupying RAM.
 
 ## Hard blockers carried forward
 
