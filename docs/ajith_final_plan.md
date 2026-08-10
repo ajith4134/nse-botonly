@@ -429,8 +429,11 @@ not a standalone scalper. ⟨II · XII⟩ · adv · spec · `full_universe_oppor
 ⟨II⟩ · adv · spec · radar §7-setups
 **L5.24**  Signal decay TTL — every signal carries a per-type half-life and is *dropped* when stale rather
 than queued. ⟨III⟩ · adv · spec · radar §7-selection
-**L5.25**  Three segment-specialist bots — cash-intraday, index-option, stock-option — plus a portfolio
-supervisor above them. ⟨VI · III⟩ · adv · archived · `three_segment_bots_spec_2026-08-03`
+**L5.25**  Segment holons — nine autonomous segment bots, each owning its strategies, relevance models,
+risk sub-limits, memory and track record, under a portfolio supervisor. ⟨VI · III⟩ · adv · archived (3 of 9) ·
+`three_segment_bots_spec_2026-08-03` + L14.17
+*supersedes: "three segment-specialist bots (cash-intraday, index-option, stock-option) plus a portfolio
+supervisor" — upgraded 2026-08-10 to nine holons under the L14 organism architecture.*
 **L5.26**  Cash-intraday bot. ⟨III⟩ · adv · archived · `cash_intraday_bot`
 **L5.27**  Index-option bot. ⟨III⟩ · adv · archived · `index_option_bot_engine_spec_2026-08-03`
 **L5.28**  Stock-option bot. ⟨III⟩ · adv · archived · `stock_option_bot`
@@ -739,6 +742,10 @@ persisted → Kelly entry sizing. Archived CV AUC 0.844, beating baseline. ⟨I 
 
 ### L11c · Perception organs
 
+*⚠️ Superseded in form by **L14.18**: every organ below becomes an autonomous perception **bot** under the
+shared-acquisition / owned-interpretation rule (L14.03). The capability list stays valid; the packaging
+changes from passive feature to autonomous agent.*
+
 **L11.19**  Kronos candlestick foundation model — Tsinghua, AAAI-2026, MIT-licensed. Feed 400 candles,
 predict 120. Run Monte-Carlo to get a *distribution*, then BULL reads the up-tail and BEAR the down-tail
 from the same model. Must be NSE-finetuned; must beat the LightGBM baseline; never traded raw.
@@ -991,6 +998,80 @@ idea · `conversational_assistant_chat_interface`
 ⟨VI⟩ · adv · archived · r/b25c
 **L13.28**  Screenshot-verify loop — every dashboard change is visually confirmed before sign-off.
 ⟨V⟩ · adv · archived · `screenshot_dashboard.py`
+
+## L14 · ORGANISM — the architecture of the agents themselves
+
+*Added 2026-08-10 by operator idea (verdict ② superior version). None of L0–L13 holds "how the agents are
+organised", which is why this layer had to be opened. Full expansion:
+`docs/ideas/nested_autonomous_bot_architecture.md`.*
+
+**L14.01**  Bot anatomy contract — the nine-part test that separates a bot from a feature: own goal · own
+data pipeline · own model and carried state · own memory · own lifecycle · own evaluation · own budget ·
+published typed contract · own autonomy level. Anything short of all nine is a *capability a bot uses*,
+not a bot. Without this test, "make it a bot" degrades into renaming functions.
+⟨V SELF · X AUTOPOIESIS⟩ · base · idea · `nested_autonomous_bot_architecture` §3
+**L14.02**  Holonic nesting topology — three levels and no more: organism → segment holon → strategy bot.
+A holon is a complete whole from below and a component from above. Deeper nesting buys nothing and costs
+coordination. ⟨VI SOCIETY⟩ · base · idea · §4
+**L14.03**  **Shared-acquisition / owned-interpretation rule** — the load-bearing boundary. Data is
+acquired **once**, into a shared point-in-time evidence store; every bot then runs **its own** relevance,
+weighting and reaction model over it. Prevents N duplicate crawlers, N× cost, N× ban exposure and — the
+real danger — N mutually contradictory world-states acting in the same second. ⟨XVI · XV⟩ · base · idea · §4
+**L14.04**  Inter-bot protocol — the typed contract bots publish and consume. Internals stay private.
+⟨VI⟩ · base · idea · §3
+**L14.05**  Autonomy ladder — every bot starts **advisory** and earns `gated`, then `armed`, on measured
+track record. Autonomy is never granted by declaration. ⟨VII · V⟩ · base · idea · §5
+**L14.06**  Bot lifecycle manager — spawn, health-check, degrade, repair, quarantine, retire. Reuses the
+archived X AUTOPOIESIS machinery, repointed from components to bots. ⟨X⟩ · adv · idea · §1
+**L14.07**  Global workspace as the inter-bot bus — the archived VIII trunk repurposed from an integrator
+over advisory signals into the coordination substrate of a bot population. ⟨VIII⟩ · adv · idea · §1
+**L14.08**  Referee over bot actions — VII CONSCIENCE repointed from one loop to N autonomous agents.
+⟨VII⟩ · adv · idea · §1
+**L14.09**  Cross-bot netting + self-trade prevention — nine segment holons can trade against each other
+without it. ⟨IV · VI⟩ · base · idea · §2 Tier D
+**L14.10**  Portfolio-level risk above all bots — nine bots each inside their own limit can breach the
+portfolio limit together. Correlated-risk aggregation is mandatory, not optional. ⟨VII⟩ · base · idea · §4
+**L14.11**  Bot compute scheduler + budget — 5 cores and 28 GB will not host 30+ bots each with its own
+model. Bots hold compute, API-call and risk budgets they can exhaust; most stay dormant until their regime
+appears. ⟨III WILL · IV⟩ · base · idea · §8
+**L14.12**  Bot track record + defunding — each bot scored on realized outcomes; capital and compute follow
+the record. No bot self-grades. ⟨XIII⟩ · adv · idea · §5
+**L14.13**  Disagreement-as-uncertainty — inter-bot disagreement shrinks position size rather than
+electing a winner. The explicit guard against the disproved committee pattern (D.13).
+⟨XIII · VI⟩ · adv · idea · §5
+**L14.14**  Org-designer bot (bot-of-bots) — decides which bots should exist: spawns a specialist for an
+unexploited niche, merges converged bots, retires decayed ones, splits bimodal ones. **The single largest
+autonomy grant in this plan.** ⟨V SELF⟩ · ultra · idea · §6
+**L14.15**  Historian bot + fossil record — every bot that ever lived and why it died, so extinct mistakes
+cannot recur. ⟨XI · XV⟩ · ultra · idea · §6
+**L14.16**  Population dynamics — quality-diversity archive, speciation, red-queen coevolution between the
+breeder bot and the red-team bot. ⟨XI⟩ · ultra · idea · §6
+
+### L14 · the bot roster (what becomes a bot)
+
+**L14.17**  **Segment holons (9):** cash-intraday **[exists]** · index-options **[exists]** ·
+stock-options **[exists]** · index-futures **[scope change]** · stock-futures **[scope change]** ·
+commodity/MCX **[scope change, different exchange]** · currency-derivatives · BSE index-options (the only
+weekly expiry outside NIFTY) · ETF. Plus flagged-for-decision: cash-delivery/multi-day (**would violate
+the intraday-only rule**), SME/illiquid, pre-open auction, expiry-day specialist.
+⟨III⟩ · base→ultra · idea · §2 Tier A
+**L14.18**  **Perception bots (15):** news-research · corporate-filings · expert/analyst-call ·
+tipster/social · global-markets · macro · flow (FII/DII, participant OI) · options-surface ·
+microstructure · sector-rotation · universe/instrument-master · calendar · concall-transcript ·
+regulatory-watch (reads the SEBI circulars that change its own rulebook) · alt-data.
+⟨II SENSES · XVI⟩ · base→ultra · idea · §2 Tier B
+**L14.19**  **Decision bots (13):** BULL · BEAR **[exist]** · deterministic arbiter · regime · trend ·
+mean-reversion · breakout · premium-seller · volatility · structure-inventor · radar · dispersion ·
+stat-arb · event · pairs · market-maker. Instantiated **per segment holon**, not globally.
+⟨I MIND · III⟩ · base→ultra · idea · §2 Tier C
+**L14.20**  **Survival bots (8):** risk · cost · execution · reconciliation · margin · compliance ·
+kill-switch watchdog (**a separate process — a watchdog inside the thing it watches is not a watchdog**) ·
+netting. ⟨VII · IV⟩ · base · idea · §2 Tier D
+**L14.21**  **Meta bots (13):** gatekeeper/validation · treasurer/allocator · librarian/memory · coroner
+(post-mortem) · red-team · referee/auditor · medic · teacher/curriculum · scout (hunts new data sources
+and OSS) · spokesperson (the chat interface) · breeder/evolution · org-designer · historian.
+⟨V · VII · X · XI · XII⟩ · adv→ultra · idea · §2 Tier E
+
 
 ---
 
