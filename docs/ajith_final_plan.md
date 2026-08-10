@@ -1894,6 +1894,15 @@ freshly verified (the research budget was exhausted mid-pass).
 **B.09**  **Environment**: system Python is 3.9 and the venv is gone. Kronos, DeepLOB, current
 LightGBM/PyTorch on ARM64 need a newer interpreter. 20 GB free disk, with 21 GB held by ollama.
 
+**B.10**  **⚠️ SECURITY — the GitHub PAT pasted into the 2026-08-10 session transcript is still live and
+must be revoked** at github.com/settings/tokens, with a fresh one issued via `gh auth login` so it never
+enters a transcript again. Outstanding as of the end of that session.
+
+**B.11**  **Open decisions deferred, not resolved:** the todo sequencing question (what is built first) was
+deliberately deferred until this catalog was complete — it is now answerable. Later-tier segment holons
+(currency derivatives, BSE index options, ETF, SME, pre-open auction, expiry-day specialist) remain
+catalogued but unscheduled.
+
 ## Standing rules that governed all prior work
 
 **R.01**  **Intraday by default; overnight carry only by explicit promotion — AMENDED 2026-08-10.**
@@ -1923,6 +1932,14 @@ ladders, all ~210 stock-option underlyings.
 **R.10**  Three segments equal by default; priority order only as a constrained tie-break.
 **R.11**  No silent skips — every deferral recorded, surfaced at sign-off, and cleared before unrelated
 work begins.
+
+**R.12**  **"Example" and "etc" are direction pointers, never complete lists — standing operator
+instruction.** When the operator gives one or two examples, they mark the *location* of a category, not
+its boundary. The required response is to enumerate the full space that the examples point at, across the
+entire project, including the items an expert knows exist and the operator has not seen. Stated explicitly
+by the operator on 2026-08-10 and applied throughout this session — it is why "news research bot" became
+15 perception bots, why "cash, options, futures, commodities" became six holons plus a later-tier list,
+and why "more instructions" became a ~110-entry library.
 
 ## Recommendations adopted (operator: "I follow your recommendation on all the above", 2026-08-10)
 
@@ -2029,6 +2046,39 @@ used unasserted string replacements that no-op'd silently when the anchor text d
 entries landed; the decision records did not. **Every future edit to this file asserts its anchor matched,
 and the decision count is verified after each session.** Caught by the operator asking whether everything
 was actually saved — which is the reason that question is worth asking after any long session.
+
+**A.23 · The foundational answers (interview round 1, 2026-08-10).** These govern everything above and
+were previously recorded only in `INTERVIEW_RECORD_ajith_final_plan.md`:
+- **Definition of success:** *everything ultra-advanced across all three axes at once* — research,
+  intelligence **and** profit. Not money-first-then-intelligence, and not intelligence as the only goal.
+  Proven on **paper trading first**; live money only once **both** the profits and the intelligence are
+  consistent.
+- **Capital is a PARAMETER, never an assumption — the system must work from ₹1 lakh to ₹1 crore.**
+  Sizing, cost floors, strategy eligibility, margin logic and the expression selector all adapt to
+  whatever capital is configured. Starts on paper capital. This is why nothing may hardcode a rupee
+  threshold (R.03).
+- **Autonomy:** fully autonomous within hard limits — defined-risk caps, kill switch, max-daily-loss —
+  supervised through the dashboard rather than by per-trade approval.
+- **Operator availability:** heavily involved, all day. Tight per-slice interaction is possible, so the
+  plan need not assume an absent operator — though the system still runs unattended during market hours,
+  and the MCX session to 23:30 IST means it must (see L14.14f).
+
+**A.24 · This file is a CATALOG, not a build plan.** Its purpose is to hold every feature, idea, design
+and finding this project has produced, in dependency order, so nothing is lost and `ajith_final_todo.md`
+can be generated from one place. It deliberately preserves unresolved tensions — notably REDESIGN_v1's
+depth-first inversion against the 197-branch atlas — rather than settling them. Which one leads is a
+sequencing decision for the todo file.
+
+**A.25 · Broker scope: Kite for execution, multi-broker for data.** Zerodha Kite is the single execution
+path; the data layer stays swappable across Kite / Upstox / Angel One / Breeze for redundancy and gap-fill.
+Preserves the Kite-decoupled architecture guard (L3.28): nothing outside the broker seam imports
+`kiteconnect`, so the dashboard and every non-trading feature run broker-independent.
+
+**A.26 · The three survivors of the reset.** Everything else was archived and deleted; these were kept
+live on the server and are the seed the rebuild starts from: the **hands-off Kite TOTP auto-login**
+(L3.10–L3.12), the **Claude Max subscription LLM provider** and its warm-persistent client
+(L11.61–L11.62), and the **3,481 closed trades** in `experience_memory.sqlite3` (L11.48) — plus
+`market_data.sqlite3` (659,990 bars, 1,436,568 F&O rows) retained as expensive-to-rebuild real data.
 
 
 ---
