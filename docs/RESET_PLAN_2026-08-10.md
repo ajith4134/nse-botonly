@@ -3,8 +3,48 @@
 Full-server archive to GitHub, then destructive reset down to docs + three survivors,
 then interview → `ajith_final_plan.md` + `ajith_final_todo.md` → fresh rebuild.
 
-**Status: BLOCKED at Phase 1 — no GitHub credentials on this host.**
-Nothing is deleted until Phase 3, and Phase 3 does not start until Phase 2 verification passes.
+**Status: Phases 1–3 COMPLETE (2026-08-10 12:10 IST). Phase 4 (interview) is next.**
+
+## Execution record
+
+**Archive:** `github.com/ajith4134/nse-algo-trader-archive-2026-08-10` (private).
+139 commits. Pre-reset snapshot commit `f5bc843` (999 tracked files); runtime state added in
+`223305c` and `927e145`; reset recorded locally as `9535af0`.
+
+**Verification gate (all passed before any deletion):**
+
+| Check | Result |
+|---|---|
+| Tree SHA local vs. fresh clone | `526a0969…` both sides — identical |
+| Tracked file count | 999 / 999, zero blob diff |
+| SQLite integrity + row counts, 12 databases | 12 ok, 0 failed |
+| Release asset SHA256 | `sha256sum -c` → OK |
+| Market data after decompression | integrity ok, 659,990 bars + 1,436,568 F&O rows |
+| `segment_bot_pod` (393 files) | byte-identical; 6 unmatched entries confirmed empty dirs |
+
+**Two corrections to the pre-execution survey.** The "418 `.md` files" figure counted 138
+markdown files inside `.venv` (third-party library docs); the real total is **280**. And
+`/home/opc/.nse_algo_trader/segment_bot_pod/` — 393 files, 32 MB, holding per-underlying
+vol-regime / IV-rank / VRP state, pod open positions and trained `bull_bear_models.joblib`
+artifacts — was missed by the first staging pass, which only walked top-level files. It was
+caught before deletion, archived in `927e145`, and verified byte-identical.
+
+**Deleted:** 6.7 GB `.venv`, 354 `src/` modules, 262 test files, 74 scripts, `logs/`,
+`experiments/`, `deploy/`'s unit file, all caches, `pyproject.toml`, and 11 of 13 runtime
+databases. Disk went 50 G → 44 G used.
+
+**Survives:** 281 files tracked, 280 of them `.md` (plus `.gitignore`); `/home/opc/RESET_KEEP/`
+(15 files); `experience_memory.sqlite3` (3,481 closed trades, WAL checkpointed,
+`integrity_check=ok`); `market_data.sqlite3` (327 MB). `nse-dashboard.service` stopped and
+disabled.
+
+**Open items.** `/home/opc/ollama` holds 21 GB of downloaded local models — untouched, since
+it backs the local-first tier of the LLM cost ladder rather than being project code. The
+`.git` directory (44 MB) is retained, so every deleted file is also recoverable locally; delete
+it only if a truly bare slate is wanted. The GitHub PAT pasted into the session transcript
+still needs revoking.
+
+---
 
 ---
 
