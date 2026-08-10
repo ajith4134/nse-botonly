@@ -1246,6 +1246,113 @@ and OSS) · spokesperson (the chat interface) · breeder/evolution · org-design
 ⟨V · VII · X · XI · XII⟩ · adv→ultra · idea · §2 Tier E
 
 
+### L14 · THE VERIFIED BOT REGISTER — what actually qualifies (audit 2026-08-10)
+
+*Every one of the 567 catalog entries was tested against the nine-part anatomy contract (L14.01). The audit
+produced a distinction that was not in the architecture before and that changes it: **not everything that
+needs its own process is an agent.** Three classes, and the boundary between the first two is safety-
+critical.*
+
+**L14.22**  **CLASS A — AGENT BOTS (46 types).** Pass all nine, including the sharpest test: **a track
+record they can be scored on and defunded for.** These learn, compete for capital and compute, and can be
+retired by the org-designer. The discriminator is falsifiability — a news bot's sources are provably right
+or wrong over time; a premium-seller's edge decays measurably.
+⟨V · VI⟩ · base · idea · audit 2026-08-10
+
+- **Segment holons (6):** cash-intraday · index-options · stock-options · index-futures · stock-futures ·
+  commodities-MCX.
+- **Perception agents (13):** news-research · corporate-filings · analyst-call · tipster-social ·
+  global-markets · macro · flow · options-surface · microstructure · sector-rotation · concall-transcript ·
+  regulatory-watch · alt-data.
+- **Decision agents (17 types):** BULL · BEAR · regime · trend · mean-reversion · breakout ·
+  premium-seller · volatility · structure-inventor · radar · dispersion · stat-arb · event-driven · pairs ·
+  market-maker · basis-and-calendar-roll · next-day-carry-forecaster.
+- **Meta agents (10):** treasurer · teacher-curriculum · scout · breeder · org-designer · red-team ·
+  coroner · spokesperson · historian · medic.
+
+**L14.23**  **CLASS B — SERVICE BOTS (15).** Own process, lifecycle, budget and published contract — but
+**deterministic by design, and they must never learn.** They pass seven of the nine tests and fail the
+other two *deliberately*. This is the finding that matters most in the audit: **making any of these
+adaptive would be a safety bug, not an upgrade.** A risk gate that learns can be taught to permit; a
+validation gatekeeper that adapts can be gamed by the very strategies it is judging; a referee that
+negotiates is not a referee. Their correctness comes from being predictable, not from being clever.
+
+risk-gate · cost-engine · **validation-gatekeeper** · execution · reconciliation · margin · compliance ·
+kill-switch-watchdog · netting · referee-auditor · **conductor** · librarian-memory ·
+universe-instrument-master · calendar · clock.
+⟨VII · IV⟩ · base · idea · audit 2026-08-10
+
+**L14.24**  **CLASS C — CAPABILITIES (the remaining ~490 entries).** Libraries, models, gates, stores and
+algorithms that bots *use*. Not bots, and calling them bots would be the renaming-functions failure
+L14.01 exists to prevent. Examples: the indicator library, CPCV, Deflated Sharpe, the IV surface fit,
+SHAP attribution, the WAL, the bitemporal store. A capability has no goal it can fail at and no track
+record it can be defunded for. ⟨—⟩ · base · idea · audit 2026-08-10
+
+**L14.25**  **TYPES versus INSTANCES — the count that actually sizes the system.** The 46 agent types are
+not 46 running processes. Decision agents **instantiate per holon**: each of the six segments runs its own
+BULL, BEAR, regime and applicable strategy agents, with its own weights, its own state and its own track
+record — that is the whole point of the holon. Perception, meta and service bots are **singletons**, shared
+across all holons per the L14.03 acquisition rule.
+
+Rough instance arithmetic: 6 holons × (2 directional + 1 regime + 3–6 applicable strategy agents) ≈ **40–55
+decision instances**, plus 13 perception + 10 meta + 15 service singletons ≈ **80–95 live bot instances**
+at full build. The conductor (L14.11) is what makes that number survivable on 5 cores — the great majority
+are COLD or WARM at any moment. ⟨IV⟩ · base · idea · audit 2026-08-10
+
+**L14.26**  **Borderline cases, resolved and recorded** — so the boundary is not re-litigated later:
+- **Cost engine → SERVICE.** It has a calibration loop (modelled versus realized slippage, L1.07), which
+  looks like learning, but it never *decides* anything — it answers a question. Calibration is not agency.
+- **Validation gatekeeper → SERVICE, emphatically.** It is the hard evaluator every agent must satisfy.
+  If it learns, the agents optimise against it and it stops being ground truth. Its rigidity is its value.
+- **Medic → AGENT.** It carries hazard and health models, and its repairs succeed or fail measurably, so
+  it has a genuine track record.
+- **Conductor → SERVICE.** Its scheduling policy could in principle be learned, but a resource governor
+  whose behaviour is unpredictable is worse than a mediocre deterministic one.
+- **Universe and calendar bots → SERVICE.** They fetch facts that are right or wrong, but there is no
+  competitive edge to score, so no defunding decision to make.
+- **Spokesperson (chat) → AGENT.** Its answers are gradeable for accuracy and usefulness.
+
+⟨—⟩ · base · idea · audit 2026-08-10
+
+**L14.27**  **⚠️ OPERATOR SIGN-OFF REQUIRED.** These counts — **46 agents · 15 services · ~80–95 instances**
+— are the audit's derivation, not yet a decision. Approve, or adjust any classification, and the number
+becomes fixed for the build. ⟨—⟩ · base · **awaiting decision** · audit 2026-08-10
+
+### L14 · expression selection — one conviction, one instrument (operator 2026-08-10)
+
+**L14.28**  **Paper is a parallel-expression laboratory; live is a single-expression selector.** With six
+holons on overlapping underlyings, one conviction can be expressed three ways at once — long RELIANCE
+cash, long RELIANCE futures, long RELIANCE calls. **In paper, all expressions run simultaneously and this
+is a feature, not a leak:** paper capital is unlimited, so running the same view through every instrument
+is a controlled experiment that measures which vehicle actually converts a correct view into profit, net
+of its own cost, slippage, decay and margin. **In live, capital is finite, so exactly one expression is
+chosen** and the others stand down. The paper book is what generates the evidence the live selector needs.
+⟨III · XIII⟩ · adv · idea · operator 2026-08-10
+*supersedes: L14.17e's framing of same-underlying multi-instrument exposure as purely a hazard to be
+netted away. It is a hazard **in live** and a measurement opportunity **in paper**.*
+**L14.29**  **Expression-selection engine** — given a conviction on an underlying and its confidence, rank
+the available vehicles (cash · futures · CE/PE · spread structures) by **realized net edge per rupee of
+capital and per unit of risk**, using each vehicle's own accrued track record for that regime, and select
+one. Inputs that make the ranking honest: full round-trip cost under the correct regime (L1.15), margin
+consumed (cash needs 100% on carry, futures need SPAN, options premium differs), theta decay against the
+holding horizon, gap exposure, and liquidity at the size required. ⟨III · IV⟩ · adv · idea · operator 2026-08-10
+**L14.30**  **Per-vehicle conversion track record** — the accrued statistic the selector consumes: for each
+(underlying-class, regime, vehicle) cell, how much of a correct directional call was actually captured.
+This is the specific thing the paper laboratory exists to accumulate, and it cannot be borrowed from
+literature — it is a property of *this* system's execution and cost reality. ⟨XIII · XV⟩ · adv · idea ·
+operator 2026-08-10
+**L14.31**  **Live-mode exclusivity enforcement** — in live, once an expression is selected, the other
+holons are blocked from opening a position on the same underlying in the same direction. Enforced at the
+portfolio layer rather than by holon cooperation, because a holon cannot be trusted to know what its peers
+are doing. Opposing-direction positions across holons are a separate case and require an explicit hedge
+declaration rather than a block (L14.17c index-futures hedging is legitimate). ⟨VII · VI⟩ · base · idea ·
+operator 2026-08-10
+**L14.32**  **Paper and live run concurrently, not sequentially** — the laboratory does not stop when live
+trading starts. Paper keeps running every expression on every conviction so the conversion table keeps
+accruing and the live selector keeps improving, including for vehicles live capital is not currently
+using. ⟨XII · XIII⟩ · adv · idea · operator 2026-08-10
+
+
 ---
 
 # PART II — THE COGNITIVE AXIS (16 trunks · 197 branches)
@@ -1459,6 +1566,9 @@ built from the start:** cash-intraday · index-options · stock-options · index
 commodities/MCX, each with an independent on/off switch. The index/stock split runs through both
 derivative segments because cash-settled and physically-settled instruments are different risk shapes.
 MCX remains a second *venue*, not merely a sixth segment.
+**A.06**  **Same-underlying multi-instrument exposure: allowed in paper, exclusive in live.** All
+expressions of one conviction run simultaneously on paper capital (unlimited, and the experiment that
+builds the conversion table); exactly one is selected in live (finite). See L14.28–L14.32.
 **A.05**  **The org-designer runs unsupervised with timeout auto-approve** — proposals auto-approve if the
 operator neither approves nor rejects in the window. Bounded by: a non-auto-approvable class covering all
 pinned safety bots and the conductor (silence can never retire the risk bot), auto-approval granting only
