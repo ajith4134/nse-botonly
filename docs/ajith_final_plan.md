@@ -1179,16 +1179,28 @@ breeder bot and the red-team bot. ⟨XI⟩ · ultra · idea · §6
 
 ### L14 · the bot roster (what becomes a bot)
 
-**L14.17**  **THE FIVE SEGMENT HOLONS — all built from the start** (operator decision 2026-08-10,
-superseding the deferred-optional split of the same day):
-**1. NSE cash-intraday** (promotable to multi-day per R.01) · **2. NSE index-options** (intraday only) ·
-**3. NSE stock-options** (intraday only) · **4. NSE futures** (index + stock) · **5. Commodities / MCX**.
+**L14.17**  **THE SIX SEGMENT HOLONS — all built from the start** (operator decision 2026-08-10):
+
+| # | Holon | Settlement | Horizon |
+|---|---|---|---|
+| 1 | **NSE cash-intraday** | delivery on carry | intraday, promotable to multi-day (R.01) |
+| 2 | **NSE index-options** | cash-settled | intraday only — no promotion path |
+| 3 | **NSE stock-options** | **physically settled** | intraday only — no promotion path |
+| 4 | **NSE index-futures** | cash-settled | intraday |
+| 5 | **NSE stock-futures** | **physically settled** | intraday |
+| 6 | **Commodities / MCX** | physical on several contracts | intraday, session to 23:30 IST |
+
+The index-versus-stock split now runs consistently through **both** derivative segments, and for the same
+reason in each: the index leg is cash-settled and the stock leg is physically settled with escalating
+expiry-week delivery margin and an ITM auto-exercise trap. Those are different risk shapes and different
+exit disciplines, so they are different bots rather than one bot with a flag.
+
 Every segment ships with an independent **on/off switch** (L14.17a). Later-tier candidates remain
 catalogued but unscheduled: currency-derivatives · BSE index-options (the only weekly expiry outside
 NIFTY) · ETF · SME/illiquid · pre-open auction · expiry-day specialist.
 ⟨III⟩ · base · idea · operator 2026-08-10
-*supersedes: "core set of six with futures and MCX deferred-optional after project completion" — reversed
-the same day; all five are now first-class from the start.*
+*supersedes: (a) "core set of six with futures and MCX deferred-optional after project completion", and
+(b) "five holons with futures as one combined segment" — both revised the same day.*
 **L14.17a**  **Per-segment on/off switch** — each of the five holons is independently enableable and
 disableable at runtime without touching the others or restarting the organism. Disabling a segment must
 also (a) square off or hand over its open positions rather than orphaning them, (b) release its capital
@@ -1200,9 +1212,22 @@ master, its own margin regime and holiday calendar, physical delivery on several
 running to **23:30 IST**. Two consequences beyond the bot itself: the square-off clock is per-venue rather
 than global, and the conductor's off-hours reallocation window (L14.11l) shrinks dramatically, because the
 box is no longer idle after 15:30. ⟨II · IV⟩ · base · idea · operator 2026-08-10
-**L14.17c**  **Futures holon specifics** — index futures and stock futures differ in risk shape; stock
-futures are physically settled with escalating expiry-week margin. Futures also give the cash-futures
-basis and calendar-roll carry family (L4.19) a native home. ⟨III⟩ · base · idea · operator 2026-08-10
+**L14.17c**  **Index-futures holon** — cash-settled, deepest liquidity in the futures complex, and the
+native home of the cash-futures basis and calendar-roll carry family (L4.19). Also the cleanest hedging
+instrument the organism has: an index-futures short is how a portfolio of long cash positions gets
+delta-neutralised. ⟨III⟩ · base · idea · operator 2026-08-10
+**L14.17d**  **Stock-futures holon** — **physically settled since Oct 2019**, with escalating delivery
+margin through expiry week and forced delivery if held to settlement. Requires its own expiry-week
+close-out discipline at T-1/T-2, mirroring the stock-options holon. Liquidity is concentrated in a few
+dozen names, so its tradeable universe is far narrower than the ~210 F&O underlyings suggest.
+⟨III · VII⟩ · base · idea · operator 2026-08-10
+**L14.17e**  **Cross-segment interactions the six holons create** — with cash, futures and options on the
+same underlying all live simultaneously, three things become possible and must be governed rather than
+discovered: **cash-futures basis arbitrage** (L4.19), **index-futures hedging of the cash book**, and
+**accidental self-trading or double-counted exposure** where two holons take the same directional bet on
+the same underlying through different instruments. The netting bot (L14.09) and portfolio-level risk
+(L14.10) stop being nice-to-have here — six holons on overlapping underlyings is exactly the condition
+they exist for. ⟨VII · VI⟩ · base · idea · operator 2026-08-10
 **L14.18**  **Perception bots (15):** news-research · corporate-filings · expert/analyst-call ·
 tipster/social · global-markets · macro · flow (FII/DII, participant OI) · options-surface ·
 microstructure · sector-rotation · universe/instrument-master · calendar · concall-transcript ·
@@ -1429,9 +1454,11 @@ universe via multi-key sharding?
 
 ## Decisions made (2026-08-10)
 
-**A.01**  ~~Futures and commodities last and optional.~~ **REVERSED same day — all five segments are
-built from the start:** cash-intraday · index-options · stock-options · futures · commodities/MCX, each
-with an independent on/off switch. MCX remains a second *venue*, not merely a fifth segment.
+**A.01**  ~~Futures and commodities last and optional.~~ ~~Five segments.~~ **SIX segment holons, all
+built from the start:** cash-intraday · index-options · stock-options · index-futures · stock-futures ·
+commodities/MCX, each with an independent on/off switch. The index/stock split runs through both
+derivative segments because cash-settled and physically-settled instruments are different risk shapes.
+MCX remains a second *venue*, not merely a sixth segment.
 **A.05**  **The org-designer runs unsupervised with timeout auto-approve** — proposals auto-approve if the
 operator neither approves nor rejects in the window. Bounded by: a non-auto-approvable class covering all
 pinned safety bots and the conductor (silence can never retire the risk bot), auto-approval granting only
