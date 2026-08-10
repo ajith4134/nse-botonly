@@ -1057,6 +1057,37 @@ deterministic evaluator. The breeder bot pointed at instructions rather than at 
 ⟨XI GENERATIVITY⟩ · ultra · idea · operator 2026-08-10
 
 
+**L11.110**  **THE INSTRUCTION LIBRARY — ≈110 catalogued instructions across all six segments.**
+Full text: `docs/ideas/instruction_library_all_segments.md`. Every entry names its mechanism, trigger,
+exit discipline and denominator, and is a hypothesis awaiting the central gatekeeper — never a licence.
+Breakdown: **index options 30** (IO-01→30) · **stock options 7** (SO-01→07) · **cash intraday 25**
+(CE-01→25) · **index futures 9** (IF-01→09) · **stock futures 6** (SF-01→06) · **commodities/MCX 9**
+(MC-01→09) · **cross-segment 7** (XS-01→07). ⟨III · I⟩ · adv · idea · operator 2026-08-10
+**L11.111**  **Highest-mechanism instructions, to build first within each segment** — index options:
+premium-oscillation scalp · VRP theta harvest · expiry max-pain pinning (dealer gamma hedging is a real
+flow mechanism) · post-event IV crush. cash: VWAP ±2σ reversion · ORB with volume · pullback-to-VWAP in
+trend · first-hour range definition. index futures: margin-efficient momentum · the bearish expression of
+choice · hedge overlay for the carried cash book. MCX: **09:00 open-gap follow-through** — the strongest
+structural edge in that segment, because unlike the NSE equity gap it is a genuine information gap after
+overnight COMEX rather than a priced-in one. ⟨III⟩ · adv · idea · library §1–6
+**L11.112**  **Anti-instructions catalogued deliberately** — traps recorded so they are not rediscovered
+as ideas: far-OTM lottery scalping (₹40 on a ₹650 ticket = 6.15%) · naked short strangles (unbounded
+short-gamma tail; defined-risk only) · sub-cost-floor range scalping (D.01) · illiquid option strikes
+(4–10% spreads) · circuit-band proximity (a liquidity trap where stops fail) · pre-event long straddles
+(D.04: straddles lose ~8%/event because options overprice known moves) · double-counted conviction across
+holons. ⟨VII · XIII⟩ · base · idea · library §7
+**L11.113**  **Newly-unlocked instructions from this session's decisions** — the covered call against a
+carried cash position (SO-03) exists only because cash may now carry overnight (R.01); the hedge overlay
+(IF-03) and gamma-scalp hedge leg (IF-09) exist only because the futures holon was promoted to
+first-class; delta-neutral gamma scalping (IO-09 + IF-09) needs both. Architecture decisions created
+tradeable instructions that were previously impossible. ⟨III · VI⟩ · adv · idea · library §7
+**L11.114**  **Expected outcome, stated up front: MOST OF THESE WILL FAIL VALIDATION.** That is the system
+working, not failing. The library's value is that survivors are *known* to be survivors and failures are
+recorded so they are not tried twice. Any expectation that 110 catalogued instructions means 110 working
+edges is the exact error that produced the prior build's breadth-without-money outcome.
+⟨XIII⟩ · base · idea · library §summary
+
+
 ## L12 · GOVERNANCE, SAFETY & COMPLIANCE
 
 *Trunk VII reached 14/14 complete — the only trunk finished before any deeper autonomy was granted.*
