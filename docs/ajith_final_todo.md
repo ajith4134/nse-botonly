@@ -48,7 +48,8 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **0.9** Secrets from environment only; `.env` gitignored; never committed — `R.02`
 - [ ] **0.10** Decision-log discipline: every decision recorded as an `A.` entry in the plan, with reasoning — `A.22`
 - [ ] **0.11** Idea-intake protocol wired into the working habit — four verdicts before anything is written
-- [ ] **0.12** Delete `CLAUDE.md`, `docs/RULES.md`, `GLOBAL_CLAUDE.md` — the two governing files replace them
+- [x] **0.12** Deleted `CLAUDE.md`, `docs/RULES.md`, `GLOBAL_CLAUDE.md` — `ajith_final_plan.md` + `ajith_final_todo.md` are now the only governing docs (recoverable from `f5bc843` and the GitHub archive)
+- [ ] **0.13** ⚠️ **Reconcile the enforcement hooks** in `~/.claude/settings.json` — they embed the OLD rule text inline and reference deleted paths (`src/nse_algo_trader/`, `scripts/check_system_map_diagram_fidelity.py`). Until rewritten they keep injecting retired rules every turn — see the note in the plan
 
 
 # PHASE 1 — TRUTH AND COST

@@ -2288,6 +2288,16 @@ entries landed; the decision records did not. **Every future edit to this file a
 and the decision count is verified after each session.** Caught by the operator asking whether everything
 was actually saved — which is the reason that question is worth asking after any long session.
 
+**A.31 · The old governing docs are deleted; these two files govern alone.** `CLAUDE.md`,
+`docs/RULES.md` and `GLOBAL_CLAUDE.md` were deleted 2026-08-10 once `ajith_final_plan.md` and
+`ajith_final_todo.md` existed and were verified complete. All three remain recoverable from commit
+`f5bc843` and the GitHub archive — deleted, not lost. **The rules themselves were not abandoned:** R.01–R.13
+in Part IV carry them forward, amended where this session's decisions changed them (notably R.01, the
+former intraday-only non-negotiable).
+**⚠️ Open consequence:** the enforcement hooks in `~/.claude/settings.json` **embed the old rule text
+inline** and reference now-deleted paths. They will keep injecting retired rules every turn until
+rewritten. Tracked as todo 0.13.
+
 **A.30 · Market-closed open-market simulation rebuilt (v2), with the failure diagnosed from data.**
 The operator named this as the feature that failed in the prior build. Measurement of the 3,481 retained
 trades shows **the simulation was honest** — slightly pessimistic versus live, with near-perfect
