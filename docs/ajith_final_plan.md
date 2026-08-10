@@ -1,0 +1,1261 @@
+# AJITH FINAL PLAN — the complete catalog of everything ever planned, designed or discussed
+
+**Created 2026-08-10**, after the full archive-and-reset. This is **not a build plan and not a scope
+decision.** It is the single ordered catalog of *every* feature, engine, idea, design and research finding
+this project has ever produced — recovered from the 280 surviving documents and the sessions behind them —
+so that nothing is lost and the todo list can be generated from one place.
+
+**Companion files:** `ajith_final_todo.md` (the executable sequence, generated from this) ·
+`INTERVIEW_RECORD_ajith_final_plan.md` (the decisions behind this document's shape).
+
+---
+
+## How to read this
+
+Entries are ordered by **build dependency** — what must exist before what — running L0 → L13. That
+ordering is the spine because it is the only one that is objectively forced: you cannot validate an edge
+before you can price its cost, and you cannot price cost before your data is truthful.
+
+Because roughly a third of this project's ambition (conscience, sentience, memory, curiosity, will,
+axiology, epistemics, self, society, autopoiesis, generativity) has no natural home in a 13-layer trading
+stack, **every entry also carries a cognitive-trunk tag**. The same catalog therefore reads two ways:
+down the layers as an engineering sequence, or across the trunks as a cognitive architecture. Part II
+indexes the trunk view explicitly.
+
+### Entry format
+
+```
+**L4.07**  Name — what it is, in one line.
+           ⟨trunk⟩ · ⟨tier⟩ · ⟨status⟩ · ⟨source doc⟩
+```
+
+- **Tier** — `base` (the honest minimum) · `adv` (advanced) · `ultra` (frontier).
+- **Status** — `archived` (was built; lives in the GitHub archive, deleted from disk) · `spec` (designed,
+  never built) · `planned` (named and scoped, not designed) · `blocked` (needs data/market/credentials) ·
+  `disproved` (researched and rejected — see Part III) · `idea` (raised, not yet worked).
+- **Source** — the document to read before rebuilding it. `r/NNN` = `docs/research/NNN…`.
+
+### Insertion protocol (standing rule)
+
+New ideas are **merged into this file at their correct dependency position, in this same format** — never
+appended as a loose tail. To add one: identify the layer whose preconditions it needs, insert it in
+sequence there, assign the next free number in that layer, tag its trunk, and add it to Part IV if it
+opens a question. The catalog stays one ordered spine as it grows.
+
+---
+
+## Status of the corpus this was built from
+
+288 modules across 30 packages were built and are now archived at
+`github.com/ajith4134/nse-algo-trader-archive-2026-08-10` (snapshot `f5bc843`). 87 of 197 atlas branches
+had a real implementation; 51 were partial; 59 were never started. Two trunks reached completion —
+VII CONSCIENCE (14/14) and VIII SENTIENCE (13/13) — plus X AUTOPOIESIS (9/9). The reset kept only the
+Kite TOTP login, the Claude subscription LLM provider, 3,481 closed trades and the market-data store.
+
+**The unresolved tension this catalog deliberately preserves rather than settles:** `AI_CONCEPT_TREE_STATUS`
+commits to driving all 197 branches to built, while `REDESIGN_v1` — written a week later — diagnoses that
+exact breadth as the cause of failure ("too sprawling · no proven money · code too thin") and inverts to
+six lean layers with eight organism trunks deferred. Both are catalogued here in full. Which one leads is
+a sequencing decision for the todo file, not a reason to delete either.
+
+---
+
+# PART I — THE DEPENDENCY-ORDERED CATALOG
+
+## L0 · DATA TRUTH — point-in-time correctness
+
+*Nothing above this layer is meaningful if the data lies about what was knowable when.*
+
+**L0.01**  Kite instrument master + daily `/instruments` NFO dump ingest — the authoritative universe of
+tradable contracts, refreshed ~08:30 IST and cached. ⟨II SENSES⟩ · base · archived · r/176
+**L0.02**  Instrument-token reuse guard — Kite reuses `instrument_token` after a contract expires; key on
+`exchange + tradingsymbol` instead. A silent primary-key corruption trap. ⟨II⟩ · base · archived · r/176
+**L0.03**  Historical bar store (SQLite) — 1m/5m OHLCV across cash and F&O. 659,990 bars retained.
+⟨II⟩ · base · archived · `market_data_sqlite_store`
+**L0.04**  Bitemporal availability-time on the bar store — event time vs ingestion time vs *availability*
+time, so backtests can only see what was actually knowable. Structural look-ahead prevention.
+⟨II · XIII EPISTEMICS⟩ · adv · archived · r/167
+**L0.05**  Point-in-time universe reconstruction — listing/delisting, F&O eligibility, index membership as
+of a date. Survivorship-bias elimination. ⟨II⟩ · adv · archived · r/58, r/76
+**L0.06**  Frozen tradable-universe snapshot per date — the universe a backtest is allowed to consider.
+⟨II⟩ · adv · archived · r/58
+**L0.07**  Corporate-action adjustment — splits, bonus, dividends, rights; strike and lot adjustment on
+option contracts. ⟨II⟩ · adv · spec · r/56, r/57, r/75
+**L0.08**  Symbol-rename / ISIN / merger record store — ISIN as the stable key across renames.
+⟨II · XV MEMORY⟩ · adv · spec · r/56
+**L0.09**  Delisted-securities master (BSE-sourced) — completes the survivorship-free universe.
+⟨II⟩ · adv · spec · r/79
+**L0.10**  Gap detection + provenance-flagged backfill — every bar carries where it came from and whether
+it was filled. ⟨II · XIII⟩ · base · archived · r/84
+**L0.11**  Causal leakage firewall — blocks any feature computed from data unavailable at decision time.
+⟨XIII⟩ · adv · archived · `causal_leakage_firewall`
+**L0.12**  Replay experience provenance — separates replayed from live experience in memory so learning
+never confuses the two. ⟨XV · XIII⟩ · adv · archived · r/64
+**L0.13**  Honest clock / day-walker + firewall — the replay engine's simulated clock, provably unable to
+read the future. ⟨II⟩ · adv · archived · §53 slice 1
+**L0.14**  Multi-broker historical bar source — Kite / Breeze / Upstox / Angel One as interchangeable data
+adapters behind one interface. ⟨XVI UNIVERSAL-ACCESS⟩ · adv · archived · r/80–84
+**L0.15**  Multi-broker failover + gap-fill aggregation — cross-source reconciliation when one feed is
+short. ⟨XVI⟩ · adv · archived · r/84, r/85
+**L0.16**  Breeze 1-second historical bars — the high-fidelity replay tier, autonomous background prebuild.
+⟨II⟩ · adv · archived · r/66, r/67, r/69, r/92
+**L0.17**  ICICI stock-code resolver — Breeze uses its own symbology; this maps it to NSE symbols.
+⟨XVI⟩ · base · archived · r/68
+**L0.18**  Fyers deep-history adapter — deeper intraday history than Kite exposes. ⟨XVI⟩ · adv · blocked
+(credentials) · r/78
+**L0.19**  Groww historical adapter — ₹499/mo API subscription. ⟨XVI⟩ · adv · blocked (subscription) · r/80
+**L0.20**  Live order-book depth recorder (P4b) — captures Kite's 5-level depth to disk for microstructure
+research. ⟨II⟩ · adv · blocked (needs open market) · r/70
+**L0.21**  Market-depth store — the persisted depth tape. ⟨II⟩ · adv · spec · r/70
+**L0.22**  Tick-level order-book reconstruction — full book state from the tape. Retail-infeasible on
+Kite's 5-level snapshots; documented as a lower-fidelity proxy. ⟨II⟩ · ultra · blocked · r/71, r/72
+**L0.23**  NSE bhavcopy ingest — daily cash delivery + F&O contract-level settlement data. 1.44M rows
+retained. ⟨II⟩ · base · archived · `market_data_sqlite_store`
+**L0.24**  MWPL position-limit ingest — market-wide position limits per underlying. ⟨II · VII⟩ · base ·
+archived · r/176
+**L0.25**  F&O ban-list ingest — with hysteresis: exclude at OI ≥ 95% of MWPL, re-admit below 80%.
+⟨II · VII⟩ · base · archived · r/176
+**L0.26**  Bulk / block deals ingest — large-trade disclosure. ⟨II⟩ · adv · archived · r/176
+**L0.27**  ATM implied-volatility daily series — the seed of any IV-rank history. ⟨II⟩ · adv · archived
+**L0.28**  Circuit-band / ASM / GSM state per symbol — which names cannot be traded intraday today.
+⟨II · VII⟩ · base · spec · atlas L1
+**L0.29**  Index constituents + weights — NIFTY / BANKNIFTY / FINNIFTY / MIDCPNIFTY / sectoral.
+⟨II⟩ · adv · spec · atlas L1
+**L0.30**  Trading calendar — holidays, Muhurat, expiry days, budget/RBI event dates. ⟨II⟩ · base ·
+archived · `nse_event_calendar`
+**L0.31**  Point-in-time market rules + calendar history — what the rules *were* on a past date, so old
+replays are legal-accurate. ⟨XIII⟩ · ultra · spec · r/61
+**L0.32**  Clock sync + drift alert — detects host clock drift against exchange time. ⟨IV BODY⟩ · base ·
+planned · atlas L10
+**L0.33**  Multi-broker consolidated feed with liquidity-weighted cross-check — one synthetic tape from
+several brokers. ⟨XVI⟩ · ultra · planned · atlas L1
+**L0.34**  Deep-history price + universe sourcing (~20yr) — the free-vs-paid ceiling was researched in
+detail; most deep NSE history is not free. ⟨XVI⟩ · ultra · blocked · r/59, r/74, r/77
+
+## L1 · COST — the reality filter
+
+*SEBI's own study: ~70% of intraday cash traders lose, and loss-makers spend 57% of their losses on
+transaction costs. Nothing above this layer is real until every signal is priced.*
+
+**L1.01**  NSE transaction-cost engine — STT/CTT, brokerage, GST, exchange transaction charges, SEBI
+turnover fee, stamp duty, per segment (cash intraday, F&O). ⟨IV⟩ · base · archived · r/164, r/b28
+**L1.02**  Pre-trade cost gate — every signal must clear round-trip breakeven before it can become an
+order. The single highest-leverage engine in the system. ⟨IV · VII⟩ · base · archived · r/164
+**L1.03**  Net-EV gate — fire only if `edge_bps > (cost + live spread + slippage) × 1.5–2×`, with
+instrument-and-size-aware cost, not a constant. ⟨III WILL · IV⟩ · base · archived · r/164
+**L1.04**  Per-segment minimum-edge floor — ~6–8 bps large cash, ~10–11 bps small cash, ~25–30 bps
+options. Derived from data, never hardcoded. ⟨IV⟩ · base · archived · r/164
+**L1.05**  Fill / slippage model — expected execution price vs mid at the time of decision.
+⟨IV⟩ · base · archived · `fill_slippage_model`
+**L1.06**  Market-impact fill model — size-dependent impact, not a flat slippage constant.
+⟨IV⟩ · adv · archived · r/89
+**L1.07**  Realized-vs-modelled slippage tracker — throttles any segment whose real fills drift worse than
+the model. ⟨XIII · IV⟩ · adv · spec · r/164
+**L1.08**  STT options-sell rate change (0.15% from Apr 2026) + ITM auto-exercise STT trap — reshapes which
+option structures are viable at all. ⟨IV · VII⟩ · base · archived · r/b28
+**L1.09**  Discrete option-lot sizing — positions are integer lots, and lot sizes are pulled live daily,
+never hardcoded (a resize wave hit Jan 2026). ⟨IV⟩ · base · archived · r/b7
+**L1.10**  Capital-based position sizing — min/max capital per trade as a function of configured capital,
+so the same engine works from ₹1 lakh to ₹1 crore. ⟨III⟩ · base · archived · `capital_based_position_sizing`
+**L1.11**  P&L attribution by cost component — decomposes result into edge, fees, slippage, impact, so it
+is visible *which* is eating the return. ⟨XIII⟩ · adv · spec · atlas L8
+**L1.12**  Cost homeostasis — the system regulating its own cost burn as a controlled variable rather
+than an accounting output. ⟨IV⟩ · ultra · planned · atlas trunk IV
+**L1.13**  Tax-lot record (STT/CTT/stamp/GST), exportable — the compliance artefact. ⟨VII⟩ · adv ·
+planned · atlas L12
+**L1.14**  Maker-order spread capture — limit orders that *earn* the spread instead of paying it. The
+single durable lever that makes small edges survivable. ⟨IV⟩ · adv · planned · r/164
+
+## L2 · VALIDATION & SEARCH INTEGRITY — the overfitting killer
+
+*Identified in the corpus as "literally what killed the prior attempt." Every strategy, signal, tipster
+and engine is a candidate that must pass through here before it touches capital.*
+
+**L2.01**  Honest trial registry — cumulative N including every discarded and abandoned run, so the
+search size is known rather than flattered. ⟨XIII⟩ · base · archived · r/166
+**L2.02**  Holdout custodian — holds a slice of data and *refuses queries* against it until promotion.
+⟨XIII⟩ · base · archived · r/166
+**L2.03**  Deflated Sharpe Ratio as in-loop fitness — not a post-hoc report, the actual objective being
+optimised. ⟨XIII⟩ · base · archived · r/166
+**L2.04**  Combinatorial Purged Cross-Validation (CPCV) — vendored `cpcv.py` from the prior build.
+⟨XIII⟩ · base · archived · r/166
+**L2.05**  Minimum Backtest Length (MinBTL) hard gate — refuses conclusions from too-short histories.
+⟨XIII⟩ · base · archived · r/166
+**L2.06**  Probability of Backtest Overfitting (PBO / CSCV) — gate at PBO < 50%. ⟨XIII⟩ · adv · spec · r/166
+**L2.07**  Benjamini-Yekutieli FDR control — the correct default for a universe scanner, because scanner
+signals are dependently correlated. Bonferroni is wrong here; it kills all signal. ⟨XIII⟩ · adv · spec ·
+`full_universe_opportunity_radar` §7-fdr
+**L2.08**  Effective-trials estimator — `N̂ = ρ̂ + (1−ρ̂)·M`; 20,000 correlated backtests at ρ=0.9 are
+~2,000 effective trials, not 20,000. ⟨XIII⟩ · adv · spec · radar §7-fdr
+**L2.09**  Purged + embargoed walk-forward CV per strategy family. ⟨XIII⟩ · base · archived · r/166
+**L2.10**  Triple-barrier labelling + sample uniqueness — reimplemented from the AFML book, because
+`mlfinlab`'s public repo is stubbed (see Part III). ⟨XIII · I MIND⟩ · adv · spec · `dual_directional` §7-mldl
+**L2.11**  Mechanism declaration — every signal must state *why* it should work; mechanism-backed
+candidates get a lower statistical hurdle than pure pattern matches (Harvey-Liu-Zhu). ⟨XIII⟩ · adv ·
+archived · `assumption_registry`
+**L2.12**  Regime-coverage gate — promotion requires having *seen* a real drawdown and a vol spike, not
+merely elapsed days. ⟨XIII⟩ · adv · spec · REDESIGN_v1 §5
+**L2.13**  Multi-strategy validated promotion pipeline — research → paper → shadow → reduced-size live →
+full live, each transition gated. ⟨XIII · V SELF⟩ · adv · archived · r/170
+**L2.14**  Strategy trial registry store — 20 trials recorded. ⟨XIII⟩ · base · archived ·
+`strategy_trial_registry`
+**L2.15**  Strategy-family promotion registry — 6 promotions recorded. ⟨XIII⟩ · base · archived · r/170
+**L2.16**  Hansen SPA test at the promotion gate. ⟨XIII⟩ · ultra · planned · atlas L9
+**L2.17**  White's Reality Check / bootstrap-vs-random-walk null for pattern candidates. ⟨XIII⟩ · adv ·
+planned · `main_ai_brain` §7c
+**L2.18**  Bootstrapped max-drawdown distribution — so circuit-breaker thresholds are derived, not
+arbitrary. ⟨XIII · VII⟩ · ultra · planned · atlas L9
+**L2.19**  Proper scoring rules — vendored `python-prediction-scorer`. ⟨XIII⟩ · base · archived · r/48
+**L2.20**  Brier decomposition — reliability vs resolution vs uncertainty. ⟨XIII⟩ · base · archived · r/49
+**L2.21**  Mechanism recalibration — acting on the Brier diagnosis rather than merely reporting it.
+⟨XIII⟩ · adv · archived · r/51
+**L2.22**  Prequential forecast scorer — dense, online, forecast-then-observe scoring. ⟨XIII⟩ · adv ·
+archived · r/63, r/65
+**L2.23**  Prediction-labelled trade tables — the falsification-driven paper lab: every trade carries a
+prior prediction that can be proven wrong. ⟨XIII⟩ · adv · archived · r/29
+**L2.24**  Minimum-backtest-length + holdout custodian wiring into the live loop. ⟨XIII⟩ · adv · archived · r/166
+**L2.25**  Skill-vs-luck court — formal verdict on whether measured returns are skill. Real verdict on the
+archived data: SKILL. ⟨XIII⟩ · adv · archived · r/106
+**L2.26**  Random-control arm — a deliberately random strategy running alongside, as the null baseline.
+⟨XIII⟩ · adv · archived · r/95
+**L2.27**  Shadow-rejected arm — tracks what the vetoed trades *would* have done, so the gate itself is
+measurable. ⟨XIII⟩ · adv · archived · r/106
+**L2.28**  Per-trade pre-mortem — entry-time Monte Carlo over the replay store, producing a CVaR estimate
+before the trade. ⟨IX PREDICTIVE-CORE⟩ · adv · archived · r/107
+**L2.29**  World-model scoreboard + profit provenance — decomposes total return into luck and skill.
+Archived real result: +9.7% total = +0.8% luck + 9.0% skill. ⟨IX · XIII⟩ · adv · archived · r/108
+**L2.30**  Holdout custodian + minimum-backtest-length for the *option* families specifically.
+⟨XIII⟩ · adv · archived · r/166
+**L2.31**  Verification cockpit — one script that renders the machine verdict on whether a feature is
+genuinely done. ⟨V SELF · XIII⟩ · adv · archived · `verification_cockpit.py`
+**L2.32**  Execution-grounded quality gates — ruff/mypy/tests as deterministic Stop-hook gates rather than
+prose rules. ⟨V⟩ · adv · archived · r/159
+
+## L3 · OPS FLOOR — "where losses actually occur"
+
+*The prior build's own research: documented losses happen in the ops layer, not the model.*
+
+**L3.01**  Idempotent client order IDs — the same intent can never become two orders. ⟨IV⟩ · base ·
+archived · r/168
+**L3.02**  Order-intent write-ahead log — intent is durable before the broker call, so a crash mid-flight
+is recoverable. ⟨IV⟩ · base · archived · r/168
+**L3.03**  Broker-truth state reconciler — on restart, believe the broker, not local state. ⟨IV⟩ · base ·
+archived · r/168
+**L3.04**  Crash-safe order placer — the trio above composed into the actual order path. ⟨IV⟩ · base ·
+archived · r/168
+**L3.05**  Pre-trade risk gate — notional, leverage, rate, price collar, max daily loss, drawdown kill.
+Nothing reaches capital without it. ⟨VII · III⟩ · base · archived · `pre_trade_risk_gate`
+**L3.06**  Order rate limiter — SEBI's ≤10 orders/sec/exchange/client, plus Kite's 400/min and 5,000/day.
+Crossing it changes the regulatory category. ⟨VII⟩ · base · archived · `order_rate_limiter`
+**L3.07**  Kill switch / trading control config — paper vs live, with enforcement. ⟨VII · IV⟩ · base ·
+archived · `trading_control_config`
+**L3.08**  Corrigibility off-switch — an engaged off-switch blocks all orders and self-halts on a
+constitutional breach. ⟨VII⟩ · adv · archived · r/111
+**L3.09**  Intraday square-off executor — the dead-man's switch. No overnight carry, ever, in any segment.
+⟨IV⟩ · base · archived · `intraday_square_off_executor`
+**L3.10**  Daily Kite token auto-refresh via TOTP — hands-off broker login. **One of three survivors of
+the reset.** ⟨XVI⟩ · base · **retained** · `kite_totp_auto_login`
+**L3.11**  Kite access-token store + authenticated client builder. ⟨XVI⟩ · base · **retained** ·
+`kite_access_token_store`
+**L3.12**  Broker credential loader — secrets from environment only, never committed. ⟨VII · XVI⟩ · base ·
+**retained** · `kite_login_credentials_loader`
+**L3.13**  Angel One SmartAPI session (TOTP via pyotp). ⟨XVI⟩ · base · archived · r/81, r/83
+**L3.14**  Breeze session-token store + builder. ⟨XVI⟩ · base · archived · r/66
+**L3.15**  Atomic multi-leg executor — a spread is one atomic action, not N independent orders.
+⟨IV⟩ · adv · archived · PLAN §1.3
+**L3.16**  Partial-fill tracking loop. ⟨IV⟩ · adv · spec · atlas L5
+**L3.17**  Cross-strategy netting — don't trade against yourself across engines. ⟨IV · VI SOCIETY⟩ · adv ·
+planned · atlas L5
+**L3.18**  Signal-expiry / TIF discipline — a stale signal is dropped, never queued-and-waited. Alpha
+decays in minutes. ⟨III⟩ · adv · spec · radar §7-selection
+**L3.19**  SEBI Algo-ID tagging on every order + audit trail. ⟨VII⟩ · adv · planned · `_GAP_ANALYSIS` #10
+**L3.20**  Rate-limit budgeter — allocates the order budget across competing engines. ⟨VII · III⟩ · adv ·
+planned · atlas L10
+**L3.21**  Cold-start behaviour — what the system does on its first tick of the day with no state.
+⟨IV⟩ · base · planned · atlas L10
+**L3.22**  Disaster-recovery runbook. ⟨IV⟩ · adv · planned · atlas L10
+**L3.23**  Tiered alerting (page / notify / log). ⟨IV⟩ · adv · archived · `monitoring_alerts`
+**L3.24**  Structured audit log of every decision. ⟨VII · XV⟩ · adv · planned · atlas L10
+**L3.25**  Blue-green deploy + config versioning and rollback. ⟨V⟩ · ultra · planned · atlas L10
+**L3.26**  Safety-incident forensic store — append-only, survives restart. 2 incidents recorded.
+⟨VII⟩ · adv · archived · r/113
+**L3.27**  Systemd service management for the dashboard — auto-restart, journald logging. ⟨IV⟩ · base ·
+archived · `deploy/README_dashboard_service.md`
+**L3.28**  Kite-decoupled architecture guard — a test that fails if `kiteconnect` is imported anywhere
+outside the broker seam. Everything except live trading runs broker-independent. ⟨IV⟩ · adv · archived ·
+`kite_decoupled_architecture.md`
+
+## L4 · SIGNALS & FEATURES — candidates, not gospel
+
+*The corpus is unusually firm here: owning 200 indicators and 60 candle patterns is the trap, not the
+edge. Compute breadth cheaply; let validation keep the few that survive. Assume ~95% are noise.*
+
+**L4.01**  Full indicator library via TA-Lib (150+ functions) — trend, momentum, volatility, volume,
+breadth. Compute-all, then prune. ⟨II⟩ · base · archived · `indicators/` · r/7, `main_ai_brain` §7d
+**L4.02**  `pandas-ta-classic` fallback — pure-Python, community fork; the original pandas-ta went paid
+and was archived Jul 2026. ⟨II⟩ · base · planned · `main_ai_brain` §7d
+**L4.03**  Correlation-prune → feature-importance → effective-trials selection pipeline. The antidote to
+the indicator zoo: RSI/Stoch/CCI/ROC/%b all correlate >0.8 — ten momentum oscillators are ~one effective
+trial. Use 2–4 *decorrelated* across different families. ⟨XIII · I⟩ · adv · spec · `main_ai_brain` §7d
+**L4.04**  Candlestick pattern library — TA-Lib's 61 `CDL*` recognisers, each encoded as a falsifiable
+hypothesis behind the search-integrity gate. ⟨II⟩ · base · planned · `main_ai_brain` §7c
+**L4.05**  Chart-pattern library — head-and-shoulders, double top/bottom, triangles, flags, wedges.
+Same gating. ⟨II⟩ · adv · planned · `main_ai_brain` §7c
+**L4.06**  Average Directional Index + trend-strength gauge. ⟨II⟩ · base · archived ·
+`average_directional_index`
+**L4.07**  Session strategy regime gate — the volatility-regime read that admits or blocks a strategy.
+⟨II · III⟩ · base · archived · `session_strategy_regime_gate`
+**L4.08**  VPIN order-flow toxicity (Bulk Volume Classification). Built and archived — but see Part III:
+its flash-crash early-warning claim was rebutted in the literature. ⟨II⟩ · adv · archived · r/94
+**L4.09**  Order-flow imbalance (depth-weighted, never L1 — L1 imbalance is the most spoofable).
+⟨II⟩ · adv · spec · `dual_directional` §7-lob
+**L4.10**  Microprice (Stoikov) — one of the few microstructure features with genuine short-horizon
+predictive value. ⟨II⟩ · adv · planned · `dual_directional` §7-lob
+**L4.11**  Kyle's lambda — contemporaneous liquidity/impact; use to size slippage, not to forecast.
+⟨II⟩ · adv · planned · `dual_directional` §7-lob
+**L4.12**  Volume profile — POC, VAH/VAL, HVN/LVN, CVD, footprint. Zero peer-reviewed predictive studies;
+retained as regime/level *context* only. ⟨II⟩ · adv · planned · `dual_directional` §7-lob
+**L4.13**  Market breadth — advancers/decliners, A-D ratio, dispersion. ⟨II⟩ · base · archived ·
+`market_breadth`
+**L4.14**  Cross-market context — mean move vs breadth, yielding confirmation or divergence. ⟨II⟩ · adv ·
+archived · r/137
+**L4.15**  Realized volatility, multi-horizon, HAR-RV. ⟨II⟩ · adv · spec · atlas L2
+**L4.16**  Fractional differentiation — stationarity while preserving memory (`fracdiff`, BSD-3).
+⟨II⟩ · adv · planned · atlas L2
+**L4.17**  Option-chain features — PCR, max-pain, IV skew and term structure, OI build-up.
+⟨II⟩ · adv · spec · atlas L2
+**L4.18**  India VIX regime features. Note: coincident and reactive, not leading; VIX futures were
+discontinued in 2017, so there is no tradeable term structure to read. ⟨II⟩ · adv · spec ·
+`main_ai_brain` §7a
+**L4.19**  Cash-futures basis / calendar-roll carry — the NSE analogue of crypto funding. ⟨II⟩ · adv ·
+planned · atlas L2
+**L4.20**  Cross-sectional ranking across the F&O universe. ⟨II⟩ · adv · spec · atlas L2
+**L4.21**  Expiry-day, day-of-week and event seasonality features. ⟨II⟩ · adv · spec · r/11
+**L4.22**  Absorption detection. ⟨II⟩ · ultra · planned · atlas L2
+**L4.23**  Learned representations — time series → image → CNN (GAF/MTF). ⟨I⟩ · ultra · planned · atlas L2
+**L4.24**  Automated feature/indicator discovery — beyond a fixed list, via symbolic regression.
+⟨XI GENERATIVITY⟩ · ultra · planned · r/24
+**L4.25**  Participant-wise open interest (FII / DII / client / pro) — the opponent ledger.
+⟨II · VI⟩ · adv · archived · r/47
+**L4.26**  FII/DII daily cash flows. ⟨II⟩ · adv · spec · `dual_directional` §2e
+**L4.27**  Streaming incremental indicator state — O(1) per tick, never recomputed from history. Required
+for any full-universe scan. ⟨II⟩ · adv · spec · radar §7-architecture
+**L4.28**  Robust streaming anomaly stack — median/MAD z-score + EWMA first pass, CUSUM changepoint, then
+Robust Random Cut Forest only on tripped symbols to bound compute. ⟨II · XII CURIOSITY⟩ · adv · spec ·
+radar §7-setups
+**L4.29**  NSE intraday scanner/filter taxonomy — the full category of screens, not a chosen two.
+⟨II⟩ · adv · archived · r/13
+**L4.30**  Time-of-day session playbook — how NSE behaves through the session. ⟨II⟩ · adv · archived · r/11
+**L4.31**  Stock symbol ↔ name gazetteer + headline symbol matching. ⟨II · XVI⟩ · adv · archived · r/148
+**L4.32**  Trade-log data schema — every column, segment by segment. ⟨XV⟩ · base · archived · r/14
+
+## L5 · STRATEGY FAMILIES — where the money is supposed to come from
+
+*The regime spine the whole corpus converges on: detect the row, deploy that row's engines.*
+
+| Regime | What pays, and why | Engines |
+|---|---|---|
+| **Bull trend** | momentum / long delta — trend persistence | ORB-long, momentum, bull-call-spread, long CE |
+| **Bear trend** | short momentum / long puts — downside plus rising vol | breakdown-short, bear-put-spread, long PE |
+| **Volatile / expansion** | long gamma and vega — big moves either way | long straddle/strangle, breakout |
+| **Flat / low-vol** | theta and mean-reversion — nothing moves, time decays | iron condor, short strangle, VWAP-reversion |
+
+**L5.01**  Opening-range breakout (ORB) + variants — the archived system's primary cash engine.
+⟨III⟩ · base · archived · `strategy_engine`
+**L5.02**  ORB champion-challenger auto-tuning — config variants compete on real replayed sessions.
+⟨V SELF · XI⟩ · adv · archived · r/87
+**L5.03**  Scheduled champion-challenger auto-re-evaluation — the champion must keep re-earning its place.
+⟨V⟩ · adv · archived · r/88
+**L5.04**  Per-market-regime champion — a different winning config per regime, not one global champion.
+⟨V · III⟩ · adv · archived · r/90
+**L5.05**  Intraday mean-reversion family — the prior build's measured NSE truth was that intraday
+NSE-adjacent markets mean-revert while naive momentum loses ~0.23%/trade. ⟨III⟩ · adv · archived · r/170
+**L5.06**  VWAP reversion (±2σ, skipped when ADX > 25). ⟨III⟩ · adv · planned · radar §7-setups
+**L5.07**  VWAP trend / pullback. ⟨III⟩ · adv · planned · `main_ai_brain` §7f
+**L5.08**  Momentum / relative-strength ranking. ⟨III⟩ · adv · planned · `main_ai_brain` §7f
+**L5.09**  Gap fade (>8%, low-vol) and gap-and-go (vol 140%+). ⟨III⟩ · adv · planned · `main_ai_brain` §7f
+**L5.10**  Range / pivot / CPR breakout, prior-day high-low. ⟨III⟩ · adv · planned · `main_ai_brain` §7f
+**L5.11**  Relative-volume surge (3–10×). ⟨III⟩ · adv · planned · radar §7-setups
+**L5.12**  Momentum ignition detection. ⟨III⟩ · adv · planned · radar §7-setups
+**L5.13**  NR7 / Bollinger-squeeze breakout. ⟨III⟩ · adv · planned · radar §7-setups
+**L5.14**  Connors RSI(2) mean-reversion. ⟨III⟩ · adv · planned · radar §7-setups
+**L5.15**  Pairs / statistical arbitrage — cointegration with a Kalman hedge ratio; regime-agnostic.
+⟨III⟩ · ultra · planned · `main_ai_brain` §7f
+**L5.16**  Cross-sectional statistical arbitrage — rank ~2,000 names daily, long-short the residuals.
+⟨III⟩ · ultra · planned · `_FEATURE_UNIVERSE_MAP` phase 2
+**L5.17**  Event-driven family — earnings, index rebalance, F&O ban entry/exit, corporate actions.
+⟨III · II⟩ · ultra · planned · atlas L4
+**L5.18**  Sector rotation. ⟨III⟩ · ultra · planned · atlas L4
+**L5.19**  The four regime engines as one committed set — all in scope from day one by design, armed
+one-at-a-time as each clears its real-data gate. ⟨III⟩ · adv · spec · `main_ai_brain` §8
+**L5.20**  Intraday tradable cash-universe filter — scan only names that can actually be traded intraday
+today (excludes ASM/GSM, T2T, circuit-banded). ⟨II · III⟩ · base · archived · r/b1
+**L5.21**  Universe scanning 2,000+ → ~150–500 tradeable, by liquidity and turnover, order ≤1–2% of ADV.
+⟨II⟩ · adv · archived · `main_ai_brain` §7f
+**L5.22**  Full-universe opportunity radar — continuous streaming scan of the whole cash and option
+universe, firing on any qualifying setup. Reshaped by research into a *triage* layer feeding the brain,
+not a standalone scalper. ⟨II · XII⟩ · adv · spec · `full_universe_opportunity_radar`
+**L5.23**  Setup/condition library — 10 cash triggers + 7 option triggers, each a candidate hypothesis.
+⟨II⟩ · adv · spec · radar §7-setups
+**L5.24**  Signal decay TTL — every signal carries a per-type half-life and is *dropped* when stale rather
+than queued. ⟨III⟩ · adv · spec · radar §7-selection
+**L5.25**  Three segment-specialist bots — cash-intraday, index-option, stock-option — plus a portfolio
+supervisor above them. ⟨VI · III⟩ · adv · archived · `three_segment_bots_spec_2026-08-03`
+**L5.26**  Cash-intraday bot. ⟨III⟩ · adv · archived · `cash_intraday_bot`
+**L5.27**  Index-option bot. ⟨III⟩ · adv · archived · `index_option_bot_engine_spec_2026-08-03`
+**L5.28**  Stock-option bot. ⟨III⟩ · adv · archived · `stock_option_bot`
+**L5.29**  Segment-bot protocol — the shared contract all three implement. ⟨VI⟩ · adv · archived ·
+`segment_bot_protocol`
+**L5.30**  Pod paper lifecycle engine — breaks the cold-start deadlock so the board populates.
+⟨III⟩ · adv · archived · `pod_paper_lifecycle_engine`
+**L5.31**  Trade-quality floor + per-trade evidence card — a minimum standard below which no trade opens.
+⟨XIII · III⟩ · adv · archived · `trade_quality_floor_and_evidence`
+**L5.32**  Profit-trail gating + MFE/MAE excursion tracking. ⟨III⟩ · adv · archived · r/b23
+**L5.33**  Proportionate entry gates — the three entry gates were over-broad rather than wrong; scale them
+to the evidence. ⟨III⟩ · adv · archived · r/b16
+**L5.34**  Unobservability must not hard-veto — a missing observation degrades confidence, it does not
+block trading outright. ⟨XIII⟩ · adv · archived · r/b19
+**L5.35**  Adaptive arm selector + posterior store — Thompson-style selection across strategy arms.
+126 posterior cells and 921 pending-trade arms accrued. ⟨III · XIII⟩ · adv · archived · r/b18
+**L5.36**  Index-options strategy ensemble + adaptive meta-selector. ⟨III⟩ · adv · archived · r/b18
+**L5.37**  Moneyness-varied directional option arm — ITM/ATM/OTM × CE/PE, validation-gated. ⟨III⟩ · adv ·
+archived · r/171
+**L5.38**  Trending-regime index directional edge arm (A3) — trained direction + VRP + defined-risk debit.
+⟨III⟩ · adv · archived · r/177
+**L5.39**  Deficit-driven replay curriculum — the system chooses which historical sessions to replay based
+on where its own coverage is thinnest. ⟨XII CURIOSITY⟩ · adv · archived · r/86
+**L5.40**  Live universe-wide paper loop — the 24/7 integration hub. ⟨III · IV⟩ · base · archived · r/38
+**L5.41**  Historical bar replay source + replay universe feed. ⟨II⟩ · base · archived · §53
+**L5.42**  Replay-to-live handoff — continuous operation across the market-open boundary. ⟨IV⟩ · adv ·
+archived · r/26
+**L5.43**  Point-in-time universe + corporate-action adjustment inside replay (§53 slice 2).
+⟨II⟩ · adv · archived · §53
+**L5.44**  Prequential learning + provenance-separable memory (§53 slice 3). ⟨XV · XIII⟩ · adv · archived · §53
+**L5.45**  Session/regime replay curriculum store — 5 replayed session regimes recorded. ⟨XII⟩ · adv ·
+archived · `replay_curriculum`
+**L5.46**  HFT / latency arbitrage — **explicitly out of scope**; the prior build proved it is closed from
+a retail cloud VM. ⟨—⟩ · — · disproved · atlas L4
+
+## L6 · OPTIONS & GREEKS — a whole sub-system
+
+*NSE facts that reshape everything here, all of which must be pulled live rather than assumed: since SEBI's
+Oct-2024 change only NIFTY keeps a weekly expiry on NSE (BANKNIFTY, FINNIFTY, MIDCPNIFTY are monthly-only);
+NIFTY weekly moved Thursday → Tuesday in Sept 2025; stock F&O has been 100% physically settled since 2019.*
+
+**L6.01**  Black-Scholes implied volatility. ⟨II⟩ · base · archived · `indicators`
+**L6.02**  Full Greeks per position (Δ Γ ν Θ ρ) and portfolio-aggregated. ⟨II · VII⟩ · adv · archived ·
+`option_alpha_greeks_and_book_risk`
+**L6.03**  IV surface fit — skew plus term structure. NIFTY's reverse skew is near-constant.
+⟨II⟩ · adv · spec · atlas L6
+**L6.04**  Greeks-based pre-trade gate — a second risk vocabulary, because a short-vol book that is tiny
+by notional can be catastrophic by vega. ⟨VII⟩ · adv · archived · `option_alpha_greeks_and_book_risk`
+**L6.05**  Variance-risk-premium richness engine — IV minus forecast realized vol. Critically, this needs
+*no long IV history*, so it fixes the IV-rank starvation that blocked premium selling.
+⟨II · III⟩ · adv · archived · `option_alpha_slice1_vol_richness_engine`
+**L6.06**  IV-rank shrinkage estimator — pooled/shrunk IV-rank from thin history plus an India-VIX proxy.
+⟨II · XIII⟩ · adv · spec · `option_bots_profit_taxonomy`
+**L6.07**  Regime → profit-engine map — which of the five greek engines the current regime pays.
+⟨III⟩ · adv · spec · `option_bots_profit_taxonomy`
+**L6.08**  Option opportunity scorer — per-name, per-engine edge scores, cross-sectionally ranked into an
+opportunity book. ⟨III⟩ · adv · archived · `option_alpha_slice2_opportunity_scorer`
+**L6.09**  Terminal-distribution model — regime-conditioned Monte Carlo of the underlying at expiry.
+⟨IX⟩ · adv · archived · `option_alpha_slice3_structure_payoff_optimizer`
+**L6.10**  Structure payoff optimizer — enumerate and search the leg space, pick max-EV under defined-risk
+and liquidity constraints. This is the mechanism behind "the bot invents its own trades."
+⟨XI GENERATIVITY · III⟩ · ultra · archived · `option_alpha_slice3`
+**L6.11**  Option liquidity filter — OI, bid-ask and volume strike gating, with multi-leg slippage.
+⟨II · IV⟩ · adv · spec · `option_bots_profit_taxonomy`
+**L6.12**  Per-leg mid-to-mid P&L marker — real exit economics rather than a synthetic mark.
+⟨IV⟩ · adv · archived · `pod_option_leg_pnl_slice4`
+**L6.13**  Self-learning engine re-weighting — the bot learns which of its own structure ideas actually
+pay and shifts capital toward them. ⟨V · XI⟩ · ultra · archived · `option_alpha_slice5_engine_learning`
+**L6.14**  Option book optimizer — CVXPY cross-name portfolio of option trades under net-greek, VaR and
+margin constraints. ⟨VIII · III⟩ · ultra · planned · `option_bots_profit_taxonomy`
+**L6.15**  Dispersion engine — index implied correlation vs realized; sell index vol and buy constituent
+vol when implied correlation is rich. ⟨III⟩ · ultra · planned · `option_bots_profit_taxonomy`
+**L6.16**  Skew relative value — rank names by put-skew richness against their own and peer history.
+⟨III⟩ · ultra · planned · `option_bots_profit_taxonomy`
+**L6.17**  Term-structure relative value — contango/backwardation across expiries, expressed as calendars.
+⟨III⟩ · ultra · planned · `option_bots_profit_taxonomy`
+**L6.18**  Credit-spread live path. ⟨III⟩ · adv · archived · r/39
+**L6.19**  0-DTE expiry-day options engine. ⟨III⟩ · adv · spec (never built) · r/174
+**L6.20**  Iron condor / short strangle premium-seller — the flat-regime home engine, harvesting the
+variance risk premium. Defined-risk preferred over naked, always. ⟨III⟩ · adv · spec · `main_ai_brain` §7b
+**L6.21**  Long straddle / strangle / long gamma — the volatile-regime engine. ⟨III⟩ · adv · spec ·
+`main_ai_brain` §7b
+**L6.22**  Directional verticals — bull-call, bear-put, bull-put, bear-call spreads. ⟨III⟩ · adv · spec ·
+`main_ai_brain` §7b
+**L6.23**  Calendar, diagonal, ratio, backspread, butterfly, broken-wing structures. ⟨III⟩ · ultra ·
+planned · `main_ai_brain` §7b
+**L6.24**  Per-underlying expiry selection — expiry must be chosen per underlying, not once globally.
+⟨III⟩ · base · archived · r/b9
+**L6.25**  Option underlying re-look — options get one look per process; give them a fair repeating
+re-look. ⟨III⟩ · base · archived · r/b8
+**L6.26**  Segment-scoped option mechanism identity — so index options get a fair antibody trial.
+⟨XIII⟩ · adv · archived · r/165
+**L6.27**  Full option universe — every contract across every index plus full stock breadth (~28k live
+contracts: ~2–3k index, ~17–25k stock). ⟨II⟩ · adv · archived · r/176
+**L6.28**  Live multi-broker option-chain feed. ⟨II · XVI⟩ · adv · archived · `live_option_chain_feed`
+**L6.29**  Underlying intraday price source. ⟨II⟩ · base · archived · `underlying_intraday_price_source`
+**L6.30**  SPAN + exposure margin calculator — margins are nonlinear and hedged combinations cost less,
+which changes what is affordable. ⟨IV⟩ · adv · planned · atlas L6
+**L6.31**  Physical-settlement handling for stock F&O — delivery and assignment, escalating expiry-week
+margin, expiry-week close-out at T-1/T-2 to dodge forced delivery. ⟨IV · VII⟩ · adv · planned · atlas L6
+**L6.32**  Expiry / pin-risk management. ⟨VII⟩ · adv · planned · atlas L6
+**L6.33**  Auto delta-hedge scheduler. ⟨IV⟩ · ultra · planned · atlas L6
+**L6.34**  Vega / gamma exposure limits. ⟨VII⟩ · adv · planned · atlas L6
+**L6.35**  Local-vol / SABR / rough-vol surface calibration. ⟨II⟩ · ultra · planned · atlas L6
+**L6.36**  American-option pricing for physically-settled stock options with early exercise.
+⟨II⟩ · ultra · planned · atlas L6
+**L6.37**  Stock-option premium selling — **default OFF** by decision: single-name gap risk, physical
+settlement, STT-exercise trap and corporate-action risk. Stock options stay directional, vertical or
+covered-call only. ⟨VII⟩ · — · policy · `full_option_universe_scope` §8
+**L6.38**  Confident-loss-aware P&L + assigned-table column on closed trades. ⟨XIII⟩ · adv · archived · r/175
+**L6.39**  Implied-correlation computation across index constituents. ⟨II⟩ · adv · archived · `dispersion`
+
+## L7 · RISK — survival
+
+*SEBI's data: absent risk rails and over-sizing are why retail loses. Nothing bypasses the risk gate.*
+
+**L7.01**  Risk-based position sizer. ⟨III · VII⟩ · base · archived · `risk_based_position_sizer`
+**L7.02**  Max position / order / rate / price-collar / max-leverage limits. ⟨VII⟩ · base · archived ·
+`pre_trade_risk_gate`
+**L7.03**  Max daily loss + drawdown kill. ⟨VII⟩ · base · archived · atlas L7
+**L7.04**  Graduated drawdown ladder (−5 / −10 / −15%). ⟨VII⟩ · adv · planned · `_GAP_ANALYSIS` #9
+**L7.05**  Per-symbol and aggregate exposure with correlation-aware limits. ⟨VII⟩ · adv · planned · atlas L7
+**L7.06**  MWPL / F&O-ban / position-limit guard, with hysteresis. ⟨VII⟩ · base · archived · r/176
+**L7.07**  Circuit-limit-aware order rejection — a circuit is a liquidity trap where stops can fail.
+⟨VII⟩ · base · planned · atlas L7
+**L7.08**  Liquidation / margin-shortfall monitor. ⟨VII⟩ · adv · planned · atlas L7
+**L7.09**  Correlation-breakdown breaker — regime-split correlation monitoring. ⟨VII⟩ · adv · planned · atlas L7
+**L7.10**  Kill switch as a separate watchdog process, with reconciliation on restart. ⟨VII · IV⟩ · adv ·
+planned · atlas L7
+**L7.11**  CVaR / tail-risk with stress scenarios — 2008, 2020 and flash-crash replays. ⟨VII · IX⟩ ·
+ultra · planned · atlas L7
+**L7.12**  Real-time portfolio VaR including Greeks. ⟨VII⟩ · ultra · planned · atlas L7
+**L7.13**  Pre-trade cost gate as a risk control (see L1.02) — the cheapest risk reduction available.
+⟨VII⟩ · base · archived · r/164
+**L7.14**  Indian trading cost model integrated into the risk decision. ⟨VII⟩ · base · archived · r/b28
+**L7.15**  Option book risk engine — net greeks at book level, not per-trade. ⟨VII⟩ · adv · archived ·
+`option_alpha_greeks_and_book_risk`
+**L7.16**  Debate-as-risk-check — an adversarial panel that must fail to refute a thesis before it sizes.
+906 risk observations accrued. ⟨VI · VII⟩ · adv · archived · r/100
+**L7.17**  LLM-risk entry gate at all four entry sites, calibration-gated so it only earns authority as it
+proves itself. ⟨VI · VII⟩ · adv · archived · r/101
+**L7.18**  Per-trade pre-mortem CVaR sizing consumer — built as diagnostic; the *acting* consumer was
+still queued at reset. ⟨IX · VII⟩ · adv · blocked · r/107
+**L7.19**  Power budgets — meters cumulative daily action throughput against an explicit budget.
+⟨VII⟩ · adv · archived · r/120
+**L7.20**  Instrumental-convergence limiter — caps the resource-acquisition drive and preserves off-switch
+dominance. ⟨VII⟩ · adv · archived · r/117
+**L7.21**  Scalable oversight — tiers each decision by stakes × confidence; high-stakes and low-confidence
+gets deferred to the human. ⟨VII⟩ · adv · archived · r/116
+**L7.22**  Market-data integrity defense — screens signal-input bars for adversarial or corrupt values
+before they reach the strategy. ⟨VII · II⟩ · adv · archived · r/121
+
+## L8 · PORTFOLIO & CAPITAL ALLOCATION — how much
+
+**L8.01**  Capital-allocation optimizer — the institutional-spec engine. ⟨III⟩ · adv · archived · r/163
+**L8.02**  Volatility-target sizing as the primary mechanism. ⟨III⟩ · adv · spec · atlas L8
+**L8.03**  Fractional-Kelly ceiling — Kelly sizes multiple simultaneous bets jointly, not one at a time.
+⟨III⟩ · adv · spec · atlas L8
+**L8.04**  Discounted / non-stationary bandit allocator across strategies — chosen specifically because it
+is the only family where *forgetting stale edge* is first-class. ⟨III · XII⟩ · adv · spec ·
+`main_ai_brain` §7e
+**L8.05**  CVXPY constrained optimizer — Markowitz / CVaR / cardinality, with capital, margin, per-cluster
+and per-sector caps. ⟨III⟩ · adv · spec · r/161, r/162
+**L8.06**  RMT correlation denoising (Marchenko-Pastur) — before clustering, strip the noise eigenvalues.
+⟨III⟩ · adv · spec · radar §7-selection
+**L8.07**  Hierarchical Risk Parity clustering, with a cap on picks per cluster — kills the redundant
+same-bet (40 sector names gapping is one bet taken 40 times). ⟨III⟩ · adv · spec · radar §7-selection
+**L8.08**  Mixed-integer knapsack selection under capital, margin and rate constraints, with a greedy
+value-density fallback when a burst must fire inside the order-rate window. ⟨III⟩ · adv · spec ·
+radar §7-selection
+**L8.09**  Priority queue with decay TTL — best-first through Kite's rate limit, dropping stale signals.
+⟨III⟩ · adv · spec · radar §7-selection
+**L8.10**  Capacity tracking per strategy. ⟨III⟩ · adv · planned · atlas L8
+**L8.11**  Bayesian hierarchical alpha (NumPyro) — partial pooling across strategies with thin data.
+⟨IX⟩ · ultra · planned · atlas L8
+**L8.12**  Regime-conditional allocation. ⟨III⟩ · ultra · planned · atlas L8
+**L8.13**  Meta-strategy allocator — LLM weights champion configs from memory. ⟨VI · III⟩ · adv ·
+archived · r/103
+**L8.14**  Portfolio supervisor over the three segment bots. ⟨VI · III⟩ · adv · archived ·
+`three_segment_bots_spec`
+**L8.15**  Multi-objective arbitration — normalised augmented-Chebyshev MCDM over per-mechanism
+objectives, producing a Pareto front. ⟨III⟩ · adv · archived · r/154
+**L8.16**  Goal-priority scheduler — concurrency-budgeted priority plan. Its entry-loop consumer was still
+queued at reset. ⟨III⟩ · adv · blocked · r/154
+**L8.17**  Paper-trading ledger — the resource/economy accounting. ⟨IV⟩ · base · archived ·
+`paper_trading_ledger`
+
+## L9 · EXECUTION
+
+**L9.01**  Kite broker client + order placement. ⟨IV⟩ · base · archived · `kite_broker_client`
+**L9.02**  Full Kite order-type taxonomy — market, limit, SL, SL-M, GTT, cover, bracket, basket, iceberg.
+⟨IV⟩ · base · archived · r/40, r/42
+**L9.03**  Paper/live execution parity — the same code path serves both, which is the architectural
+decision the whole system rests on. ⟨IV⟩ · base · archived · PLAN §1
+**L9.04**  Realistic options fills — identified as the one gap every off-the-shelf platform had.
+⟨IV⟩ · adv · archived · PLAN §1.2
+**L9.05**  Cost-aware maker/taker and segment routing. ⟨IV⟩ · adv · planned · atlas L5
+**L9.06**  Per-order slippage budget with abort. ⟨IV⟩ · adv · planned · atlas L5
+**L9.07**  Impact-aware order slicing, only where the clip exceeds available liquidity. ⟨IV⟩ · ultra ·
+planned · atlas L5
+**L9.08**  Smart order routing across brokers — best fill, latency-aware. ⟨IV · XVI⟩ · ultra · planned ·
+atlas L5
+**L9.09**  Reinforcement-learning execution agent — learns child-order slicing against the impact model.
+The most defensible RL application here, since it trains on the system's own logs. ⟨I · IV⟩ · ultra ·
+planned · `_FEATURE_UNIVERSE_MAP` phase 2
+**L9.10**  Broker state reconciler in the execution path. ⟨IV⟩ · base · archived · r/168
+**L9.11**  Order-intent WAL in the execution path. ⟨IV⟩ · base · archived · r/168
+
+## L10 · OPERATIONS & SELF-MAINTENANCE
+
+**L10.01**  24/7 continuous paper-trading loop — the system never stops, market open or closed.
+⟨IV⟩ · base · archived · PLAN §1.4
+**L10.02**  Market-closed real-market replay engine (§53) — the whole simulation programme.
+⟨II · XII⟩ · adv · archived · r/53, r/62
+**L10.03**  Non-blocking high-fidelity replay prebuild — builds the next fidelity tier in the background
+and hot-swaps. ⟨IV⟩ · adv · archived · r/92
+**L10.04**  Autonomous unattended Breeze 1s replay. ⟨IV⟩ · adv · archived · r/69
+**L10.05**  Multi-broker fleet auto-activation in the replay loop — built, but activation stayed opt-in
+until its focus was bounded. ⟨XVI⟩ · adv · blocked · r/85
+**L10.06**  Component registry — 40 components with 37 maintenance edges, and an explicit self-vs-exogenous
+boundary. ⟨X AUTOPOIESIS⟩ · adv · archived · r/172
+**L10.07**  Component telemetry collector — real vital signs, where `UNAVAILABLE` and `NOT_INSTRUMENTED`
+are distinct states and neither is ever defaulted to healthy. 69,620 samples accrued.
+⟨X⟩ · adv · archived · r/172
+**L10.08**  Component health index — PCA T²+SPE/Q, EWMA, ADWIN, weighted-max fusion. ⟨X⟩ · adv · archived · r/172
+**L10.09**  Component failure-hazard model — right-censored Weibull-AFT, Wiener first-passage-time, and a
+prior ladder. ⟨X · IX⟩ · adv · archived · r/168
+**L10.10**  Hierarchical failure-rate prior — conjugate Gamma-Poisson partial pooling, principled even at
+N=0. ⟨X · IX⟩ · adv · archived · r/172
+**L10.11**  Maintenance policy solver — Bellman value iteration to a control-limit table, cross-checked
+against pymdptoolbox to 5e-13. ⟨X⟩ · adv · archived · r/172
+**L10.12**  Operational-closure auditor — Chemical Organization Theory over networkx SCC/condensation.
+⟨X⟩ · ultra · archived · r/169
+**L10.13**  Component supervision tree — OTP-style child specs, MaxR/MaxT intensity limiter, k8s
+CrashLoopBackOff semantics. ⟨X⟩ · adv · archived · r/170
+**L10.14**  Component repair executor — pybreaker, tenacity decorrelated jitter, repair budget,
+corrigibility and referee pre-check, forensic incidents. Autonomous repair stayed advisory/dry-run until
+the operator grants autonomy. ⟨X · VII⟩ · adv · blocked · r/170
+**L10.15**  Homeostatic setpoint keeper — Ashby/Aubin viability set driving a cadence throttle.
+⟨X⟩ · adv · archived · r/172
+**L10.16**  Organism vitality gate — the entry-site lever the homeostat actually pulls. ⟨X⟩ · adv ·
+archived · r/172
+**L10.17**  Autopoiesis orchestrator — the MAPE-K cycle. ⟨X⟩ · adv · archived · r/172
+**L10.18**  Autopoiesis state store — append-only; censored lifetimes survive restart. 21,204 lifetime
+events accrued. ⟨X · XV⟩ · adv · archived · r/172
+**L10.19**  Feature-plane decoupling — analytics separated from the trading loop so heavy computation
+cannot stall execution. ⟨IV⟩ · adv · archived · r/b25a
+**L10.20**  Deploy-and-verify script + verification cockpit as the operational gate. ⟨V⟩ · adv · archived ·
+`scripts/deploy_and_verify.sh`
+**L10.21**  Instrument-token map refresh job. ⟨II⟩ · base · archived · `refresh_instrument_token_map`
+**L10.22**  Holiday / Muhurat / session calendar in operations. ⟨IV⟩ · base · archived · `nse_event_calendar`
+
+## L11 · INTELLIGENCE — the brain
+
+*The corpus's hard-won rule, stated in nearly every research doc: model output may **propose**; only a
+deterministic non-LLM gate may **decide** capital. Data-driven, never text-driven.*
+
+### L11a · The router / brain
+
+**L11.01**  Regime classifier — a trend gauge (ADX / Choppiness / Kaufman efficiency ratio) combined with a
+vol gauge (ATR / BBW / India VIX), requiring multi-bar persistence before switching.
+⟨I MIND · II⟩ · adv · spec · `main_ai_brain` §7a
+**L11.02**  HMM / Markov-switching regime model — using **filtered** P(state | data ≤ t) only. The
+*smoothed* variant leaks the future and inflates every backtest; this is build-critical.
+⟨I⟩ · adv · spec · `main_ai_brain` §7a
+**L11.03**  Soft regime *weighting* rather than hard switching — blend engine exposures by regime
+probability, because whipsaw at transitions is the dominant cost and "switching beats a static blend" is
+explicitly unproven. ⟨I · III⟩ · adv · spec · `main_ai_brain` §7a
+**L11.04**  Non-stationary bandit router (discounted / sliding-window Thompson) — chosen because forgetting
+stale edge is first-class in this family and nowhere else. ⟨III · XII⟩ · adv · spec · `main_ai_brain` §7e
+**L11.05**  Meta-model over the experiment ledger — learns which engine pays in which regime.
+⟨I · XV⟩ · adv · spec · `main_ai_brain` §7e
+**L11.06**  Historical session market-regime classifier. ⟨I⟩ · adv · archived ·
+`historical_session_market_regime_classifier`
+**L11.07**  Regime-conditional model bank — per-regime ensembles, the RegimeFolio pattern.
+⟨I⟩ · ultra · planned · `main_ai_brain` §7e
+**L11.08**  Qlib DDG-DA drift adaptation as the router reference — reported Sharpe 2.41 vs 1.51 baseline.
+⟨I⟩ · ultra · planned · `main_ai_brain` §7e
+
+### L11b · The directional bots
+
+**L11.09**  BULL agent — its own complete architecture: own model stack, feature pipeline, calibration
+layer, online learner, state store and SHAP evidence log. Emits calibrated P(up) plus evidence.
+⟨I · IX⟩ · adv · archived (spec + partial) · `dual_directional_ai_agents`
+**L11.10**  BEAR agent — the mirror, independently versioned and trainable so one can be replaced without
+touching the other. ⟨I · IX⟩ · adv · archived (spec + partial) · `dual_directional_ai_agents`
+**L11.11**  Meta-labelling arbiter — resolves the two into LONG / SHORT / FLAT plus size, deterministically.
+Both-high → FLAT and both-low → FLAT; a system contradicting itself is not confident, and abstention is a
+first-class action. ⟨I · III⟩ · adv · spec · `dual_directional` §7-mldl
+**L11.12**  Mandatory linear + LightGBM baseline gate — every model must beat both on the same features
+before it ships. ⟨XIII⟩ · base · spec · `dual_directional` §7-mldl
+**L11.13**  Calibration layer (Platt / isotonic / temperature) — mandatory before any probability sizes a
+bet, because modern networks are systematically overconfident (Guo 2017). Validated by Brier score and
+reliability diagrams. ⟨XIII⟩ · base · spec · `dual_directional` §7-mldl
+**L11.14**  Online learner with drift detection (river ADWIN/DDM) fed by *realized P&L only* — never
+self-grading, because self-correction without ground truth measurably degrades. ⟨I · V⟩ · adv · spec ·
+`dual_directional` §7-mldl
+**L11.15**  SHAP per-decision evidence store — the mechanism-declaration trail that makes every decision
+auditable. ⟨XIII⟩ · adv · spec · `dual_directional` §7-mldl
+**L11.16**  DeepLOB (CNN+LSTM on raw book) as a gated second evidence source. ⟨I⟩ · ultra · planned ·
+`dual_directional` §7-mldl
+**L11.17**  Directional verdict wiring into the three segment bots. ⟨I · III⟩ · adv · archived ·
+`directional_verdict_wiring`
+**L11.18**  Win-probability engine — a real trained LightGBM model: feature pipeline → CV → calibration →
+persisted → Kelly entry sizing. Archived CV AUC 0.844, beating baseline. ⟨I · IX⟩ · adv · archived · r/156
+
+### L11c · Perception organs
+
+**L11.19**  Kronos candlestick foundation model — Tsinghua, AAAI-2026, MIT-licensed. Feed 400 candles,
+predict 120. Run Monte-Carlo to get a *distribution*, then BULL reads the up-tail and BEAR the down-tail
+from the same model. Must be NSE-finetuned; must beat the LightGBM baseline; never traded raw.
+⟨II · IX⟩ · ultra · planned · `dual_directional` §2c
+**L11.20**  Kronos weight-loading security — pin by content hash, prefer safetensors over pickle, run
+inference sandboxed and network-isolated. Loading HF weights is loading untrusted binary.
+⟨VII⟩ · adv · planned · `dual_directional` §2c
+**L11.21**  Chronos / TimesFM / Moirai time-series foundation models as alternative forecast priors.
+⟨IX⟩ · ultra · planned · `advanced_intelligence_stack_catalog`
+**L11.22**  News ingestion organ — tier-1 financial RSS with per-feed staleness rejection, dedup store.
+Real pass: 220 headlines, Moneycontrol correctly stale-rejected. ⟨II⟩ · adv · archived · r/140
+**L11.23**  Structured index support/resistance extraction from headlines — all five index underlyings.
+Real pass: 18 correct levels, noise rejected. ⟨II⟩ · adv · archived · r/142
+**L11.24**  Stock-level S/R extraction. ⟨II⟩ · adv · archived · r/149
+**L11.25**  Per-source reliability scoring — tier-seeded beta reputation plus a freshness track, fused by
+Stouffer. Archived result: filings 91% > fresh news 67% > stale feed 50%. ⟨XIII⟩ · adv · archived · r/146
+**L11.26**  News acquisition ladder — fast curl_cffi static fetch (~0.3s, Chrome TLS) falling back to
+Crawl4AI Chromium render for JS-only pages. ⟨XVI⟩ · adv · archived · r/143, r/144
+**L11.27**  NSE corporate-announcement filings ingest — the fastest free regulatory ground truth, keyed by
+symbol so no NLP disambiguation is needed. ⟨II · XVI⟩ · adv · archived · r/145
+**L11.28**  News entry-gate — per-symbol news-event risk sizes down or defers entries. Wired at both cash
+ORB sites, advisory until calibration-earned. ⟨II · VII⟩ · adv · archived · r/147
+**L11.29**  Headline sentiment — the polarity half plus a directional gate. ⟨II⟩ · adv · archived · r/150
+**L11.30**  Index-option S/R proximity gate. ⟨II⟩ · adv · archived · r/151
+**L11.31**  Telegram social-tier ingestion. ⟨II⟩ · adv · archived · r/152
+**L11.32**  FinBERT-tone / ProsusAI FinBERT for financial sentiment — general models fail on finance
+(negation, "beat/miss estimates", hedged guidance). ⟨II⟩ · adv · planned · `dual_directional` §7-nlp
+**L11.33**  Event extraction over sentiment — NER and entity-linking, then event-type classification
+(earnings / M&A / rating / order / management / regulatory / dividend), then **numeric surprise vs
+consensus**. Hard numbers dominate soft tone. ⟨II⟩ · adv · planned · `dual_directional` §7-nlp
+**L11.34**  Novelty-discount + time-decay + news-volume weighting on the aggregate signal.
+⟨II⟩ · adv · planned · `dual_directional` §7-nlp
+**L11.35**  IndicBERT / MuRIL for vernacular Indian press. ⟨II⟩ · ultra · planned · `dual_directional` §7-nlp
+**L11.36**  Dual-LLM quarantine — the privileged model never sees raw untrusted text; a tool-less,
+credential-less quarantined reader emits only typed structured data (sentiment ∈ [-1,1], event enum,
+confidence, source count) and never free text. **Mandatory**, because a news-reading agent with trading
+credentials is the lethal trifecta and the order stream itself is the actuator. ⟨VII · XVI⟩ · adv ·
+planned · `dual_directional` §7-security
+**L11.37**  Source allowlist + ≥2-independent-source corroboration — PoisonedRAG showed five malicious
+documents achieve ~90% attack success, and paraphrase/perplexity defences are insufficient.
+⟨VII⟩ · adv · planned · `dual_directional` §7-security
+**L11.38**  Online-research organ — crawl4ai for scrape, browser-use for agentic navigation, local
+vision-LLM (MiniCPM-V / Qwen-VL) for anti-bot and image-only cases. ⟨XVI⟩ · adv · planned ·
+`dual_directional` §2d
+**L11.39**  Camoufox anti-detection browser — C++-level fingerprint spoofing, Playwright-compatible; the
+fix for the 403 walls hit on NSE/BSE/Moneycontrol. ⟨XVI⟩ · adv · planned · `dual_directional` §2d
+**L11.40**  Data-target catalog — the universal external-data acquisition layer covering ten targets:
+news · corporate actions · analyst data · ownership and FII/DII flows · macro · sector · options-derived ·
+social · fundamental and concall transcripts · calendar. ⟨XVI⟩ · ultra · planned · `dual_directional` §2e
+**L11.41**  Acquisition scheduler + append-only point-in-time evidence store — collectors emit typed
+records; consumers read the store, never raw pages. ⟨XVI · XV⟩ · adv · planned · `dual_directional` §2e
+**L11.42**  Fincept Terminal connector mining — a 29.4k-star open-source Bloomberg alternative advertising
+100+ data sources; mine its Indian/NSE connectors as ready adapters. ⟨XVI⟩ · adv · idea ·
+`dual_directional` §2e
+**L11.43**  Global / cross-market linkage engine — GIFT Nifty, US close, Asia, Europe, USDINR, DXY, crude,
+ADRs of Indian names. Honest caveat carried: the obvious gap is already priced in by the open, so this is
+a *context* organ, not an overnight-carry strategy — and we are intraday-only regardless.
+⟨II⟩ · adv · planned · `global_market_linkage_engine`
+**L11.44**  Lead-lag / Granger / VECM cross-market analysis. ⟨I⟩ · ultra · planned · `global_market_linkage`
+**L11.45**  ADR-implied single-stock open dislocation. ⟨II⟩ · ultra · planned · `global_market_linkage`
+**L11.46**  Community / tipster experiment harness — harvest calls, parse to structured form,
+auto-paper-trade each at point-in-time cost, score per source, promote survivors and cull the rest. Its
+primary value is *proving most sources are noise*. ⟨VI · XIII⟩ · adv · planned ·
+`community_tip_experiment_harness`
+**L11.47**  Source-reliability leaderboard + crowd-sentiment aggregate as a contrarian feature.
+⟨VI⟩ · adv · planned · `community_tip_experiment_harness`
+
+### L11d · Memory
+
+**L11.48**  Episodic experience memory (SQLite) — one node per closed experiment. **3,481 closed trades
+survive the reset.** ⟨XV⟩ · base · **retained** · r/43
+**L11.49**  Temporal knowledge graph over experience — LAG and recursive-CTE multi-hop queries.
+⟨XV⟩ · adv · archived · r/50
+**L11.50**  Semantic memory — the consolidated general-knowledge fact store. ⟨XV⟩ · adv · archived · r/135
+**L11.51**  Memory consolidation engine — episodic → semantic transfer, sample-gated. ⟨XV⟩ · adv ·
+archived · r/135
+**L11.52**  Assumption registry — the mechanism-verified reasoning tripwire. ⟨XIII⟩ · adv · archived · r/43
+**L11.53**  Information diet — self-input accounting: what the system has been reading. ⟨II · XV⟩ · adv ·
+archived · r/52
+**L11.54**  Graphiti bitemporal knowledge graph — Apache-licensed, bitemporal *by design* (valid time vs
+ingestion time), which is no-look-ahead by construction. Identified as the memory backbone upgrade.
+⟨XV⟩ · ultra · planned · `advanced_intelligence_stack_catalog` §2A
+**L11.55**  HippoRAG2 associative multi-hop recall. ⟨XV⟩ · ultra · planned · catalog §2A
+**L11.56**  LangMem procedural (strategy) memory. ⟨XV⟩ · ultra · planned · catalog §2A
+**L11.57**  Reflection formula (recency × importance × relevance decay) + A-MEM memory evolution as the
+consolidation engine. ⟨XV⟩ · ultra · planned · catalog §2A
+**L11.58**  Meta-memory — confidence, belief half-life and known-unknowns. No OSS covers this; a custom
+layer extending Graphiti. ⟨XV · XIII⟩ · ultra · planned · catalog §2A
+**L11.59**  Working memory · procedural memory · in-weights/in-context tiering · conflict-and-duplicate
+resolution · compression and summarization — the five unbuilt XV branches. ⟨XV⟩ · ultra · planned ·
+`AI_CONCEPT_TREE_STATUS` XV
+
+### L11e · The LLM lane
+
+**L11.60**  Universal LLM gateway — Claude-subscription-backed, exposed Ollama-style. ⟨XVI⟩ · adv ·
+archived · `llm_gateway_spec_2026-08-02`
+**L11.61**  Claude Code subscription provider — the Agent-SDK-backed lane. **One of three survivors of
+the reset.** ⟨XVI⟩ · adv · **retained** · `claude_code_subscription_provider`
+**L11.62**  Warm-persistent subscription client — roughly 3× faster than cold, with cap-fallback.
+**Retained.** ⟨XVI⟩ · adv · **retained** · r/b48
+**L11.63**  Swappable multi-provider LLM client + provider registry. ⟨XVI⟩ · adv · archived · r/96
+**L11.64**  LLM cost-routing ladder — local first, then free cloud tiers, and paid last and sparingly.
+⟨XVI · IV⟩ · adv · archived · r/97, r/98, r/99
+**L11.65**  Free-tier provider registry + failover order — Scaleway, Hyperbolic, GitHub Models, Cohere,
+keyless OVHcloud. ⟨XVI⟩ · adv · archived · r/98
+**L11.66**  Local Ollama constrained-decoding provider with a think-then-answer contract.
+⟨XVI⟩ · adv · archived (paused) · `local_ollama_constrained_decoding_provider_design`
+**L11.67**  Subscription token ledger + gateway dashboard surface. ⟨XVI⟩ · adv · archived · r/163
+**L11.68**  Memory-grounded strategy analyst. ⟨I · XV⟩ · adv · archived · r/96
+**L11.69**  Causal cluster analyst — causal analysis over multi-hop outcome clusters feeding the assumption
+registry. ⟨I⟩ · adv · archived · r/102
+**L11.70**  Thesis debate risk panel — role-specialised desks. ⟨VI⟩ · adv · archived · r/100
+**L11.71**  Prediction council with track-record weighting. ⟨VI · XIII⟩ · adv · archived · r/104
+**L11.72**  Synthetic stress rehearsal — LLM-generated stress scenarios. ⟨IX⟩ · adv · archived · r/105
+**L11.73**  Consensus / conflict resolution — track-record-weighted, deadlock resolved toward the
+most-proven desk. ⟨VI⟩ · adv · archived · r/136
+**L11.74**  Multi-agent memory governance — reputation policy separating trusted from quarantined desks.
+⟨VI⟩ · adv · archived · r/136
+**L11.75**  LLM-authored strategy code — sandboxed, gated, never auto-promoted. ⟨XI⟩ · ultra · planned ·
+atlas L11
+**L11.76**  Automated post-mortem writer feeding the ledger. ⟨XV⟩ · ultra · planned · atlas L11
+
+### L11f · Self-improvement and frontier cognition
+
+**L11.77**  Self-evolution loop — gplearn / PySR / OpenEvolve inventing new alphas, **gated by the L2
+validation engine**. The two must ship together, or evolution simply overfits — which is precisely how
+the prior attempt died. ⟨XI⟩ · ultra · planned · `_FEATURE_UNIVERSE_MAP` phase 5
+**L11.78**  Symbolic regression for interpretable alpha (PySR, gplearn, DEAP). ⟨XI⟩ · ultra · planned ·
+catalog §1e
+**L11.79**  DSPy — self-optimising LLM programs compiled against a metric rather than vibes.
+⟨XI⟩ · ultra · planned · catalog §1e
+**L11.80**  py_trees behaviour-tree control loop — replaces ad-hoc if/else arbitration with composable,
+auditable, hot-swappable nodes plus a blackboard. Rated the highest-confidence deployable cognitive
+component. ⟨I · IV⟩ · ultra · planned · catalog §2C
+**L11.81**  torchhd hyperdimensional binding — bind technical, sentiment, regime and fundamental signals
+into one associative vector, enabling "find similar past market states." ⟨XV · I⟩ · ultra · planned ·
+catalog §2C
+**L11.82**  pymdp active inference — perceive-and-act under uncertainty with an epistemic drive. Not
+decision-core-ready; use as a regime-belief *feature*. ⟨IX⟩ · ultra · planned · catalog §2D
+**L11.83**  Scallop differentiable Datalog — hard rules and neural confidences in one query.
+⟨I⟩ · ultra · planned · catalog §2D
+**L11.84**  Prolog/PySwip deterministic compliance and blackout veto layer. ⟨VII⟩ · ultra · planned ·
+catalog §2D
+**L11.85**  MAPIE conformal prediction — calibrated intervals, so the system knows what it does not know.
+⟨XIII⟩ · ultra · planned · catalog §2B
+**L11.86**  NumPyro / GPyTorch Bayesian posteriors feeding sizing. ⟨XIII⟩ · ultra · planned · catalog §2B
+**L11.87**  TabPFN Bayesian tabular foundation model — strong small-N priors, which fits the thin-data
+maturity-ladder rule. ⟨IX⟩ · ultra · planned · catalog §1b
+**L11.88**  EWC + replay continual learning on drift. ⟨I⟩ · ultra · planned · catalog §2B
+**L11.89**  learn2learn MAML/Reptile fast regime adaptation. ⟨I⟩ · ultra · planned · catalog §2B
+**L11.90**  htm.core streaming anomaly and regime detection without batch retrain. ⟨II⟩ · ultra · planned ·
+catalog §2C
+**L11.91**  Shared Global Workspace (Goyal et al., ICLR'22) as the modern upgrade to the built
+`global_workspace`. ⟨VIII⟩ · ultra · planned · catalog §2C
+**L11.92**  Decision Transformer — offline RL trained on the system's own logs; the most defensible RL
+application in this domain. ⟨I⟩ · ultra · planned · catalog §2B
+**L11.93**  Ideation loop — self-generated core concepts. ⟨XI⟩ · adv · archived · r/30
+**L11.94**  External-knowledge → validated-hypothesis pipeline. ⟨XIII · XVI⟩ · adv · archived · r/12
+**L11.95**  Natural-language strategy authoring — "sell BANKNIFTY strangles when IV-rank > 70" → spec →
+gated build. ⟨XI⟩ · ultra · idea · `_FEATURE_UNIVERSE_MAP` phase 4
+
+## L12 · GOVERNANCE, SAFETY & COMPLIANCE
+
+*Trunk VII reached 14/14 complete — the only trunk finished before any deeper autonomy was granted.*
+
+**L12.01**  Constitutional core — 14 articles plus an action and posture reviewer. ⟨VII⟩ · adv · archived · r/109
+**L12.02**  Constitutional referee — a hard pre-order gate at all four entry sites. ⟨VII⟩ · adv · archived · r/110
+**L12.03**  Corrigibility / off-switch. ⟨VII⟩ · adv · archived · r/111
+**L12.04**  Deceptive-alignment monitor + wireheading tripwire — a critical trip forces an off-switch halt.
+⟨VII⟩ · adv · archived · r/112
+**L12.05**  Incident post-mortem + forensic store. ⟨VII⟩ · adv · archived · r/113
+**L12.06**  Goal-integrity monitor — declared vs effective objective, by sign, edge concentration and
+win-rate-versus-return divergence. ⟨VII⟩ · adv · archived · r/114
+**L12.07**  Mechanistic interpretability — decision attribution plus a reliability grade; influential but
+unreliable mechanisms are flagged red. ⟨VII · XIII⟩ · adv · archived · r/115
+**L12.08**  Scalable oversight (see L7.21). ⟨VII⟩ · adv · archived · r/116
+**L12.09**  Instrumental-convergence limiter (see L7.20). ⟨VII⟩ · adv · archived · r/117
+**L12.10**  Red-team harness — adversarially perturbs the champion config over real sessions to expose its
+fragility surface. Real backtests, not LLM imagination. ⟨VII⟩ · adv · archived · r/118
+**L12.11**  Ethics / law reasoner — the SEBI algo rulebook as data; a hard violation triggers the off-switch
+plus a forensic incident. ⟨VII⟩ · adv · archived · r/119
+**L12.12**  Power budgets (see L7.19). ⟨VII⟩ · adv · archived · r/120
+**L12.13**  Market-data integrity defense (see L7.22). ⟨VII⟩ · adv · archived · r/121
+**L12.14**  SEBI Feb-2025 retail-algo framework compliance — broker as principal, bot as agent, all orders
+through the broker API, ≤10 orders/sec, exchange-assigned Algo-ID, white-box personal use only.
+⟨VII⟩ · base · archived · CLAUDE.md
+**L12.15**  Manual go-live button. ⟨VII⟩ · base · planned · atlas L12
+**L12.16**  Per-strategy kill authority. ⟨VII⟩ · adv · planned · atlas L12
+**L12.17**  Config versioning + rollback + change-log tied to deployments. ⟨V⟩ · adv · planned · atlas L12
+**L12.18**  Jurisdiction / segment eligibility — what this account is permitted to trade. ⟨VII⟩ · adv ·
+planned · atlas L12
+**L12.19**  Full regulatory audit trail. ⟨VII⟩ · ultra · planned · atlas L12
+**L12.20**  Registration tripwire — if strategies or signals are ever shared with another account, the
+regulatory category changes entirely (SEBI Research Analyst registration). Flag loudly before building
+anything that does this. ⟨VII⟩ · base · policy · CLAUDE.md
+**L12.21**  Alignment tripwires wired at all four entry sites. ⟨VII⟩ · adv · archived · r/112
+**L12.22**  Value-drift monitor — recent-vs-baseline risk drift. Archived real result: DRIFTING, recent
+vol 12.67% vs 0.75% baseline. Its consumers were still queued. ⟨XIV AXIOLOGY⟩ · adv · blocked · r/153
+**L12.23**  Explicit utility function — `U = w_return·mean − w_risk·vol − w_drawdown·maxDD − w_tail·CVaR5`,
+where the named weights *are* the stated values. Real pass over 340 trades. ⟨XIV⟩ · adv · archived · r/153
+
+## L13 · DASHBOARD & OBSERVABILITY
+
+*Standing rule: a feature is not done until it is visible. Every feature registers a surface, and a
+coverage audit fails on any manifest feature without one.*
+
+**L13.01**  Dashboard server + read model + HTML renderer. ⟨VI⟩ · base · archived · `dashboard/`
+**L13.02**  Feature-surface registry — the mechanism by which every feature registers its title, status
+and metrics. ⟨V · VI⟩ · adv · archived · `dashboard_feature_surface`
+**L13.03**  Feature-coverage audit — fails on a manifest feature with no surface. ⟨V⟩ · adv · archived · r/91
+**L13.04**  Project-wide feature-catalogue dashboard — machine-derived build status, never hand-typed.
+⟨V⟩ · adv · archived · `feature_catalogue_dashboard_spec_2026-08-03`
+**L13.05**  Feature-catalogue AST resolver + live freshness — status measured from the code's own import
+graph. ⟨V⟩ · adv · archived · `feature_catalogue_ast_resolver_2026-08-03`
+**L13.06**  Operations wall (`/wall`) — renders the full manifest so new features auto-appear or fail the
+audit. ⟨VI⟩ · adv · archived · `operations_wall_and_bot_surfaces`
+**L13.07**  Segment-bot surface prober. ⟨VI⟩ · adv · archived · `segment_bot_surface_prober`
+**L13.08**  Pod dashboard service + renderer. ⟨VI⟩ · adv · archived · `pod_dashboard_service`
+**L13.09**  Persisted closed-trades panel — from durable memory, not the ephemeral ledger. ⟨VI · XV⟩ ·
+adv · archived · r/93
+**L13.10**  Offline diagnostics mode — panels keep showing and updating from stored SQLite even after the
+daily Kite token expires. ⟨VI⟩ · adv · archived · r/122
+**L13.11**  Performance charts / first real charts. ⟨VI⟩ · adv · archived · r/b25b
+**L13.12**  AI-atlas concept-tree panel — every branch coloured by build status, with an X/197 counter.
+⟨V · VI⟩ · adv · archived · r/111
+**L13.13**  LLM gateway panel — the subscription lane, warm/cold transport telemetry, token KPIs.
+⟨VI⟩ · adv · archived · r/163
+**L13.14**  System map page (`/map`) — §1 rendered, with a diagram-fidelity check that fails on drift.
+⟨V⟩ · adv · archived · `check_system_map_diagram_fidelity.py`
+**L13.15**  P&L attribution by cost component. ⟨VI⟩ · adv · planned · atlas L13
+**L13.16**  Per-strategy health board + promotion state + cockpit verdict. ⟨VI⟩ · adv · planned · atlas L13
+**L13.17**  Fill-quality vs assumed. ⟨VI⟩ · adv · planned · atlas L13
+**L13.18**  Option Greeks / exposure panel. ⟨VI⟩ · adv · planned · atlas L13
+**L13.19**  Regime + India-VIX panel. ⟨VI⟩ · adv · planned · atlas L13
+**L13.20**  Latency histograms. ⟨VI⟩ · adv · planned · atlas L13
+**L13.21**  Replayable decision timeline — "why did it trade?" ⟨VI · XIII⟩ · ultra · planned · atlas L13
+**L13.22**  Live risk heatmap across the F&O universe. ⟨VI⟩ · ultra · planned · atlas L13
+**L13.23**  Conversational chat assistant — a dashboard chat panel with streaming replies, backed by the
+LLM gateway and grounded in real system state via read-only tools (`get_positions`, `get_pnl`,
+`get_regime`, `explain_last_trade`, `get_engine_health`, `query_ledger`). Never hallucinates a number;
+always cites the state it read. ⟨VI · XVI⟩ · adv · planned · `conversational_assistant_chat_interface`
+**L13.24**  Gated action layer for the assistant — it may propose, the operator confirms, and the order
+still routes through the risk gate. Default is read-only. ⟨VI · VII⟩ · adv · planned ·
+`conversational_assistant_chat_interface`
+**L13.25**  Proactive assistant push — "engine #2 is drifting, want me to pause it?" ⟨VI⟩ · ultra ·
+idea · `conversational_assistant_chat_interface`
+**L13.26**  JARVIS system view — the operator's stated ask for a single living system picture.
+⟨VI⟩ · ultra · idea · r/b25c
+**L13.27**  Dashboard delivery stack sourcing — FastAPI + React + D3 was the harvested approach.
+⟨VI⟩ · adv · archived · r/b25c
+**L13.28**  Screenshot-verify loop — every dashboard change is visually confirmed before sign-off.
+⟨V⟩ · adv · archived · `screenshot_dashboard.py`
+
+---
+
+# PART II — THE COGNITIVE AXIS (16 trunks · 197 branches)
+
+The same catalog read the other way. This is the "autonomous AI organism" ambition derived across
+`docs/research/31–36`. Status at reset: **87 built · 51 partial · 59 unbuilt.** Three trunks reached
+completion. Entries already numbered in Part I are cross-referenced; branches with no Part I entry are
+listed here because **this is the only place they exist**.
+
+## I · MIND — reason, learn, abstract (2 built · 4 partial · 7 unbuilt)
+Built: causal reasoning (L11.69) · learning subsystem (L11.18). Partial: deliberative reasoning ·
+mechanism-verified reasoning · devil's advocate · counterfactual reasoning.
+**Unbuilt, catalogued here only:** abstraction/motif extraction · case-based reasoning · problem
+decomposition · mental-imagery/visual reasoning · **meta-reasoning controller** · **System-1/System-2
+router** · analogical transfer.
+
+## II · SENSES — perception and ingestion (6 built · 5 partial · 2 unbuilt)
+The most complete trading-side trunk; see L0, L4, L11c.
+**Unbuilt:** full multi-timeframe fusion (only 5m bars exist) · broad anomaly sensing beyond the leakage
+firewall. Partial: interoception · liquidity sensing · event/calendar sensing · data-quality sensing.
+
+## III · WILL — drives, goals, decision (2 built · 3 partial · 7 unbuilt)
+Built: multi-objective arbitration (L8.15) · goal-priority scheduler (L8.16).
+**Unbuilt, catalogued here only:** **homeostatic drive stack** · **goal formation** · no-orphan-goals as a
+*runtime organ* rather than a process rule · **patience scoreboard** · **utility handoff** ·
+**opportunity-cost accounting** · **commitment/consistency guard**.
+
+## IV · BODY — action, tools, survival (5 built · 5 partial · 3 unbuilt)
+See L3, L9. **Unbuilt:** cost homeostasis (L1.12) · optimal execution · full partial-fill loop.
+
+## V · SELF — identity, self-modification, evolution (0 built · 4 partial · 8 unbuilt)
+**The least-built trunk. Zero branches fully built.** Partial: genome/phenotype (champion config store) ·
+self-experiment protocol · A/B self-testing · capability self-registry.
+**Unbuilt, catalogued here only:** **shadow self-rewrite** · **self-ablation** (deliberately disabling a
+faculty to measure its contribution) · **identity/continuity** · **teachability test** · **ontogeny
+ladder** · **self-documentation** (SYSTEM_MAP was manual) · **version control / lineage** ·
+**rollback and quarantine of its own changes**.
+
+## VI · SOCIETY — multi-agent and communication (5 built · 4 partial · 2 unbuilt)
+See L11e. **Unbuilt:** language/symbol grounding · teaching-legacy (passing knowledge to a successor).
+
+## VII · CONSCIENCE — governance, safety, law ✅ **14/14 COMPLETE**
+The supreme trunk, completed before deeper autonomy was granted. Fully catalogued in L12.
+
+## VIII · SENTIENCE & GLOBAL WORKSPACE — the integrator ✅ **13/13 COMPLETE**
+The mechanism that binds the faculties into one mind: collect → attention (selective and
+state-dependent) → compete → coalition → ignite → broadcast → trim entries.
+**VIII.01** limited-capacity workspace · **VIII.02** global broadcast bus (vendored blinker) ·
+**VIII.03** salience scorer (urgency × relevance × confidence, safety-floored) · **VIII.04** ignition
+threshold · **VIII.05** selective attention · **VIII.06** state-dependent attention (defensive arousal on
+drawdown) · **VIII.07** coalition formation · **VIII.08** self-model · **VIII.09** attention schema
+(Graziano AST) · **VIII.10** workspace rumination/replay · **VIII.11** cross-modal binding (Stouffer
+fusion) · **VIII.12** higher-order monitoring · **VIII.13** indicator scoreboard.
+*Archived real pass: a goal-integrity broadcast trimmed a live entry from 100 to 75.*
+⟨all: adv · archived · r/123–131⟩
+
+## IX · PREDICTIVE CORE / ACTIVE INFERENCE (4 built · 3 partial · 5 unbuilt)
+Built: per-trade pre-mortem (L2.28) · world-model scoreboard (L2.29) · surprise/free-energy monitor
+(per-mechanism cross-entropy + Page-Hinkley spike) · ensemble world-models (n-weighted forecast +
+disagreement variance). Both archived, r/134.
+**Unbuilt, catalogued here only:** **generative world-model** (spec'd at r/166–167, never built) ·
+**precision weighting** · **dream synthesis** · **hierarchical predictive layers** · **model-based
+planning**.
+
+## X · AUTOPOIESIS — self-production ✅ **9/9 COMPLETE**
+Fully catalogued in L10.06–L10.18. Two genuine findings on its first real run: the vital
+`win_probability_model` was maintained by *nothing* (its `load_or_train` could never retrain it), and
+`session.angel_one` had no expiry check anywhere.
+
+## XI · GENERATIVITY & OPEN-ENDEDNESS (1 built · 2 partial · 8 unbuilt)
+Built: auto-curriculum (L5.39).
+**Unbuilt, catalogued here only:** **quality-diversity archive** (MAP-Elites) · **fossil record** ·
+**red-queen coevolution** · **novelty-vs-objective balance** · **auto-benchmark generation** ·
+**diversity/speciation** · **stepping-stone collection** · **minimal-criterion coevolution**.
+
+## XII · INTRINSIC MOTIVATION / CURIOSITY (0 built · 2 partial · 9 unbuilt)
+**Zero built.** An institutional spec exists (r/164, r/165) but was never implemented.
+**Unbuilt, catalogued here only:** **learning-progress reward** · **curiosity-pays-rent** (curiosity must
+justify its cost) · **boredom signal** · **competence/certainty drives** · **empowerment estimator** ·
+**surprise-seeking balance** · **diversity/novelty bonus** · **uncertainty-targeted active learning** ·
+**intrinsic-reward shaping**.
+
+## XIII · EPISTEMICS — truth and uncertainty (7 built · 6 partial · 0 unbuilt)
+All red branches cleared. See L2. Built: calibration · contradiction resolution · assumption registry ·
+skill-vs-luck court · evidence provenance · deception/misinformation resistance (beta-reputation per
+source, flagging over-trusted-but-unreliable ones) · forecasting tournament.
+
+## XIV · AXIOLOGY — values and practical wisdom (2 built · 3 partial · 7 unbuilt)
+Built: explicit utility function (L12.23) · value-drift detection (L12.22).
+**Unbuilt, catalogued here only:** **assistance-game alignment** · **practical wisdom** ·
+**corrigibility-as-value** (as opposed to corrigibility-as-mechanism) · **preference learning** ·
+**value uncertainty** · **moral/regulatory reasoner** · **fairness-to-future-self**.
+
+## XV · MEMORY & KNOWLEDGE BASE (6 built · 3 partial · 5 unbuilt)
+See L11d.
+
+## XVI · UNIVERSAL ACCESS & ACQUISITION (2 built · 5 partial · 7 unbuilt)
+Built: broker/data API layer across five brokers · participant-wise OI.
+**Unbuilt, catalogued here only:** **tool foundry** (the system building its own tools) ·
+**retrieval-augmented fetch** · **friction-beating layer** · **web-agent/browser organ** (spec'd at
+L11.38–39) · **document understanding** · **news firehose** · **API schema auto-discovery**.
+
+---
+
+# PART III — DISPROVED, REJECTED AND SUPERSEDED
+
+*Kept deliberately. These were paid for with research time, and without them the rebuild repeats them.*
+
+## Strategy premises that did not survive
+
+**D.01**  **"Take any profit however small, across the whole universe."** Round-trip cost is ~6–11 bps in
+cash and ~25–65 bps on option premium, so break-even needs ≥0.06–0.11% in cash and ≥0.27–0.65% in options.
+A 1–2 tick scalp is *below* break-even — a guaranteed net loser. SEBI: 80% of traders doing 500+ trades a
+year are net-negative; turnover multiplies fixed-cost drag rather than averaging edge out. Carver
+(ex-AHL) measured pre-cost Sharpe 28.8 collapsing post-cost. Brazil 97% lose; Taiwan negative every year;
+ESMA 74–89% lose. → The radar survives as a *triage* layer; the blind-scalper premise does not.
+**D.02**  **HFT / latency arbitrage.** Closed from a retail cloud VM — colocation latency moat plus
+adverse selection. The prior build proved it directly.
+**D.03**  **Candlestick and chart patterns as tradeable edge.** Rejected by data-snooping-corrected studies
+(Marshall-Young-Rose 2006; Marshall-Young-Cahan 2008; Horton 2009). Sullivan-Timmermann-White's 7,846-rule
+study and Aronson 2006: no robust edge survives search-size correction. Bulkowski's base rates are
+non-peer-reviewed and his own failure rates roughly doubled from the 1990s to the 2000s. → Compute them
+cheaply as hypotheses behind the gate; never assume them.
+**D.04**  **Cheap gamma before an event.** Contradicted — straddles lose ~8% per event because options
+overprice known moves.
+**D.05**  **Volume-profile levels (POC/VAH/VAL) as signal.** Zero peer-reviewed predictive studies;
+Steidlmayer practitioner heuristics, plausibly self-fulfilling. Retained as context only.
+**D.06**  **Naive stock-option premium selling.** Single-name gap risk plus physical settlement plus the
+STT auto-exercise trap plus corporate-action risk. Default OFF.
+
+## Measurement claims that did not survive
+
+**D.07**  **VPIN as a flash-crash early warning.** Rebutted by Andersen-Bondarenko: it peaked *after* the
+event and co-moves with volatility. The module was still built and is still useful as a toxicity feature —
+but not as the early-warning claim.
+**D.08**  **Order-flow imbalance as a forecast.** ~65% *contemporaneous* R², but properly lagged the
+out-of-sample R² is ~3%, hit ratio 53%, Sharpe 0.12. Evidence is not forecast.
+**D.09**  **L1 book imbalance.** The most spoofable signal in the book; use multi-level depth pressure.
+**D.10**  **India VIX as a leading indicator.** Coincident and reactive. VIX futures were discontinued in
+2017, so there is no tradeable term structure to read.
+**D.11**  **Twitter/Derwent-style mood trading.** The 87.6% claim did not replicate; the fund closed in
+about two years.
+**D.12**  **Regime switching beats a static blend.** *Not proven* net of whipsaw and transaction cost. A
+lagging HMM filter once missed a full year of recovery. → Design consequence: soft weighting, not hard
+switching, and treat "the router adds value" as a hypothesis the gate must prove.
+
+## Architecture patterns that did not survive
+
+**D.13**  **Multi-LLM debate committees.** Budget-matched committees *underperform* (Berkeley MAST: 41–86%
+failure). TradingAgents at 95k stars is the highest-starred trading repo and is exactly this anti-pattern
+— shared pretraining priors produce stylistic rather than informational disagreement, amplifying bias.
+Admire, do not adopt.
+**D.14**  **Self-correction without ground truth.** Measurably *degrades* (Huang, ICLR 2024). Learn only
+from realized P&L plus a hard deterministic evaluator — the FunSearch pattern of generate → test → keep
+winners. Never let the model grade itself.
+**D.15**  **World-model RL (DreamerV3, MuZero, EfficientZero).** Research-demo tier for markets: markets
+are non-stationary *and reflexive* — they react to your actions — so the learned-simulator premise breaks.
+No credible financial deployment exists.
+**D.16**  **LLMs trading directly.** Alpha Arena, real money, Oct 2025: four of six frontier models
+finished in the red, one at about −63%. Eloquent reasoning is not statistical edge.
+**D.17**  **LLM look-ahead contamination in backtests.** An LLM knows post-cutoff outcomes
+(Glasserman-Lin). For historical backtests use FinBERT or another non-generative model, restrict to
+post-cutoff dates, or anonymise entities. LLMs are for *live* inference only.
+
+## Tooling that did not survive triage
+
+**D.18**  **`mlfinlab` public repo is stubbed** — function bodies are `pass`, the real code is paywalled,
+docs removed. Triple-barrier, meta-labelling and purged CV must be reimplemented from the AFML book.
+**D.19**  **`pandas-ta`** went paid and was archived Jul 2026 → use `pandas-ta-classic`.
+**D.20**  **Pollinations LLM provider** — anonymous zero-budget accounts hard-402 on structured calls.
+**D.21**  **`mem0`** deprioritised despite 62k stars — vector-only, too shallow for an audit trail.
+**D.22**  **TabPFN v3 weights are non-commercial** — read the licence before depending on it.
+**D.23**  **Finnhub / AlphaVantage / Polygon** — US-centric and unreliable for NSE.
+**D.24**  **LIDA / Sigma / EPIC / ICARUS cognitive architectures** — relics; borrow the ideas, do not
+vendor the code.
+
+## Superseded plans
+
+**D.25**  The **11-layer roadmap** was superseded as the true scope measure by the 16-trunk atlas, which
+was in turn challenged by REDESIGN_v1's depth-first inversion. All three are catalogued.
+**D.26**  **"Engine #1 = flat premium-seller only"** was superseded on 2026-08-02 by "all regimes in
+scope from the start, armed one at a time."
+**D.27**  **Breadth-first atlas program** ("build all 197 branches, then resume depth") was superseded in
+scope by the redesign, though never formally cancelled.
+
+---
+
+# PART IV — OPEN QUESTIONS, BLOCKERS AND OWED WORK
+
+## Decisions never made
+
+**Q.01**  Which strategy family goes first (mean-reversion/ORB · index-option premium selling ·
+cash-futures basis · event-driven)?
+**Q.02**  Cash-equity, F&O, or both in the first cut?
+**Q.03**  How many regime engines are armed at launch — one proven, or the full four-family set?
+**Q.04**  First model class for the directional bots — LightGBM baseline only, or LightGBM + DeepLOB?
+**Q.05**  Decision cadence — per tick, per minute bar, or on a radar trigger?
+**Q.06**  Radar universe at launch — liquid subset (~200–500 cash + ATM-weekly NIFTY) or the literal full
+universe via multi-key sharding?
+**Q.07**  Minimum edge threshold above the cost floor before firing?
+**Q.08**  Self-evolution — opt-in now as a research sandbox, or strictly after a live edge exists?
+**Q.09**  How much of the 16-faculty atlas is in scope for *this* system versus the deferred phase?
+**Q.10**  Stock-option premium selling — confirm the default-OFF policy or override it?
+**Q.11**  Bank Nifty (monthly-only) — premium-seller in the final expiry week, or directional/hedged only?
+**Q.12**  Which ultra-tier items are genuinely wanted rather than nice-to-have?
+
+## Hard blockers carried forward
+
+**B.01**  **Live-market accrual.** Several engines are built and armed but cannot earn their calibration
+until real sessions run: the LLM-risk entry gate, the news entry gate, debate-risk accrual, the
+autopoiesis failure-rate posteriors, the shadow-arm live pass.
+**B.02**  **Order-book depth capture** needs an open market; OFI and queue-position fills depend on it.
+**B.03**  **Fyers and Groww** — credentials and a ₹499/mo subscription, both paused pending the operator.
+**B.04**  **Deep intraday NSE history** is largely not free; the realistic free ceiling was researched
+(r/74, r/77) and it is shallower than the replay engine wants.
+**B.05**  **India VIX history + per-name IV backfill** needed for the IV-rank shrinkage prior. The VRP path
+works without it.
+**B.06**  **SPAN margin mechanics** — the calculation page 403'd during research; margin logic is unverified.
+**B.07**  **Per-source API endpoints, rate limits and free-vs-paid** for data targets 2–9 were never
+freshly verified (the research budget was exhausted mid-pass).
+**B.08**  **GIFT Nifty data source and licence** unverified, as are global-index and ADR free feeds.
+**B.09**  **Environment**: system Python is 3.9 and the venv is gone. Kronos, DeepLOB, current
+LightGBM/PyTorch on ARM64 need a newer interpreter. 20 GB free disk, with 21 GB held by ollama.
+
+## Standing rules that governed all prior work
+
+**R.01**  Intraday only — every position squares off before close, in every segment, without exception.
+**R.02**  Never commit secrets; `.env` is gitignored and credentials load from environment only.
+**R.03**  No hardcoded values — every threshold derived from data (percentile, calibration, optimisation,
+Bayesian, online), never a magic constant.
+**R.04**  Thin data never shrinks a feature — build the fullest algorithm and gate only *activation*
+behind an automatic maturity ladder that arms itself as samples accrue.
+**R.05**  Real-data verification before sign-off; a hermetic simulation harness behind a DI seam is
+acceptable only as functional verification, with the real-data pass staying an open blocker.
+**R.06**  No orphaned features — everything wired into the execution loop or carrying a named queued
+consumer.
+**R.07**  Engine-grade depth — a real algorithm, carried state, a raw input pipeline and an output that
+changes behaviour; not a thin scalar dressed in engine vocabulary.
+**R.08**  Every feature visible on the dashboard, with status *measured* from real code and server state,
+never hand-authored.
+**R.09**  Full universe, never a sample — all ~2,000 cash names, all 5 index underlyings with full
+ladders, all ~210 stock-option underlyings.
+**R.10**  Three segments equal by default; priority order only as a constrained tie-break.
+**R.11**  No silent skips — every deferral recorded, surfaced at sign-off, and cleared before unrelated
+work begins.
+
+---
+
+# PART V — SOURCE INDEX
+
+The 280 surviving documents, by cluster. Read the source before rebuilding any entry.
+
+- **Foundational research (r/00–30)** — market structure and SEBI · broker abstraction · OpenAlgo
+  deep-dive · AI/ML production practice · self-learning taxonomy · strategy/indicator/option taxonomy ·
+  NSE microstructure evidence · time-of-day playbook · scanner taxonomy · trade-log schema · OSS
+  borrowables across five domains · automated feature discovery · the ideation loop.
+- **The atlas derivation (r/31–36)** — sci-fi stem → concept tree → main-branch atlas → 14 trunks →
+  16 trunks → branches for all 16 → branch widening. This is where the 197 branches come from.
+- **Layer builds (r/37–52)** — dashboard plan · paper loop · credit-spread path · order types · Kite
+  spec · layer cross-verification audit · experience-memory substrate · Rule-J simulation harness ·
+  shadow-arm recovery · opponent ledger · scoring rules · Brier decomposition · graph substrate ·
+  recalibration · information diet.
+- **Replay and simulation (r/53–95)** — the §53 programme end to end, plus the entire data-sourcing
+  investigation: microstructure sourcing · corporate actions · point-in-time universe · deep history ·
+  free-vs-paid ceilings · five broker adapters · failover · curriculum · champion-challenger ·
+  market impact · per-regime champion · VPIN · control arms.
+- **LLM layer (r/96–105, r/163)** — Layer-11 blueprint · free-tier provider registry · Kimi pricing ·
+  debate-as-risk-check · entry gate and calibration harness · causal cluster analysis · meta-strategy
+  allocator · prediction council · synthetic stress rehearsal · token ledger.
+- **Control arms (r/95, 106–108)** — random control · skill-vs-luck court · pre-mortem · world-model
+  scoreboard and profit provenance.
+- **Trunk VII conscience (r/109–121)** — all 14 branches.
+- **Trunk VIII sentience (r/123–131)** — all 13 branches.
+- **Trunks IX/XIII/XIV/XV/VI/II (r/132–154)** — including the whole news/sentiment sense S1–S7.
+- **Depth standard (r/155–160, r/171)** — code depth vs SOTA · win-probability engine · prior art on
+  LLM-to-institutional-code · execution-grounded quality gates · slim rules plus hook enforcement ·
+  mechanical OSS triage and the rejection-evidence standard.
+- **Portfolio and allocation (r/161–163)** — optimiser sourcing · exact math and SOTA · institutional spec.
+- **The redesign layers (r/164–170)** — L1 cost engine · L2 validation · L0 bitemporal · L3 ops floor ·
+  L4 promotion pipeline · plus the curiosity and world-model specs that were written but never built.
+- **Options (r/174–177, `option_alpha_*`, `option_bots_*`)** — 0-DTE engine · full option universe ·
+  trending directional arm · moneyness-varied arm · VRP richness · opportunity scorer · structure payoff
+  optimiser · leg P&L · engine learning · the profit taxonomy and clean-sheet selection architecture.
+- **Segment bots (`three_segment_bots_*`, `index_option_bot_*`, `bull_bear_*`)** — spec, sourcing
+  evidence, and the BULL/BEAR directional AI.
+- **The 15 idea documents** — main AI brain · full-universe radar · full option universe · dual
+  directional agents · advanced-intelligence catalog · global linkage · tipster harness · conversational
+  assistant · Kite-decoupled architecture · option-bot architecture and profit taxonomy · feature-universe
+  map · gap analysis.
+- **Governing documents** — `PLAN.md` (19 sections) · `SYSTEM_MAP.md` · `BACKLOG.md` (118 tracked
+  deferrals) · `MASTER_PROGRESS.md` · `MASTER_BUILD_ORDER.md` · `AI_CONCEPT_TREE_STATUS.md` ·
+  `REDESIGN_v1_nse_institutional.md` · `REDESIGN_feature_atlas_v1.md` · `RULES.md` · `CLAUDE.md`.
+
+---
+
+*End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
+file — never appended here.*
