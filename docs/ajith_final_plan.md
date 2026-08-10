@@ -1088,6 +1088,76 @@ edges is the exact error that produced the prior build's breadth-without-money o
 ⟨XIII⟩ · base · idea · library §summary
 
 
+### L11h · INSTRUCTION PROVING GROUND — paper as the trial engine (operator 2026-08-10)
+
+*Owned by each of the six holons; judged by the single central gatekeeper. Supersedes L11.103
+(instruction decay) and extends L2.13 (promotion pipeline) into a per-holon instruction lifecycle.*
+
+**L11.115**  **Per-holon instruction proving ground.** Each main bot continuously paper-trades **its own**
+instruction subset (index options 30 · cash 25 · index futures 9 · MCX 9 · stock options 7 · stock futures
+6, plus applicable cross-segment), accrues a real track record per instruction, and graduates the ones
+that prove themselves to live. Every holon owns its own proving ground; **judgement stays central**
+(L14.36) so no bot grades its own homework. ⟨XIII · V⟩ · adv · idea · operator 2026-08-10
+*supersedes: L11.103's decay-and-retire, which handled removal but not promotion.*
+
+**L11.116**  **⚠️ "REPEATED PROFIT" IS A STATISTICAL CLAIM, NOT A WIN COUNT — the load-bearing definition.**
+Running ~110 instructions × 6 holons × 4 regimes in parallel is a several-hundred-trial multiple-testing
+problem, and *some will look profitable by pure chance*. "It made money several times in paper" is exactly
+what a false positive looks like. An instruction graduates only on **all** of:
+- **minimum sample N** in its claimed regime — not consecutive wins, which is the classic trap;
+- **net-of-cost** profit under the correct denominator (L11.106) and its own segment's cost regime;
+- **Deflated Sharpe using EFFECTIVE trials** — every instruction ever tried counts toward the search size,
+  including the failures, or DSR is computed on winners only and means nothing;
+- **BY-FDR control across the whole instruction population**, since instruction outcomes are correlated;
+- **regime coverage** — it must have traded through a real drawdown and a vol spike in its regime, not
+  merely elapsed days;
+- **holdout confirmation** on data the custodian refused to show it during the trial.
+⟨XIII⟩ · base · idea · operator 2026-08-10
+
+**L11.117**  **Instruction lifecycle states** — `proposed → paper-trial → statistically-significant →
+shadow → reduced-live → full-live → decaying → retired`, with a **demotion path**: a live instruction whose
+edge decays returns to **paper-trial**, not to retirement. Decay is usually regime-dependent rather than
+terminal, and an instruction that stopped working in a trending market may be exactly right three weeks
+later. ⟨V · XIII⟩ · adv · idea · operator 2026-08-10
+
+**L11.118**  **Shadow stage between paper and live** — real signals, real timing, real sizing, **no
+capital**. Catches the instructions that only work because paper fills are optimistic, before money is at
+risk. The paper-to-live gap is where most apparently-validated strategies actually die. ⟨XIII · IV⟩ ·
+base · idea · operator 2026-08-10
+
+**L11.119**  **Paper fills must be realistic or the whole proving ground is theatre** — paper trading uses
+the market-impact fill model (L1.06), the live spread, and the real cost engine, never mid-price
+execution. An instruction validated against optimistic fills is a false graduate, and the cheapest way to
+lose real money is to trust an unrealistic simulator. ⟨IV⟩ · base · idea · operator 2026-08-10
+
+**L11.120**  **Every trial is registered, including the failures** — the honest trial registry (L2.01)
+counts every instruction ever run, so the search size is known. Logging only winners is the specific
+mechanism that makes Deflated Sharpe meaningless and is how the prior attempt overfitted.
+⟨XIII⟩ · base · idea · operator 2026-08-10
+
+**L11.121**  **Concurrent-trial budget and scheduling** — a holon cannot meaningfully trial all its
+instructions at once: paper positions conflict, and the conductor has finite compute. Each holon runs a
+bounded set of concurrent trials, prioritised by mechanism strength (the ⭐ tier first) and by how much
+each trial would reduce uncertainty. The teacher/curriculum bot (L14.21) owns this ordering.
+⟨XII · IV⟩ · adv · idea · operator 2026-08-10
+
+**L11.122**  **Live instructions keep paper-trading in parallel** — graduation does not end the trial.
+Every live instruction continues running in paper alongside, so **decay is detected in the paper book
+before it costs live money**, and so instructions the live capital is not currently using keep accruing
+evidence. Extends L14.32. ⟨XIII · XII⟩ · adv · idea · operator 2026-08-10
+
+**L11.123**  **The saved-winners library** — the persisted, per-holon set of graduated instructions with
+their full provenance: which regime, which sample size, which DSR, which holdout, when promoted, current
+live-versus-paper divergence. This is the operator's actual answer to "what is this system's edge" — a
+concrete, evidenced list rather than a claim. ⟨XV · XIII⟩ · adv · idea · operator 2026-08-10
+
+**L11.124**  **Cross-holon instruction transfer** — when an instruction graduates in one segment, it is
+proposed as a *candidate* in the others where it is structurally applicable (a VWAP-reversion mechanism
+may hold in cash and in MCX). It re-earns its own track record there from scratch — a graduation in one
+segment is **evidence for a hypothesis elsewhere, never a transferred licence**.
+⟨VI · XIII⟩ · adv · idea · operator 2026-08-10
+
+
 ## L12 · GOVERNANCE, SAFETY & COMPLIANCE
 
 *Trunk VII reached 14/14 complete — the only trunk finished before any deeper autonomy was granted.*
