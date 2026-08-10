@@ -982,6 +982,56 @@ application in this domain. ⟨I⟩ · ultra · planned · catalog §2B
 **L11.95**  Natural-language strategy authoring — "sell BANKNIFTY strangles when IV-rank > 70" → spec →
 gated build. ⟨XI⟩ · ultra · idea · `_FEATURE_UNIVERSE_MAP` phase 4
 
+### L11g · REGIME PLAYBOOK INSTRUCTION ENGINE (operator 2026-08-10)
+
+*Full design: `docs/ideas/regime_playbook_instruction_engine.md`. Supersedes L6.07, which was a
+regime→engine lookup restricted to options, by generalising it to all six segments and turning a static
+map into a generator with validated, decaying, track-recorded instructions.*
+
+**L11.96**  **Playbook instruction engine** — the brain authors executable trading instructions per
+(regime × segment) cell rather than merely routing to pre-built engines. 4 regimes × 6 segments = **24
+cells**, each with its own instruction set, because the same regime pays through different mechanisms in
+different instruments. ⟨I MIND · III⟩ · adv · idea · operator 2026-08-10
+*supersedes: L6.07 "regime → profit-engine map (options only, static lookup)".*
+**L11.97**  **The instruction object** — a machine-executable, falsifiable contract, never free-form text:
+`id · regime · segment · mechanism_statement · trigger · entry · sizing · exit_target(bps) ·
+exit_stop(bps) · exit_time · invalidation · cost_gate · ttl · status · track_record`.
+⟨XIII⟩ · base · idea · operator 2026-08-10
+**L11.98**  **⚠️ Targets are stated in BASIS POINTS, never in absolute points — hard rule.** "2 points" is
+not a target, it is an artefact of the instrument's price: 2 points on a ₹50 stock is 4% and highly
+tradeable; 2 points on NIFTY is 0.008% and 8–13× below breakeven. This single unit change is what
+separates a viable range instruction from the disproved D.01 scalping trap. ⟨IV · VII⟩ · base · idea ·
+operator 2026-08-10
+**L11.99**  **Range-width precondition** — a range is tradeable only when `range_width_bps > cost_bps ×
+1.5` (A.12). Below that the range is noise wearing a pattern's clothes, and repeating the trade
+accumulates cost rather than profit. ⟨IV⟩ · base · idea · operator 2026-08-10
+**L11.100**  **Flat-regime dual playbook** — the operator's intent (profit when nothing moves) has **two**
+legitimate mechanisms, not zero: (a) **range mean-reversion** where the range clears L11.99, and (b) — the
+professional answer — **theta harvest**, being paid for the passage of time instead of requiring movement
+already observed to be absent. Selling time is how flat markets are monetised; scalping the noise is how
+they are lost. ⟨III⟩ · adv · idea · operator 2026-08-10
+**L11.101**  **Mechanism statement mandatory** — every instruction declares *why* it should work.
+"Prices bounce here" is not a mechanism; "market makers defend this strike because of gamma positioning"
+is. Mechanism-backed instructions earn a lower statistical hurdle than pure pattern matches
+(Harvey-Liu-Zhu). No mechanism, no instruction. ⟨XIII⟩ · base · idea · operator 2026-08-10
+**L11.102**  **Instructions are hypotheses, validated centrally** — authored by each holon's research
+agent, judged by the single deterministic gatekeeper (L14.36), armed only after clearing DSR, CPCV and the
+net-EV gate. Never traded on first sighting. ⟨XIII · VII⟩ · base · idea · operator 2026-08-10
+**L11.103**  **Instruction decay and retirement** — each carries a TTL and a live track record; when its
+edge stops clearing costs it retires automatically rather than continuing to run. The manual prunes
+itself. ⟨XII · XIII⟩ · adv · idea · operator 2026-08-10
+**L11.104**  **The 24-cell playbook matrix, populated** — flat / volatile / bull / bear × the six holons,
+each cell naming what actually pays there and why. Includes the cross-cutting finding that a *bearish*
+conviction has a different best vehicle than a *bullish* one, because shorting cash equity intraday is
+constrained while shorting index futures is not — which is exactly what the expression selector (L14.29)
+exists to discover, and the matrix is where its results are written back. ⟨III⟩ · adv · idea ·
+`regime_playbook_instruction_engine` §3
+**L11.105**  **Instruction discovery (ultra)** — symbolic regression and evolutionary search over the
+trigger and exit space, generating candidate instructions no human authored, gated by the same
+deterministic evaluator. The breeder bot pointed at instructions rather than at strategies.
+⟨XI GENERATIVITY⟩ · ultra · idea · operator 2026-08-10
+
+
 ## L12 · GOVERNANCE, SAFETY & COMPLIANCE
 
 *Trunk VII reached 14/14 complete — the only trunk finished before any deeper autonomy was granted.*
