@@ -1140,9 +1140,38 @@ the record. No bot self-grades. ⟨XIII⟩ · adv · idea · §5
 **L14.13**  Disagreement-as-uncertainty — inter-bot disagreement shrinks position size rather than
 electing a winner. The explicit guard against the disproved committee pattern (D.13).
 ⟨XIII · VI⟩ · adv · idea · §5
-**L14.14**  Org-designer bot (bot-of-bots) — decides which bots should exist: spawns a specialist for an
-unexploited niche, merges converged bots, retires decayed ones, splits bimodal ones. **The single largest
-autonomy grant in this plan.** ⟨V SELF⟩ · ultra · idea · §6
+**L14.14**  **Org-designer bot (bot-of-bots) — runs UNSUPERVISED with timeout auto-approve** (operator
+decision 2026-08-10). It decides which bots should exist: spawns a specialist for an unexploited niche,
+merges converged bots, retires decayed ones, splits bimodal ones. Proposals are put to the operator; if
+neither approved nor rejected within the window, they **auto-approve**. The single largest autonomy grant
+in this plan, and the only place where *silence* moves the system. ⟨V SELF⟩ · ultra · idea · operator 2026-08-10
+**L14.14a**  **Non-auto-approvable class — silence can never grant these.** Any action touching a pinned
+safety bot (risk · cost · compliance · execution · kill-switch watchdog · referee · medic), the conductor
+itself, or the org-designer's own authority requires an explicit human YES and blocks indefinitely without
+one. Retiring the risk bot must never be something that happens because nobody replied.
+⟨VII⟩ · base · idea · operator 2026-08-10
+**L14.14b**  **Auto-approval grants the LOWEST autonomy tier, never full.** An auto-approved spawn starts
+`advisory` on paper and must still climb the L14.05 ladder on measured track record. Silence buys a bot
+its existence, never its authority over capital. ⟨VII · V⟩ · base · idea · operator 2026-08-10
+**L14.14c**  **Tiered timeout by blast radius** — reversible, low-impact proposals (spawn an advisory
+research bot) get a short window; structural ones (retire a live segment holon) get a long one and a
+louder escalation. One global timer for all decisions would be wrong in both directions.
+⟨VII⟩ · adv · idea · operator 2026-08-10
+**L14.14d**  **Reversibility window + one-click rollback** — every auto-approved change stays trivially
+revertible for a defined period afterwards, so the timeout is never a one-way door.
+⟨V⟩ · base · idea · operator 2026-08-10
+**L14.14e**  **Auto-approval rate limit** — a cap on how many proposals may auto-approve per day and per
+week. A burst suggests the org-designer is churning or the operator is unavailable; either way it escalates
+to blocking rather than sailing through. ⟨VII⟩ · base · idea · operator 2026-08-10
+**L14.14f**  **Timer runs on operator-awake hours, not wall-clock** — with the MCX session running to
+23:30 IST, a naive clock would expire proposals overnight against a sleeping operator. The window pauses
+outside declared availability and warns before expiry, not only after. ⟨VII⟩ · adv · idea · operator 2026-08-10
+**L14.14g**  **Stricter regime while live capital is armed** — during paper trading the timeout applies
+broadly; once real money is armed, auto-approval narrows to reversible and advisory-tier changes only.
+⟨VII⟩ · adv · idea · operator 2026-08-10
+**L14.14h**  **Auto-approval audit digest** — everything that auto-approved, with its reasoning, surfaced
+in one review so the operator can retroactively veto. Feeds the historian's fossil record (L14.15).
+⟨VII · XV⟩ · base · idea · operator 2026-08-10
 **L14.15**  Historian bot + fossil record — every bot that ever lived and why it died, so extinct mistakes
 cannot recur. ⟨XI · XV⟩ · ultra · idea · §6
 **L14.16**  Population dynamics — quality-diversity archive, speciation, red-queen coevolution between the
@@ -1150,15 +1179,30 @@ breeder bot and the red-team bot. ⟨XI⟩ · ultra · idea · §6
 
 ### L14 · the bot roster (what becomes a bot)
 
-**L14.17**  **Segment holons.** **Core set (in scope now):** cash-intraday **[exists]** ·
-index-options **[exists]** · stock-options **[exists]** · currency-derivatives · BSE index-options (the
-only weekly expiry outside NIFTY) · ETF.
-**Deferred-optional set (operator decision 2026-08-10 — build only AFTER the whole project is complete,
-and only if wanted then):** index-futures · stock-futures · **commodity / MCX** (⚠️ a different exchange:
-own hours to 23:30 IST, own margin regime, own holiday calendar — closer to a second organism than a
-tenth holon). Still flagged for decision: cash-delivery/multi-day (**would violate the intraday-only
-non-negotiable**), SME/illiquid, pre-open auction, expiry-day specialist.
-⟨III⟩ · base→ultra · idea · §2 Tier A
+**L14.17**  **THE FIVE SEGMENT HOLONS — all built from the start** (operator decision 2026-08-10,
+superseding the deferred-optional split of the same day):
+**1. NSE cash-intraday** (promotable to multi-day per R.01) · **2. NSE index-options** (intraday only) ·
+**3. NSE stock-options** (intraday only) · **4. NSE futures** (index + stock) · **5. Commodities / MCX**.
+Every segment ships with an independent **on/off switch** (L14.17a). Later-tier candidates remain
+catalogued but unscheduled: currency-derivatives · BSE index-options (the only weekly expiry outside
+NIFTY) · ETF · SME/illiquid · pre-open auction · expiry-day specialist.
+⟨III⟩ · base · idea · operator 2026-08-10
+*supersedes: "core set of six with futures and MCX deferred-optional after project completion" — reversed
+the same day; all five are now first-class from the start.*
+**L14.17a**  **Per-segment on/off switch** — each of the five holons is independently enableable and
+disableable at runtime without touching the others or restarting the organism. Disabling a segment must
+also (a) square off or hand over its open positions rather than orphaning them, (b) release its capital
+back to the treasurer, and (c) tell the conductor to stop scheduling it so a disabled segment consumes no
+hardware. A switch that only stops *new* entries while leaving positions live is a bug, not a switch.
+⟨VII · IV⟩ · base · idea · operator 2026-08-10
+**L14.17b**  **MCX is a second venue, not a fifth NSE segment** — different exchange, its own instrument
+master, its own margin regime and holiday calendar, physical delivery on several contracts, and a session
+running to **23:30 IST**. Two consequences beyond the bot itself: the square-off clock is per-venue rather
+than global, and the conductor's off-hours reallocation window (L14.11l) shrinks dramatically, because the
+box is no longer idle after 15:30. ⟨II · IV⟩ · base · idea · operator 2026-08-10
+**L14.17c**  **Futures holon specifics** — index futures and stock futures differ in risk shape; stock
+futures are physically settled with escalating expiry-week margin. Futures also give the cash-futures
+basis and calendar-roll carry family (L4.19) a native home. ⟨III⟩ · base · idea · operator 2026-08-10
 **L14.18**  **Perception bots (15):** news-research · corporate-filings · expert/analyst-call ·
 tipster/social · global-markets · macro · flow (FII/DII, participant OI) · options-surface ·
 microstructure · sector-rotation · universe/instrument-master · calendar · concall-transcript ·
@@ -1385,8 +1429,14 @@ universe via multi-key sharding?
 
 ## Decisions made (2026-08-10)
 
-**A.01**  **Futures and commodities: IN, but last and optional.** Built only after the rest of the project
-is complete, and only if still wanted then. MCX is treated as a near-separate organism, not a tenth holon.
+**A.01**  ~~Futures and commodities last and optional.~~ **REVERSED same day — all five segments are
+built from the start:** cash-intraday · index-options · stock-options · futures · commodities/MCX, each
+with an independent on/off switch. MCX remains a second *venue*, not merely a fifth segment.
+**A.05**  **The org-designer runs unsupervised with timeout auto-approve** — proposals auto-approve if the
+operator neither approves nor rejects in the window. Bounded by: a non-auto-approvable class covering all
+pinned safety bots and the conductor (silence can never retire the risk bot), auto-approval granting only
+the lowest autonomy tier, tiered timeouts by blast radius, a reversibility window, a rate limit, an
+awake-hours timer, a stricter regime once live capital is armed, and an audit digest.
 **A.02**  **Cash equity may carry overnight; options never.** Default remains intraday for everything.
 The top-level supervisor may promote a **cash** position to multi-day when it forecasts next-day profit
 with sufficient confidence; index and stock options square off unconditionally with no promotion path.
