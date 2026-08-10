@@ -1253,6 +1253,24 @@ produced a distinction that was not in the architecture before and that changes 
 needs its own process is an agent.** Three classes, and the boundary between the first two is safety-
 critical.*
 
+**L14.21a**  **THE SIX SEGMENT HOLONS ARE THE MAIN BOTS** (operator 2026-08-10). The organism's primary
+entities are the six segments; every other bot — perception, decision, meta, service — exists to serve
+them. Consequences that follow structurally rather than by convention:
+- **Identity and hierarchy:** the system is *six trading bots plus their supporting organs*, not a flat
+  population of 61 peers. Decision agents belong to a holon; perception and service bots are shared
+  infrastructure the holons consume.
+- **P&L attribution is per main bot first.** The primary question the system answers is "which of the six
+  is making money", and every other attribution is a drill-down beneath it.
+- **Capital allocation is primarily across the six.** The treasurer's top-level decision is the split
+  between segments; allocation within a holon is secondary.
+- **The dashboard is organised around the six**, with sub-bots surfacing underneath their parent.
+- **⚠️ The six are STRUCTURAL and cannot be retired by the org-designer.** The org-designer (L14.14) may
+  spawn, merge, split and retire *sub-bots* freely, but the six mains are protected in the same way the
+  pinned safety services are (L14.14a) — killing a whole segment is an operator decision made through its
+  on/off switch (L14.17a), never an auto-approved one. This closes a gap the timeout auto-approve would
+  otherwise have opened.
+⟨III · VI⟩ · base · idea · operator 2026-08-10
+
 **L14.22**  **CLASS A — AGENT BOTS (46 types).** Pass all nine, including the sharpest test: **a track
 record they can be scored on and defunded for.** These learn, compete for capital and compute, and can be
 retired by the org-designer. The discriminator is falsifiability — a news bot's sources are provably right
