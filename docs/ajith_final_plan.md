@@ -761,6 +761,58 @@ cannot stall execution. ⟨IV⟩ · adv · archived · r/b25a
 **L10.21**  Instrument-token map refresh job. ⟨II⟩ · base · archived · `refresh_instrument_token_map`
 **L10.22**  Holiday / Muhurat / session calendar in operations. ⟨IV⟩ · base · archived · `nse_event_calendar`
 
+### L10a · MARKET-CLOSED OPEN-MARKET SIMULATION v2 (operator 2026-08-10)
+
+*Full design + measured evidence: `docs/ideas/market_closed_open_market_simulation_v2.md`.
+Supersedes L10.02 / L5.41–L5.45 (the §53 programme). The old version was marked "CONFIRMED WORKING" and
+mechanically it was — it still destroyed value.*
+
+**L10.23**  **The measured post-mortem — the failure was ALLOCATION, not fidelity.** Computed from the
+3,481 retained closed trades: **the simulation did not lie.** Replay was slightly *pessimistic* versus
+live on the same strategy (ORB −0.475% replay vs −0.390% live) and near-identical on options, so the
+classic optimistic-fill failure did not occur. Replay-trained calibration was **near perfect (0.4pp gap)**
+against **11.8pp overconfidence** live. **What failed: 97% of replay experience (837 of 861 trades) went
+to `opening_range_breakout` at −0.475%/trade, while `credit_spread_v1` — the one strategy with a real
+measured edge at +1.816%/trade — got ZERO replay reps.** The generator practised the loser thousands of
+times and the winner not at all. ⟨XIII⟩ · base · **measured evidence** · design §1
+**L10.24**  **Fidelity is carried forward unchanged** — faithful replay of past sessions at full
+microstructure fidelity (prices, book, depth, bid/ask, volume profile), opening and closing trades as in a
+live session, cycling until the next real open. The market-impact fill model (L1.06) stays on; the
+measurements suggest it was already doing its job. ⟨II · IV⟩ · base · idea · design §3
+**L10.25**  **⚠️ The curriculum decides what is practised — not availability.** The teacher/curriculum bot
+(L14.21, Trunk XII — **0 of 11 branches built**) owns simulation allocation and targets where uncertainty
+is highest, not where data happens to be handiest. This is the single change that separates v2 from the
+version that failed. ⟨XII CURIOSITY⟩ · base · idea · design §2
+**L10.26**  **Per-strategy and per-holon experience quotas** — no single strategy may consume more than a
+bounded share of simulated experience. The 97%/0% split must be **structurally impossible**, not merely
+discouraged. ⟨XII · VII⟩ · base · idea · design §2
+**L10.27**  **Winners are practised deliberately** — an instruction showing early positive edge on thin
+data is *exactly* what needs more reps to reach its graduation sample N. The old system starved its only
+winner of evidence while drowning in evidence about its loser. ⟨XII · XIII⟩ · base · idea · design §2
+**L10.28**  **Simulation feeds the proving ground** — the consumer is now L11.115: six holons × ~110
+instructions, each needing sample N, regime coverage and holdout confirmation. Simulation is how those
+numbers accrue overnight instead of over years. ⟨XIII⟩ · base · idea · design §2
+**L10.29**  **Every simulated trade is registered as a trial** — counts toward the honest trial registry
+and effective-trials DSR (L11.116). Cheap experience must not silently inflate the search size and quietly
+destroy the statistics that graduation depends on. ⟨XIII⟩ · base · idea · design §2
+**L10.30**  **Curriculum diversity, not day repetition** — replaying the same days teaches those days
+rather than general skill (r/53's own caveat ①). Deficit-driven session selection (L5.39) targets the
+least-covered regimes. ⟨XII⟩ · adv · idea · design §2
+**L10.31**  **Simulation is an `opportunistic`-class conductor consumer** — with MCX in scope the box is
+busy until 23:30 IST, so the idle window has shrunk sharply. Simulation fills genuinely idle capacity and
+is the first thing evicted (L14.11d). ⟨IV⟩ · base · idea · design §3
+**L10.32**  **Counterfactual perturbation (advanced)** — replay a day with prices shifted, so the bot
+learns the *pattern* rather than memorising the session. ⟨XI · XII⟩ · adv · idea · design §4
+**L10.33**  **Replay-trained calibration as a first-class use** — given that replay produced a 0.4pp
+calibration gap against live's 11.8pp, simulated experience should feed calibration directly rather than
+being treated as second-class evidence. ⟨XIII⟩ · adv · idea · design §4
+**L10.34**  **Synthetic and adversarial days (ultra)** — generate sessions beyond the historical record
+(stress days, gap days, regime transitions that have not yet occurred), and let the red-team bot generate
+the sessions most likely to break a candidate instruction. ⟨XI · VII⟩ · ultra · idea · design §4
+**L10.35**  **Reactive market (ultra)** — the bot's own orders move the tape, closing r/53's open-loop
+blindness so queue position and market impact are learned rather than assumed. ⟨IX⟩ · ultra · idea · design §4
+
+
 ## L11 · INTELLIGENCE — the brain
 
 *The corpus's hard-won rule, stated in nearly every research doc: model output may **propose**; only a
@@ -2115,6 +2167,13 @@ ladders, all ~210 stock-option underlyings.
 **R.11**  No silent skips — every deferral recorded, surfaced at sign-off, and cleared before unrelated
 work begins.
 
+**R.13**  **Correctness of execution is not evidence of correctness of allocation.** The old market
+simulation passed its own verification — it replayed faithfully, filled realistically and calibrated well —
+and still destroyed value, because nothing ever asked *what it should be practising*. A verification that
+checks "does it run correctly" but never "is it running on the right thing" will sign off on a machine
+efficiently doing the wrong work. Every done-definition must test both. (Derived from the measured §53
+post-mortem, L10.23.)
+
 **R.12**  **"Example" and "etc" are direction pointers, never complete lists — standing operator
 instruction.** When the operator gives one or two examples, they mark the *location* of a category, not
 its boundary. The required response is to enumerate the full space that the examples point at, across the
@@ -2228,6 +2287,15 @@ used unasserted string replacements that no-op'd silently when the anchor text d
 entries landed; the decision records did not. **Every future edit to this file asserts its anchor matched,
 and the decision count is verified after each session.** Caught by the operator asking whether everything
 was actually saved — which is the reason that question is worth asking after any long session.
+
+**A.30 · Market-closed open-market simulation rebuilt (v2), with the failure diagnosed from data.**
+The operator named this as the feature that failed in the prior build. Measurement of the 3,481 retained
+trades shows **the simulation was honest** — slightly pessimistic versus live, with near-perfect
+calibration (0.4pp gap versus live's 11.8pp overconfidence). **The failure was allocation: 97% of replay
+experience went to the strategy losing −0.475%/trade, and the one strategy with a real +1.816% edge got
+zero replay reps.** v2 keeps the fidelity unchanged and rebuilds allocation: the curriculum bot owns what
+gets practised, per-strategy quotas make a 97%/0% split structurally impossible, winners are practised
+deliberately, and every simulated trade registers as a trial. See L10.23–L10.35 and the new rule R.13.
 
 **A.29 · Ultra-advanced introspection dashboard + project chat adopted.** Shows what each bot is
 *thinking* — research, hypotheses, learning — not merely its status, plus a chat panel to interrogate the
