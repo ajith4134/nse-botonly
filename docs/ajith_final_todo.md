@@ -62,8 +62,11 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 
 **— L0 —**
 
-- [ ] **1.1** Kite instrument master + daily `/instruments` NFO dump ingest — `L0.01`
-- [ ] **1.2** Instrument-token reuse guard — `L0.02`
+- [~] **1.1** Kite instrument master + daily dump ingest — fetch (retries, backoff, size check) + strict parse + point-in-time store — `L0.01`
+      · spec `docs/research/202`; 89 tests; gate green; **13/13 mutants caught**; R.05 passed on the live 113,955-row dump
+      · ⚠️ **NOT R.11-done — consumer queued**: observation tiers (`L5.21c`, task 3.53d) and the option-chain feed (`L6.28`)
+- [~] **1.2** Instrument-token reuse guard — full-history lookup, rename-vs-reuse discrimination, persisted + auditable — `L0.02`
+      · adversarial review found the original detected only same-day swaps, the one pattern Kite never produces
 - [ ] **1.3** Historical bar store (SQLite) — `L0.03`
 - [ ] **1.4** Bitemporal availability-time on the bar store — `L0.04`
 - [ ] **1.5** Point-in-time universe reconstruction — `L0.05`

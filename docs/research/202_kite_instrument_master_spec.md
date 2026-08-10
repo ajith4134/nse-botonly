@@ -99,3 +99,58 @@ changes. This slice is the identity-and-universe half of that; the corporate-act
 
 No corporate-action adjustment (`L0.07`), no point-in-time universe reconstruction (`L0.05`), no liquidity
 tiering (`L5.21c`). Those consume this master; they are not part of it.
+
+---
+
+## 8. Corrections after adversarial review (2026-08-10)
+
+A fresh-context reviewer found **24 defects** in code that had already passed ruff, mypy, 61 tests and a
+real-data pass. All 24 are fixed. The three that mattered:
+
+**① The token-reassignment guard missed the only pattern Kite actually produces.** It consulted the
+*immediately preceding* ingest — but Kite drops an expired contract before reusing its token, so at the
+moment of reuse the token is absent from yesterday and the check never fired. Reproduced: 0 detected
+where 1 was expected. It now searches the **full history**, using the token index that already existed for
+exactly this and was never queried.
+
+**② A same-day re-ingest could destroy the universe silently.** The truncation guard compared against a
+strictly-earlier date, which is absent on a first ingest or after a gap, so it returned early and the
+DELETE wiped the day. Reproduced: 94 rows → 1 row, no error. **The date being replaced is now its own
+baseline**; only a genuinely new date falls back to another ingest, in either direction, so backfills are
+guarded too.
+
+**③ The shrinkage threshold was a magic `0.30` dressed as derived.** The comment claimed scale-invariance
+satisfied R.03 — it does not; that is not derivation. Worse, the stated rationale ("delisting moves
+single-digit percentages") is contradicted by the dump itself: real expiry cohorts are **12.5%** and
+**10.9%** of the universe. The tolerance is now **computed from the baseline dump's own largest expiry
+cohort** × a safety multiple. **Measured on the live dump: 25.04%** — near the old guess, but derived, and
+it moves with the data instead of being frozen.
+
+Also fixed: an entire exchange vanishing is now refused (spec §4 required it, the code lacked it — dropping
+all of NSE is 8.8% and sat inside the size check); `Decimal("NaN")` and `Infinity` are rejected in the
+price path; surplus CSV columns are refused rather than silently dropped; blank numerics are refused
+rather than coerced to `0` (a blank lot size becoming zero is an order-sizing hazard); `int()`'s tolerance
+for Unicode digits is closed (`int("١٢٣") == 123`); duplicate identities *and* duplicate tokens within one
+file are rejected; sqlite errors are wrapped so `except InstrumentMasterError` actually holds; stale
+reassignment rows are cleared on a corrected re-ingest; a symbol **rename** is no longer misreported as
+token reuse (same contract terms, new name); the store now uses WAL with a busy timeout and cross-thread
+access so the dashboard can read during an ingest, and closes cleanly instead of leaking its connection;
+empty identity fields are refused; and the **fetch layer the spec promised now exists**, with retries,
+backoff and a minimum-plausible-size check.
+
+**Test suite: 10 of 20 mutants previously survived.** Rewritten; **13 of 13 now caught**, including the
+`>` vs `>=` boundary, which required a drop landing *exactly* on the tolerance to distinguish the
+operators. Pinning that exposed a further real defect: the tolerance was computed as
+`(cohort / total) * multiple`, which rounds twice and lands a digit away from the shrinkage it is compared
+against. It now multiplies before dividing — one rounding step.
+
+Three tests were tautologies and are gone, including one asserting a URL constant equals its own literal
+while its docstring claimed "measured 2026-08-10: returns 200 unauthenticated". The live endpoint is now
+**actually fetched** in a `real_data`-marked test.
+
+## 9. Rule G / R.06 — the queued consumer
+
+No production consumer yet; only tests import it. Permitted under R.06 solely because the consumer is
+named and queued: the **per-segment observation tiers** (`L5.21c`, todo 3.53d), which read the universe to
+decide what to subscribe to, and the **live option-chain feed** (`L6.28`). **Until one of those lands this
+task is not "done" in the R.11 sense.**

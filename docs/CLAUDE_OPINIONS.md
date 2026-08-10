@@ -142,6 +142,37 @@ ruff, mypy and 29 tests. On `kite_instrument_master` it found 24, including a to
 that misses the only pattern Kite actually produces.
 **Confidence:** measured, twice.
 
+## O.15 · 2026-08-10 · A guard that has never been seen to fire should be assumed broken
+
+**Opinion:** any detector whose triggering condition has not been reproduced end to end is probably
+detecting nothing, and should be treated as unverified regardless of test coverage.
+**Reasoning:** the token-reassignment guard passed review, had a test, and detected **zero** real
+reassignments — because it consulted only the previous ingest while Kite drops a contract before reusing
+its token. The test exercised the one path that works and never the one that occurs. The same shape
+recurred in the truncation guard, which returned early in exactly the case it existed for.
+**Confidence:** measured, twice in one module.
+**Would change my mind:** nothing so far. This is now how I read any guard.
+
+## O.16 · 2026-08-10 · Derived thresholds must be derived from something in the data, not merely expressed as a ratio
+
+**Opinion:** expressing a constant as a fraction does not satisfy R.03; it has to be computed from
+observable data.
+**Reasoning:** I wrote `0.30` with a comment claiming scale-invariance made it compliant, and justified it
+with "delisting moves single-digit percentages" — which the dump itself contradicts (real cohorts are
+12.5% and 10.9%). The honest version computes the tolerance from the baseline dump's own largest expiry
+cohort; on live data that yields **25.04%**, close to the guess but for a reason.
+**Confidence:** measured.
+
+## O.17 · 2026-08-10 · Adversarial review should run before the real-data pass, not after
+
+**Opinion:** the loop order in R.23 should be reconsidered — review earlier.
+**Reasoning:** this module passed its real-data pass with 113,955 contracts and *looked* fully verified,
+while carrying a guard that detected nothing and a path that could wipe the universe. A green real-data
+pass on a broken guard is a false signal, and I nearly signed off on it.
+**Confidence:** judgement, from two slices.
+**Would change my mind:** if review-first proves to waste effort on code that the real-data pass would
+have rejected outright anyway. Worth watching over the next few engines before changing R.23.
+
 ---
 
 ## Maintenance
