@@ -997,11 +997,36 @@ different instruments. ⟨I MIND · III⟩ · adv · idea · operator 2026-08-10
 `id · regime · segment · mechanism_statement · trigger · entry · sizing · exit_target(bps) ·
 exit_stop(bps) · exit_time · invalidation · cost_gate · ttl · status · track_record`.
 ⟨XIII⟩ · base · idea · operator 2026-08-10
-**L11.98**  **⚠️ Targets are stated in BASIS POINTS, never in absolute points — hard rule.** "2 points" is
-not a target, it is an artefact of the instrument's price: 2 points on a ₹50 stock is 4% and highly
-tradeable; 2 points on NIFTY is 0.008% and 8–13× below breakeven. This single unit change is what
-separates a viable range instruction from the disproved D.01 scalping trap. ⟨IV · VII⟩ · base · idea ·
-operator 2026-08-10
+**L11.98**  **⚠️ Targets are stated in BASIS POINTS OF THE TRADED INSTRUMENT'S TICKET — hard rule, and
+the denominator is named explicitly on every instruction.** *(Corrected 2026-08-10: the original worked
+example computed against the index level, which was the wrong base — see L11.106.)* Three denominators
+exist and must never be conflated: **notional** (exposure and portfolio risk) · **ticket** — premium ×
+lot size for options, the actual outlay (**cost-as-percentage and scalp viability**) · **margin** — SPAN
+for futures, full cash for CNC (**return on capital and expression selection**).
+⟨IV · VII⟩ · base · idea · operator 2026-08-10
+**L11.106**  **The tradeable-unit denominator rule** — *the percentage that matters is the percentage of
+the instrument you trade, never the percentage of the thing it references.* A 5-point move on a ₹100
+option premium is **5%** against a ~1% round-trip cost on the ticket — comfortably viable. The same 5
+points measured against NIFTY at 24,000 is 0.02% and looks fatal. Both describe the same trade; only one
+uses the right base. ⟨IV⟩ · base · idea · `tradeable_unit_denominator_and_per_segment_plays` §1
+**L11.107**  **Minimum-ticket precondition (the flat-brokerage gate)** — Zerodha's ₹20/order is *fixed*, so
+it explodes as a percentage when the ticket shrinks: ₹40 round-trip is 0.31% on a ₹13,000 ticket and
+**6.15% on a ₹650 ticket**. **This inverts the common instinct: cheap far-OTM options are the worst
+scalping vehicle in the universe**, not the safest. Every option instruction carries a minimum ticket
+value, derived from the live brokerage schedule and the instruction's own target — never a hardcoded rupee
+floor. ⟨IV⟩ · base · idea · §2
+**L11.108**  **Live-spread liquidity gate for options** — option spreads scale with illiquidity, not with
+price: ~0.05–0.25% on liquid ATM weekly NIFTY, but 4–10% on an illiquid strike. The option `cost_gate`
+must read the **live** spread from the book, never a modelled constant. ⟨II · IV⟩ · base · idea · §3
+**L11.109**  **Per-segment play catalog** — the plays that exist once the denominator is right:
+*index options* — premium-oscillation scalp · delta-neutral gamma scalp · intraday IV crush ·
+expiry-day pinning (dealer gamma hedging is the mechanism) · adjacent-strike spread · maker-side premium
+capture. *index futures* — margin-efficient momentum (~10–12× leverage, so a 0.5% index move ≈ 5–6% on
+margin) · basis convergence · roll-week calendar · the bearish expression of choice (no borrow constraint)
+· the hedging instrument for the cash book. *MCX* — open-gap follow-through (09:00 open after overnight
+COMEX is a genuine information gap) · inventory-release volatility · late-session international overlap ·
+gold-silver ratio. *stock options / stock futures* — same arithmetic, severe liquidity gate, top 20–30
+names only. ⟨III⟩ · adv · idea · §4
 **L11.99**  **Range-width precondition** — a range is tradeable only when `range_width_bps > cost_bps ×
 1.5` (A.12). Below that the range is noise wearing a pattern's clothes, and repeating the trade
 accumulates cost rather than profit. ⟨IV⟩ · base · idea · operator 2026-08-10
@@ -1621,7 +1646,12 @@ L11.38–39) · **document understanding** · **news firehose** · **API schema 
 
 ## Strategy premises that did not survive
 
-**D.01**  **"Take any profit however small, across the whole universe."** Round-trip cost is ~6–11 bps in
+**D.01**  **NARROWED 2026-08-10 — applies to CASH EQUITY and index-level targets, not to option
+premium.** The Carver and SEBI evidence below concerns cash-equity and index-denominated scalping, where
+the arithmetic genuinely fails. It does **not** disprove premium scalping on option contracts of adequate
+ticket size and liquidity, where a 5-point move on a ₹100 premium is 5% against a ~1% cost floor. The
+distinction is the denominator (L11.106), and conflating them was an error in the original entry.
+The disproved claim, as it stands: **"take any profit however small, across the whole universe."** Round-trip cost is ~6–11 bps in
 cash and ~25–65 bps on option premium, so break-even needs ≥0.06–0.11% in cash and ≥0.27–0.65% in options.
 A 1–2 tick scalp is *below* break-even — a guaranteed net loser. SEBI: 80% of traders doing 500+ trades a
 year are net-negative; turnover multiplies fixed-cost drag rather than averaging edge out. Carver
