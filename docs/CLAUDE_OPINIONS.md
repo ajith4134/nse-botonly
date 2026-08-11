@@ -559,6 +559,15 @@ historical bulk deals) were reached the same way — by guessing rather than by 
 now suspect, and I have marked them as needing re-test by this method. A blocker established by a weak
 method is worse than no blocker, because it stops anyone looking again.
 
+> **CONFIRMED LATER THE SAME DAY (2026-08-11), and more strongly than predicted.** Every BLOCKED
+> verdict in `research/207` fell: **ASM** to reading `asm.js`; **ATM IV** to noticing the endpoint had
+> been *superseded* (`option-chain-v3` returns 241KB of real data from a cold session, and NSE
+> publishes `impliedVolatility` itself); **index weights** to reading `IISLComponet.js`, which
+> revealed an entirely separate host (`liveindexsa.niftyindices.com`). Three for three. The failure
+> mode was never NSE's gating — it was accepting a 404 as evidence about the platform when it was
+> only evidence about one guessed string. I now treat "BLOCKED" in any reconnaissance, including my
+> own, as a hypothesis rather than a finding until the client has been read.
+
 ## O.41 · 2026-08-11 · I twice broke my own parallel-work discipline, in the same way
 
 **Opinion:** the rule I wrote for the fan-out — disjoint ownership, serial integration — is correct, and I

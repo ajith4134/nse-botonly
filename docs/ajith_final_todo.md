@@ -162,7 +162,15 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       (re-verified first-hand, not cited):** the historical API 503s behind an Apache bot-block; 8
       alternate paths tried, all 404/403; the one HTTP-200 alternative returns the same rolling
       today-only data as JSON, not history. So this source accrues forward only.*
-- [ ] **1.27** ATM implied-volatility daily series — `L0.27`
+- [~] **1.27** ATM implied-volatility daily series — `L0.27` — *built and certified. **NOT blocked** —
+      `research/207`'s verdict was wrong (`A.54`): the old endpoint was superseded, and
+      `/api/option-chain-v3` returns 241KB of real data from a COLD session. **NSE publishes
+      `impliedVolatility` itself**, so this is fetch-and-parse, not a Black-Scholes solver — the real F&O
+      bhavcopy was checked first and has no IV column. Full universe: 5 index + 208 equity underlyings,
+      not a sample. A wrong expiry guess returns HTTP 200 with empty `data: []` rather than 404, so a
+      bounded calendar-derived expiry ladder is used and wrong guesses are caught by the content check
+      before `parse()`. ⚠️ **Cost surfaced:** ~2,700 requests/run at full universe against the
+      inconsistently-gated host; a two-phase discover-then-fetch primitive belongs in the CORE (BACKLOG).*
 - [~] **1.28** Circuit-band / ASM / GSM state per symbol — `L0.28` — *ALL THREE states built and
       certified. **ASM was NOT blocked** — `research/207`'s verdict was wrong and is corrected in place
       (`A.53`): the endpoint is `/api/reportASM`, found by reading the page's own JavaScript rather than
@@ -173,7 +181,14 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       in company-name casing; disambiguated by occurrence rather than dropped. 35 tests.
       ⚠️ **Documented blind spot:** `sec_list.csv` carries no date anywhere in its body, so its half of
       `content_mismatch_reason` can validate structure but never recency. `[~]` per `R.08`.*
-- [ ] **1.29** Index constituents + weights — `L0.29`
+- [~] **1.29** Index constituents + weights — `L0.29` — *33 NSE indices (broad, size-sliced, sectoral,
+      thematic — not a NIFTY-50 sample), membership certified. **Weights FOUND** (`A.55`) by reading the
+      index provider's own SPA bundle, on a separate host, carrying NSE's free-float methodology inputs —
+      so weights are derivable from published fields, never approximated. ⛔ **The weight feed is STALE
+      since 2026-01-08** (~7 months) while a sibling feed on the same host serves today's data; the
+      content check self-dates the payload and therefore correctly REJECTS every weight target today —
+      surfaced by a passing test rather than ingested as current. Membership unaffected. A real NSE
+      sentinel row (`DUMMYHDLVR`, all zeros) is dropped, documented and tested.*
 - [~] **1.30a** Calendar coverage self-check — per-year reliability, two derived conditions — `L0.30a`
       *(new 2026-08-10; built with `1.30`, same review pending)*
 - [~] **1.30** Trading calendar — `L0.30` — ***PULLED FORWARD out of sequence, see `A.40`.*** Built as a

@@ -2586,6 +2586,32 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.55 · 2026-08-11 · Index weights EXIST, on a different host, and are SEVEN MONTHS STALE.**
+`research/207` §8 recorded per-symbol weights as "not located". They were found by reading
+`niftyindices.com/assets/js/IISLComponet.js` — the index provider's own SPA bundle — which points at a
+separate host: `liveindexsa.niftyindices.com/jsonfiles/HeatmapDetail/FinalHeatmap<INDEX>.json`, HTTP 200
+for all 33 indices, no cookie. It carries NSE's own free-float methodology inputs (`sharesOutstanding`,
+`investableWeightFactor`, `cappingFactor`, `Indexmcap_today`), so weights are derivable from published
+fields rather than approximated. **But the feed stopped refreshing on 2026-01-08** while a sibling feed on
+the same host serves live data dated today — one blob container silently went stale ~7 months ago. The
+adapter's `content_mismatch_reason` self-dates the payload and therefore **correctly rejects every weight
+target today**, which is the honest outcome: the staleness is surfaced by a passing test rather than
+ingested as current. Membership (33 indices) is unaffected. *Supersedes `research/207` §8's "not located".*
+
+**A.54 · 2026-08-11 · ATM IV is NOT blocked and is NOT a modelling problem — the endpoint was merely
+superseded.** `research/207` §6 recorded a 404 from `/api/option-chain-indices` and declared the source
+BLOCKED. The successor `/api/option-chain-v3` returns **HTTP 200 and 241,816 bytes of real data from a
+cold single-shot session** with nothing but a browser User-Agent. Decisively, **NSE computes and publishes
+`impliedVolatility` itself**, so `L0.27` is a fetch-and-parse adapter rather than the Black-Scholes solver
+it appeared to be — the real F&O bhavcopy was inspected first and carries no IV column, which is why NSE's
+own figure settles it. Full universe embedded and certified: 5 index underlyings and 208 equity
+underlyings from `/api/underlying-information`, not a sample. **Honest cost, surfaced not hidden:** the
+expiry query param has no discovery endpoint reachable inside the adapter contract, and a wrong guess
+returns HTTP 200 with an empty `data: []` rather than a 404 — so the adapter uses a bounded
+calendar-derived expiry ladder, which at full universe is ~2,700 requests per run against the one
+inconsistently-gated host. A two-phase discover-then-fetch primitive belongs in the CORE and is queued.
+*Supersedes `research/207` §6's BLOCKED verdict.*
+
 **A.53 · 2026-08-11 · ASM is NOT blocked, and `research/207`'s BLOCKED verdicts are now suspect as a
 class.** The surveillance list is served by `https://www.nseindia.com/api/reportASM` — HTTP 200, 50,270
 bytes of JSON, zero cookies, reproduced byte-identically. `research/207` had guessed `/api/reports/asm`

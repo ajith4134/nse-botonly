@@ -242,6 +242,17 @@ from this machine."
 - **No static/archived alternative found.** Unlike bhavcopy, ban lists, and bulk deals, NSE does not appear to
   publish option-chain or IV snapshots as static files on `nsearchives.nseindia.com` — I searched but found no
   such path, and did not fetch one.
+> **CORRECTION 2026-08-11 — this BLOCKED verdict was WRONG. ATM IV is fully reachable.**
+> `/api/option-chain-indices` really is gone, but its SUCCESSOR works:
+> `GET https://www.nseindia.com/api/option-chain-v3?type=Indices&symbol=NIFTY&expiry=11-Aug-2026`
+> → **HTTP 200, 241,816 bytes of real data**, from a COLD single-shot session with only a browser
+> User-Agent — no cookie priming, no Referer. Confirmed for equities too. **NSE computes and
+> publishes `impliedVolatility` itself** (CE 10.57 / PE 9.35 on the real NIFTY chain), so this is a
+> fetch-and-parse source, not the Black-Scholes modelling problem it looked like. The real F&O
+> bhavcopy was checked first and carries no IV column, which is why NSE's own number matters.
+> Same lesson as §7: the endpoint was retired and replaced, and stopping at the 404 recorded a
+> platform limitation where there was only a stale URL. Original text left below.
+
 - **Conclusion: BLOCKED, no data obtained, no column schema verified.** Any downstream ATM-IV feature
   depending on this source needs either (a) a real headless-browser session with cookie/token capture, or
   (b) a third-party vendor, or (c) deriving IV from the F&O bhavcopy's `SttlmPric`/`UndrlygPric` fields via
@@ -414,7 +425,7 @@ and repositories evaluated:
 | 3 | mwpl_position_limits | PARTIALLY VERIFIED (legacy archive 2011‑01‑03→2024‑04‑30 only; current feed NOT LOCATED) | `nsearchives.nseindia.com/archives/nsccl/mwpl/nseoi_02012024.zip` | CSV+XML in ZIP |
 | 4 | fo_ban_list | VERIFIED (today-only, no history) | `nsearchives.nseindia.com/content/fo/fo_secban.csv` | quasi-CSV |
 | 5 | bulk_block_deals | VERIFIED (today-only static file; historical API BLOCKED 503) | `archives.nseindia.com/content/equities/bulk.csv` | CSV |
-| 6 | atm_implied_volatility | BLOCKED (404 from www.nseindia.com option-chain API, no static alternative found) | none working | n/a |
+| 6 | atm_implied_volatility | **VERIFIED — the endpoint was merely superseded** (see the 2026-08-11 correction in §6) | `www.nseindia.com/api/option-chain-v3` | JSON |
 | 7 | circuit_band_asm_gsm | **VERIFIED — all three** (Band + GSM via sec_list.csv; ASM via `/api/reportASM`, see the 2026-08-11 correction in §7) | `sec_list.csv` + `www.nseindia.com/api/reportASM` | CSV + JSON |
 | 8 | index_constituents_weights | PARTIALLY VERIFIED (constituents yes; weights NOT LOCATED) | `niftyindices.com/IndexConstituent/ind_nifty50list.csv` | CSV |
 | 9 | corporate_announcements | VERIFIED (live, unparameterized only) | `www.nseindia.com/api/corporate-announcements?index=equities` | JSON |

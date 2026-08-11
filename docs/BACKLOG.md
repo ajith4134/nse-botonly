@@ -8,7 +8,24 @@ Reconcile with the live task list at each session start.
 
 Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) · ⛔ blocked
 
-## Wave 2 adapters (2026-08-11) — 🟡 four landed, two in flight
+## Wave 2 adapters (2026-08-11) — 🟢 ALL SIX LANDED, gate green
+
+All three of `research/207`'s BLOCKED verdicts were overturned (`A.53`, `A.54`, `A.55`) — see `O.40`.
+Open items:
+
+- 🔴 **CORE GAP — two-phase discover-then-fetch.** `L0.27` needs an expiry it cannot discover inside the
+  adapter contract (no I/O in `fetch_targets`, no chaining between targets), so it uses a bounded
+  candidate ladder: **~2,700 requests/run at full universe** against `www.nseindia.com`, the one
+  inconsistently-gated host. The fix belongs in the core, not the adapter: either a discover-then-fetch
+  primitive, or memoising the previous run's confirmed expiry. **Do not run L0.27 at full universe until
+  this exists.**
+- ⛔ **`L0.29` weight feed stale since 2026-01-08** (~7 months) while a sibling feed on the same host is
+  current. The adapter correctly rejects it rather than ingesting stale weights. Needs either an alternate
+  weight source or acceptance that weights are frozen at 2026-01-08.
+- 🔴 **Strategy indices** (Alpha 50, Low Volatility 50, Quality 30, Value 20) use a third URL pattern,
+  found in the provider's JS but not individually verified. Unverified, so not built (`R.17`).
+- 🔴 **`sec_list.csv` has no date anywhere in its body**, so `L0.28`'s circuit-band half can validate
+  structure but never recency — a disclosed blind spot with its own test.
 
 - ⛔ **`L0.09` needs its BSE adapter — the plan said BSE-sourced and I routed to NSE (`A.51`).** NSE's
   list is frozen since 2020-11-11 (328 rows); BSE is live with 4,612. A proven prior implementation

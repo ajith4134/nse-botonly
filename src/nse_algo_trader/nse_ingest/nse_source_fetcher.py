@@ -99,8 +99,14 @@ class FetchTarget:
     url: str
     source_name: str
     expects: str = ""
-    """Human-readable statement of what the payload should contain, carried into the
-    evidence so a mismatch report says what was expected rather than only that it failed."""
+    """The ISO calendar date (`YYYY-MM-DD`) this payload must be about, or empty when the
+    source cannot be addressed by date at all.
+
+    Deliberately narrow. While it was merely "a human-readable statement", an adapter
+    invented a composite `date|symbol|expiry` encoding, and a plain ISO date handed to it
+    then parsed as nothing — so its wrong-date check **silently skipped itself**. A
+    fail-open check is worse than no check because it reports success. Anything else an
+    adapter needs belongs in the URL, which is already per-target."""
 
 
 @dataclass(frozen=True)
