@@ -167,7 +167,10 @@ adapters behind one interface. ⟨XVI UNIVERSAL-ACCESS⟩ · adv · archived · 
 short. ⟨XVI⟩ · adv · archived · r/84, r/85
 **L0.16**  Breeze 1-second historical bars — the high-fidelity replay tier, autonomous background prebuild.
 ⟨II⟩ · adv · archived · r/66, r/67, r/69, r/92
-**L0.17**  ICICI stock-code resolver — Breeze uses its own symbology; this maps it to NSE symbols.
+**L0.17**  Broker symbology resolver — every broker's private identifier mapped to the NSE trading
+symbol; ICICI's stock codes are ONE instance. *Generalised `A.73`: Kite says 738561, Angel says 2885,
+Breeze says RELIND, Upstox says NSE_EQ|INE002A01018, and none is derivable from another. Building only
+the ICICI case would have left reconciliation single-sourced against the broker that is actually live.*
 ⟨XVI⟩ · base · archived · r/68
 **L0.18**  Fyers deep-history adapter — deeper intraday history than Kite exposes. ⟨XVI⟩ · adv · blocked
 (credentials) · r/78
@@ -2660,6 +2663,32 @@ sdist**, so no pip path exists; `nautilus_trader` publishes `manylinux_2_35_aarc
 SOTA analog is a depth *comparison*, not an import — but no spec may plan to depend on either. Where a
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
+
+**A.73 · 2026-08-11 · `L0.17` generalised from "ICICI stock-code resolver" to a broker symbology
+resolver, and Angel One built first because it is the one that can be verified.** Idea-intake verdict:
+SUPERIOR VERSION, ID kept. ICICI is one instance of a problem every broker has, and ICICI is
+credential-blocked while Angel is live — building the ICICI case alone would have left `L0.15`
+single-sourced against the only second broker that answers.
+
+**The blocker this closes was measured, not assumed.** The first wired reconciliation ran over 25
+instruments and Angel could name NONE of them, so "cross-source reconciliation" was single-source with
+extra steps. Angel publishes its full scrip master as public JSON — 152,555 rows, no credentials —
+which makes whole-universe symbology available rather than a hand-written handful. After wiring: 3,163
+NSE equity mappings, **100% coverage** over the instruments the bar step walks, RELIANCE resolving to
+2885 exactly as hand-verified.
+
+**Safety was checked before the mapping was written.** Within NSE the 2,485 `-EQ` rows have 2,485
+DISTINCT names — zero collisions — and the 249 `-BE` rows share no name with any `-EQ` row, so `name` is
+a unique key across the equity series. A collision is still a hard refusal rather than first-wins,
+because picking between two candidates maps a symbol to a different company with no signal at all. A
+truncated download is likewise refused rather than allowed to replace good symbology and silently unname
+the universe.
+
+**An open question, deliberately NOT resolved.** With Angel contributing, reconciliation immediately
+flagged PRICE disagreements on 3 of 4 instruments for 2026-08-11. That is either a real broker
+discrepancy or a defect in the Angel adapter, and I could not determine which: the Angel session was
+refused on two consecutive retries — apparent throttling of repeated `generateSession` calls — so I
+stopped rather than grind (`R.21`). Recorded as an open blocker; it is NOT claimed as a finding.
 
 **A.72 · 2026-08-11 · `L0.15` built, and it grades disagreement by CONSEQUENCE rather than treating
 any difference as one thing.** Built against two cases measured live on 2026-08-11, not hypotheticals.

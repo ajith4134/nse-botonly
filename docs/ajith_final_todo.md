@@ -106,7 +106,7 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [x] **1.14** Multi-broker historical bar source — `L0.14` · Kite + Angel One live-verified behind one Protocol; 3 brokers blocked with measured reasons (`A.71`)
 - [x] **1.15** Multi-broker failover + gap-fill aggregation — `L0.15` · union+disagreement grading, derived source preference; fills the bar store nightly (`A.72`)
 - [ ] **1.16** Breeze 1-second historical bars — `L0.16`
-- [ ] **1.17** ICICI stock-code resolver — `L0.17`
+- [x] **1.17** Broker symbology resolver (ICICI is one instance) — `L0.17` · Angel One built: 3,163 mappings, 100% coverage of the bar step (`A.73`); ICICI instance still credential-blocked
 - [ ] **1.18** Fyers deep-history adapter — `L0.18`
 - [ ] **1.19** Groww historical adapter — `L0.19`
 - [~] **1.20** Live order-book depth recorder (P4b) — `L0.20` — ***PULLED FORWARD out of sequence, see

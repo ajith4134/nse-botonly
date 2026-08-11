@@ -51,6 +51,12 @@ from nse_algo_trader.broker_sessions.kite_access_token_store import (
 from nse_algo_trader.broker_sessions.kite_totp_auto_login import (
     generate_and_store_daily_kite_access_token,
 )
+from nse_algo_trader.broker_symbology.angel_one_symbology_resolver import (
+    AngelOneSymbologyResolver,
+)
+from nse_algo_trader.broker_symbology.broker_symbology_resolver import (
+    BrokerSymbolStore,
+)
 from nse_algo_trader.capital_configuration import (
     CapitalConfigurationError,
     load_trading_capital_from_environment,
@@ -142,6 +148,7 @@ IST = ZoneInfo("Asia/Kolkata")
 STATE_DIRECTORY = Path("~/.nse_algo_trader").expanduser()
 INGEST_DATABASE = STATE_DIRECTORY / "nse_ingest.sqlite3"
 MARKET_DATA_DATABASE = STATE_DIRECTORY / "market_data.sqlite3"
+BROKER_SYMBOLOGY_DATABASE = STATE_DIRECTORY / "broker_symbology.sqlite3"
 SECURITY_IDENTITY_DATABASE = STATE_DIRECTORY / "security_identity.sqlite3"
 DISCOVERY_MEMO_DATABASE = STATE_DIRECTORY / "nse_ingest.sqlite3"
 
@@ -392,6 +399,21 @@ is reported, never silently dropped (`R.11`).
 """
 
 
+def _refresh_broker_symbology() -> str:
+    """`L0.17` — re-read each broker's published master so the reconciler can name things.
+
+    Daily because listings change: a newly listed symbol the reconciler cannot name is
+    silently single-sourced, which looks exactly like agreement.
+    """
+    with BrokerSymbolStore(BROKER_SYMBOLOGY_DATABASE) as store:
+        resolver = AngelOneSymbologyResolver(store)
+        mapped = resolver.refresh()
+        return (
+            f"angel_one {mapped:,} NSE equity mappings "
+            f"(refreshed {store.last_refreshed(BrokerName.ANGEL_ONE)})"
+        )
+
+
 def _build_angel_one_client() -> object | None:
     """An authenticated SmartAPI client, or None when Angel will not talk to us.
 
@@ -544,15 +566,23 @@ def _bar_instruments_due(budget: int) -> list[BarInstrument]:
         }
     never_stored = [r for r in tradeable if r.tradingsymbol not in already_stored]
     chosen = sorted(never_stored or tradeable, key=lambda r: r.tradingsymbol)[:budget]
-    return [
-        BarInstrument(
-            exchange=record.exchange,
-            segment="CASH",
-            tradingsymbol=record.tradingsymbol,
-            broker_identifiers={BrokerName.ZERODHA_KITE: str(record.instrument_token)},
-        )
-        for record in chosen
-    ]
+    # Kite's token comes from the instrument master; every OTHER broker's comes from
+    # `L0.17`. Without this the reconciler was handed instruments only Kite could name, so
+    # "cross-source reconciliation" was single-source with extra steps.
+    with BrokerSymbolStore(BROKER_SYMBOLOGY_DATABASE) as symbology:
+        instruments = []
+        for record in chosen:
+            identifiers = symbology.identifiers_for_all_brokers(record.tradingsymbol)
+            identifiers[BrokerName.ZERODHA_KITE] = str(record.instrument_token)
+            instruments.append(
+                BarInstrument(
+                    exchange=record.exchange,
+                    segment="CASH",
+                    tradingsymbol=record.tradingsymbol,
+                    broker_identifiers=identifiers,
+                )
+            )
+    return instruments
 
 
 def _report_capital() -> str:
@@ -757,6 +787,7 @@ def main() -> int:
     )
     _run_step(report, "universe", _report_universe)
     _run_step(report, "corporate actions", _report_corporate_actions)
+    _run_step(report, "broker symbology", _refresh_broker_symbology)
     _run_step(report, "bar reconciliation", lambda: _reconcile_daily_bars(target))
     _run_step(report, "bar store", _report_bar_store)
     # Last: the surface should be photographed AFTER the run has changed the state

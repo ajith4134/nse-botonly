@@ -3428,3 +3428,16 @@ expiries; EXIDEIND + NUVAMA held 1 and left F&O ~35 trading days later). `DALBHA
   passed to the reconciler, but every instrument carries only a Kite token, so Angel is asked for
   symbols it cannot name. Cross-source reconciliation is therefore SINGLE-source in practice today; the
   disagreement machinery is verified against RELIANCE, where both identifiers are known by hand.
+- **⚠️ UNVERIFIED: price disagreements between Kite and Angel One** (`L0.15`/`L0.17`, `A.73`). With Angel
+  contributing, reconciliation flagged PRICE disagreements on 3 of 4 instruments for 2026-08-11
+  (ACUTAAS, ADANIENT, ADANIGREEN). This is EITHER a real broker discrepancy OR a defect in the Angel
+  adapter — most likely candidate: Angel's `ONE_DAY` bar computed over an explicit 09:15–15:30 window may
+  differ from Kite's official daily bar, or same-day bars are still settling. NOT determined, because the
+  Angel session was refused on two consecutive retries and grinding was stopped (`R.21`). Resolve by
+  comparing raw OHLC for one symbol against the NSE bhavcopy, which is the authority neither broker is.
+- **Angel One throttles repeated session generation** (`A.73`). `generateSession` succeeded early in the
+  session and was refused twice ~30s apart later. The daily runner already degrades correctly — the
+  client builder returns None and the reconciler records a single-source result — but a session cache
+  (one login per day, token reused) would stop the nightly run burning its allowance.
+- **ICICI Breeze symbology remains unbuilt** (`L0.17`). The resolver framework now exists and takes a new
+  broker as one class; Breeze needs a daily web-minted session key before its master can be read.
