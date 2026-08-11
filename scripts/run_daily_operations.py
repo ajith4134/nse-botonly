@@ -50,7 +50,10 @@ from nse_algo_trader.broker_sessions.kite_access_token_store import (
 from nse_algo_trader.broker_sessions.kite_totp_auto_login import (
     generate_and_store_daily_kite_access_token,
 )
-from nse_algo_trader.capital_configuration import load_trading_capital_from_environment
+from nse_algo_trader.capital_configuration import (
+    CapitalConfigurationError,
+    load_trading_capital_from_environment,
+)
 from nse_algo_trader.corporate_action_adjustment_engine import (
     CorporateActionAdjustmentEngine,
 )
@@ -85,6 +88,7 @@ from nse_algo_trader.nse_ingest.ingest_gap_backfill_planner import (
     dates_needing_human_attention,
     find_missing_dates,
 )
+from nse_algo_trader.nse_ingest.ingest_source_adapter import NseIngestSourceAdapter
 from nse_algo_trader.nse_ingest.mwpl_position_limits_adapter import (
     MwplPositionLimitsAdapter,
 )
@@ -231,8 +235,21 @@ def _verify_broker_client() -> str:
 
 
 def _report_capital() -> str:
-    """Capital is a parameter, not a constant (`R.03`), and the run states what it is."""
-    capital = load_trading_capital_from_environment()
+    """Capital is a parameter, not a constant (`R.03`), and the run states what it is.
+
+    An UNSET capital is reported, not raised. This runner ingests and reports; it never
+    sizes an order, so refusing to ingest because capital is unconfigured fails work that
+    does not depend on it. `R.03` is untouched — no default is invented here and none is
+    invented downstream: the sizing path still refuses to act without an explicit value.
+    Refusing to TRADE without capital is correct; refusing to fetch a bhavcopy is not.
+    """
+    try:
+        capital = load_trading_capital_from_environment()
+    except CapitalConfigurationError:
+        return (
+            "NOT CONFIGURED — set NSE_TRADING_CAPITAL_RUPEES to enable sizing "
+            "(ingest and reporting are unaffected; no default is assumed)"
+        )
     return f"trading capital Rs {capital.total_rupees:,}"
 
 
@@ -256,7 +273,7 @@ def _run_ingest(for_dates: Sequence[date]) -> str:
     fetcher = NseSourceFetcher(
         retry_policy=RetryPolicy(maximum_attempts=3, initial_backoff_seconds=2.0)
     )
-    adapters = [
+    adapters: list[NseIngestSourceAdapter] = [
         NseBhavcopyAdapter(CASH_MARKET),
         NseBhavcopyAdapter(FO_MARKET),
         FoBanListAdapter(),
@@ -276,7 +293,17 @@ def _run_ingest(for_dates: Sequence[date]) -> str:
         for adapter in adapters:
             try:
                 run = runner.ingest(adapter, for_dates, discovery_memo=memo)
-                summaries.append(f"{adapter.source_name}={run.rows_inserted:,}")
+                # `=0` alone is three states wearing one number: already held, empty
+                # file, or a dead feed. A run on 2026-08-11 printed nine zeros and read
+                # as total failure while the database held 33,601 F&O rows for the date.
+                if run.rows_inserted:
+                    summaries.append(f"{adapter.source_name}={run.rows_inserted:,}")
+                elif run.fetched_nothing:
+                    summaries.append(f"{adapter.source_name}=NOTHING FETCHED")
+                else:
+                    summaries.append(
+                        f"{adapter.source_name}=0 of {run.rows_presented:,} already held"
+                    )
             except Exception as failure:  # noqa: BLE001 — one source must not stop the rest
                 summaries.append(f"{adapter.source_name}=FAILED({type(failure).__name__})")
     return " · ".join(summaries)

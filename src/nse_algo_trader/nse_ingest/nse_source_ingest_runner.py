@@ -73,6 +73,32 @@ class SourceIngestRun:
         )
 
     @property
+    def rows_presented(self) -> int:
+        """Rows the sources actually PRODUCED, before the store deduplicated them.
+
+        Without this, `rows_inserted == 0` is three different states wearing one number:
+        the date was already held (healthy), the source returned an empty file, or the
+        fetch produced nothing at all. Only the first is fine, and a status line that
+        cannot separate them reports a dead feed as a quiet success.
+        """
+        return sum(
+            outcome.ingest.rows_presented for outcome in self.outcomes if outcome.ingest
+        )
+
+    @property
+    def rows_already_present(self) -> int:
+        return sum(
+            outcome.ingest.rows_already_present
+            for outcome in self.outcomes
+            if outcome.ingest
+        )
+
+    @property
+    def fetched_nothing(self) -> bool:
+        """True when no source produced a single row — the state worth alarming on."""
+        return self.rows_presented == 0
+
+    @property
     def revisions_recorded(self) -> int:
         return sum(
             outcome.ingest.revisions_recorded

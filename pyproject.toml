@@ -94,7 +94,11 @@ builtins-allowed-modules = ["types"]
 # ---------------------------------------------------------------------------
 [tool.mypy]
 python_version = "3.12"
-files = ["src", "tests"]
+files = ["src", "tests", "scripts"]
+# scripts/ is the OPERATIONAL SPINE and was outside the gate entirely, so every
+# import there resolved to Any and no call was checked. That is exactly how
+# `store.ingest(..., observed_on=...)` shipped against a method taking `ingested_on`
+# and failed on every scheduled run (A.65).
 exclude = ["tests/fixtures_rupee_literal_evasions/"]
 strict = true
 warn_unreachable = true
@@ -111,7 +115,7 @@ pretty = true
 # Everything the project does with it is wrapped in nse_trading_session_calendar.py,
 # which is fully typed.
 [[tool.mypy.overrides]]
-module = ["pandas_market_calendars.*", "staircase.*"]
+module = ["pandas_market_calendars.*", "staircase.*", "nselib.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

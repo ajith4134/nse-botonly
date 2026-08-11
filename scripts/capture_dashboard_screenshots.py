@@ -18,12 +18,14 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
+from playwright.sync_api import ConsoleMessage, sync_playwright
 from playwright.sync_api import Error as PlaywrightError
-from playwright.sync_api import sync_playwright
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8080"
 ACCESS_TOKEN_PATH = Path("~/.nse_algo_trader/dashboard_access_token.txt").expanduser()
@@ -33,7 +35,9 @@ ROUTES = ("/wall", "/regime", "/manifest")
 """Every route a human reads. `/healthz` is excluded deliberately: it returns plain text
 and has no visual claim to confirm."""
 
-THEMES = ("light", "dark")
+THEMES: tuple[Literal["light", "dark"], ...] = ("light", "dark")
+"""Literal, not str: playwright types `color_scheme` as an enum of exact values, so a
+plain str would pass a typo straight through to a silently wrong-theme screenshot."""
 
 VIEWPORT_WIDTH = 1440
 VIEWPORT_HEIGHT = 1000
@@ -45,6 +49,23 @@ MINIMUM_CREDIBLE_PNG_BYTES = 3_000
 """A rendered page of tables is never this small. A near-empty PNG means the page failed
 to paint — a blank screenshot must FAIL rather than sit in the archive looking like
 evidence. Sized from the floor of a blank 1440x1000 solid-fill PNG, not from taste."""
+
+
+def _console_error_recorder(sink: list[str]) -> Callable[[ConsoleMessage], None]:
+    """A handler bound to ONE sink.
+
+    Not a lambda with a default argument: that bound the list correctly but made the
+    handler two-arity, which is not what playwright calls it with. A closure over an
+    explicit parameter is both correctly typed and correctly bound — `console_errors` is
+    rebound once per theme, so a handler closing over the NAME would append wherever the
+    name points when it fires, mixing the light pass's errors into the dark pass's list.
+    """
+
+    def record(message: ConsoleMessage) -> None:
+        if message.type == "error":
+            sink.append(message.text)
+
+    return record
 
 
 @dataclass(frozen=True)
@@ -101,12 +122,7 @@ def capture_dashboard(
                     )
                 page = context.new_page()
                 console_errors: list[str] = []
-                page.on(
-                    "console",
-                    lambda message, sink=console_errors: (
-                        sink.append(message.text) if message.type == "error" else None
-                    ),
-                )
+                page.on("console", _console_error_recorder(console_errors))
                 for route in ROUTES:
                     before = len(console_errors)
                     response = page.goto(f"{base_url}{route}", wait_until="networkidle")

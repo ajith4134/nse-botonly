@@ -15,14 +15,14 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from nse_algo_trader.rupee_literal_detector import scan_source_tree
+from nse_algo_trader.rupee_literal_detector import RupeeLiteral, scan_source_tree
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 GUARDED_TREES = ("src", "scripts")
 
 
 def main() -> int:
-    findings: dict[Path, list[object]] = {}
+    findings: dict[Path, list[RupeeLiteral]] = {}
     for tree in GUARDED_TREES:
         root = PROJECT_ROOT / tree
         if root.exists():
