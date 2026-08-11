@@ -42,10 +42,10 @@ one payload examined in isolation.
   naive `str.splitlines()` parser breaks this row into garbage; `csv.reader`, which is
   quote-aware, reassembles it correctly and this parser relies on that rather than
   re-inventing CSV quoting.
-- **Two-digit years** (`15-Apr-02`, not `15-Apr-2002`), spanning at least 2002–2020 in
+- **Two-digit years** (`15-Apr-02`, not `15-Apr-2002`), spanning at least 2002-2020 in
   the fetched file. `strptime("%d-%b-%y")` resolves them into the 2000s, which is
-  correct for every year seen (`%y` maps 00–68 to 2000–2068) and would only misread a
-  delisting recorded with a 69–99 two-digit year, which cannot occur in NSE's history.
+  correct for every year seen (`%y` maps 00-68 to 2000-2068) and would only misread a
+  delisting recorded with a 69-99 two-digit year, which cannot occur in NSE's history.
 - **No duplicate `Symbol` values** in the 328 rows fetched live — but nothing in NSE's
   process rules that out for the future (a symbol can be delisted, relisted under the
   same ticker, and delisted again), so the natural key deliberately does not rely on

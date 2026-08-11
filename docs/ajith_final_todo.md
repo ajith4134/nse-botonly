@@ -140,7 +140,17 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       does not, which is what makes `observed_at` load-bearing. First real snapshot stored:
       BANDHANBNK, SAIL for 2026-08-11. `[~]` per `R.11`: nothing schedules the daily run yet, and
       without it the history this exists to build will not build.*
-- [ ] **1.26** Bulk / block deals ingest — `L0.26`
+- [~] **1.26** Bulk / block deals ingest — `L0.26` — *built on the ingest core; BOTH regulatory
+      disclosures covered (bulk AND block are different disclosures with different SEBI thresholds —
+      shipping only bulk would have been a silent narrowing per `R.12`). Real fetches: bulk.csv 150
+      rows, block.csv 2 rows, both 2026-08-10. Coverage floors sourced to the actual SEBI circulars.
+      **Natural-key finding from REAL data:** `(date, symbol, client, side)` COLLIDES — one client
+      bought ATALREAL twice on the same day at different prices — so quantity and price are part of
+      the key. Stated honestly as empirical, not guaranteed: two genuinely identical trades would
+      still collide and the file carries no sequence number to rule it out. ⛔ **BLOCKER
+      (re-verified first-hand, not cited):** the historical API 503s behind an Apache bot-block; 8
+      alternate paths tried, all 404/403; the one HTTP-200 alternative returns the same rolling
+      today-only data as JSON, not history. So this source accrues forward only.*
 - [ ] **1.27** ATM implied-volatility daily series — `L0.27`
 - [ ] **1.28** Circuit-band / ASM / GSM state per symbol — `L0.28`
 - [ ] **1.29** Index constituents + weights — `L0.29`
@@ -169,6 +179,11 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       contract, bitemporal store, runner, coverage self-check, plus the conformance suite adapters
       must pass and may not edit. 46 tests. R.05 on the classifier PASSED against live NSE endpoints,
       including a first-hand reproduction of the stale-Sunday trap. End-to-end R.05 opens with wave 1.)*
+
+      *(Wave 2 dispatched 2026-08-11 as six concurrent agents against the frozen contract, per `A.46`.
+      Landed and gate-green so far: `1.26` bulk/block deals, plus `1.09`/`1.24` files present and being
+      integrated. Integration is serial with the full gate between each; nothing is ticked until it
+      certifies through the conformance suite.)*
 
 **— L1 —**
 
