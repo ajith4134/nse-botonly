@@ -600,9 +600,23 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **5.11** Local Ollama constrained-decoding provider with a think-then-answer contract — `L11.66`
 - [ ] **5.12** Subscription token ledger + gateway dashboard surface — `L11.67`
 
+      *(`L13.06`'s audit property is LIVE as `/manifest`: it walks the REAL package tree, so a new
+      engine appears automatically and reads UNSURFACED until it has a panel. Measured now: **44 modules,
+      7 surfaced, 37 UNSURFACED** — the accrued `R.08` debt is now auditable rather than asserted.)*
+
 **— L13 —**
 
-- [ ] **5.13** Dashboard server + read model + HTML renderer — `L13.01`
+- [~] **5.13** Dashboard server + read model + HTML renderer — `L13.01` — *built 2026-08-11. There was
+      NO dashboard at all after the reset (systemd unit inactive, no web code survived), so every `R.08`
+      deferral logged during the day had nothing to attach to. FastAPI + server-rendered HTML.
+      **Status is MEASURED, never hand-authored:** the read model instantiates the real classifiers,
+      runs them over real bars, and reads armed state off the brain, maturity off each classifier and
+      the decision off the mean-reversion engine. A failed measurement returns **503 rather than a
+      placeholder** — a green page measuring nothing is exactly what `R.08` forbids. Built through the
+      dataviz procedure: palette validated by `validate_palette.js` (PASS both surfaces; the light
+      contrast WARN obligated relief, so every bar is direct-labelled), fixed categorical slot order,
+      legend + table view + word-bearing status badges, dark mode as its own selected steps. 12 tests.
+      `[~]`: only the regime brain has a panel — 37 of 44 modules read UNSURFACED.*
 - [ ] **5.14** Feature-surface registry — `L13.02`
 - [ ] **5.15** Feature-coverage audit — `L13.03`
 - [ ] **5.16** Project-wide feature-catalogue dashboard — `L13.04`
