@@ -2661,6 +2661,30 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.70 · 2026-08-11 · `L0.13` built ahead of `L0.12`, and the honest clock is enforced by a detector
+rather than by discipline.** `L0.12` tags experience as replayed versus live; the rebuild has no
+experience-memory store to tag, so building it now would create precisely the orphan `R.06` forbids. It
+is marked BLOCKED with its unblocking condition. `L0.13` was built instead because its dependencies all
+exist and it is the firewall's named consumer, closing the `A.69` gap.
+
+**A replay lies to itself in two different ways and they need different defences.** Reading the FUTURE is
+the firewall's job, and `ReplaySessionClock` owns the firewall rather than sitting beside it, so data
+arrives by the clock moving rather than by being fetched. Reading the WALL is worse: one `datetime.now()`
+in a replay path returns today while simulated time sits in 2020, nothing looks wrong, and the only
+symptom is a backtest that comes out slightly too good. Discipline cannot hold that line because the
+failure is a one-line import away at every moment and invisible when committed.
+
+So it is mechanical. `wall_clock_access_detector` parses the replay path's real AST for `now`, `utcnow`,
+`today`, `time`, `monotonic` and their kin, and a TEST asserts the replay path is clean — which puts it
+in the existing ruff+mypy+pytest gate with no new machinery. Proven to fire before being trusted: 5 of 5
+on known-bad source, 8 real hits in the daily runner (which legitimately reads the clock and is
+deliberately outside the replay path), and correctly silent on `datetime.min.time()` and on the injected
+`self.clock.now` — flagging those would punish the fix and train the reader to ignore the detector.
+
+Verified on real data across four sessions: replaying 2026-08-06 blocks 87,228 of 720,240 rows, 08-10
+blocks 44,526, and 08-11 blocks only the 328 unknowable-schedule rows. The monotonic shape is the
+evidence — the further back the replay, the more the future is correctly invisible.
+
 **A.69 · 2026-08-11 · `L0.11` rebuilt bitemporally: the archived firewall guarded the wrong axis.**
 The pre-reset version guarded a single `timestamp`. The project's own data refutes that model —
 across 533,920 real ingested rows, **90.6% were first observed more than a day after the event they

@@ -54,7 +54,10 @@ from nse_algo_trader.capital_configuration import (
     CapitalConfigurationError,
     load_trading_capital_from_environment,
 )
-from nse_algo_trader.causal_leakage_firewall import derive_publication_lags
+from nse_algo_trader.causal_leakage_firewall import (
+    ObservableRow,
+    derive_publication_lags,
+)
 from nse_algo_trader.corporate_action_adjustment_engine import (
     CorporateActionAdjustmentEngine,
 )
@@ -111,6 +114,7 @@ from nse_algo_trader.nse_ingest.nse_source_fetcher import NseSourceFetcher, Retr
 from nse_algo_trader.nse_ingest.nse_source_ingest_runner import NseSourceIngestRunner
 from nse_algo_trader.nse_trading_session_calendar import NseTradingSessionCalendar
 from nse_algo_trader.point_in_time_universe_engine import PointInTimeUniverseEngine
+from nse_algo_trader.replay_session_clock import replay_sessions
 from nse_algo_trader.security_identity_record_store import (
     SecurityIdentityRecordStore,
     observations_from_bhavcopy_rows,
@@ -316,6 +320,39 @@ def _report_publication_schedules() -> str:
     return detail
 
 
+def _verify_replay_leakage_guard(target_session: date) -> str:
+    """`L0.13` — replay the session just closed and prove the leakage guard still holds.
+
+    Runs daily because the guarantee is only as good as the derived publication lags, and
+    those come from a corpus that grows every night. A source that starts publishing later
+    would silently begin admitting rows a trader could not have held; replaying a real
+    session against the real corpus is what would catch it.
+
+    The assertion is directional, not a fixed count: replaying a PAST session must block
+    strictly more than replaying the newest data, because the future has not happened yet.
+    A guard that stopped blocking anything would satisfy every unit test and be useless.
+    """
+    with BitemporalIngestStore(INGEST_DATABASE) as store:
+        triples = store.publication_observations()
+    lags = derive_publication_lags(triples)
+    rows = [ObservableRow(source, effective, observed) for source, effective, observed in triples]
+
+    clocks = list(
+        replay_sessions(NseTradingSessionCalendar(), lags, target_session, target_session)
+    )
+    if not clocks:
+        return f"{target_session} is not a trading session — nothing to replay"
+    clock = clocks[0]
+    clock.observable_now(rows)
+    ledger = clock.firewall.ledger
+    if ledger.total_blocked == 0:
+        raise RuntimeError(
+            f"replaying {target_session} blocked NOTHING across {len(rows):,} rows — "
+            "the leakage guard is not guarding"
+        )
+    return f"replayed {target_session} over {len(rows):,} rows · {ledger.describe()}"
+
+
 def _report_capital() -> str:
     """Capital is a parameter, not a constant (`R.03`), and the run states what it is.
 
@@ -500,6 +537,9 @@ def main() -> int:
     _run_step(report, "ingest coverage", _report_ingest_coverage)
     _run_step(report, "security identity", _refresh_security_identity)
     _run_step(report, "publication schedules", _report_publication_schedules)
+    _run_step(
+        report, "replay leakage guard", lambda: _verify_replay_leakage_guard(target)
+    )
     _run_step(report, "universe", _report_universe)
     _run_step(report, "corporate actions", _report_corporate_actions)
     _run_step(report, "bar store", _report_bar_store)

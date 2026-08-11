@@ -3392,11 +3392,15 @@ expiries; EXIDEIND + NUVAMA held 1 and left F&O ~35 trading days later). `DALBHA
 - **Identity history is only as dense as the bhavcopy corpus** (`L0.08`). 13 distinct dates across six
   years, so a rename is bracketed by `last_seen_before`/`first_seen_after` that can span years. The
   algorithm is full (`R.04`); the PRECISION is data-bound and improves as the corpus fills in.
-- **The leakage firewall has no replay consumer yet** (`L0.11`, `A.69`). It is wired into the daily run,
-  which re-derives publication lags and surfaces unknowable sources — real work, but not its PRIMARY
-  consumer. That is `L0.13` (honest clock / day-walker), which will stream through
-  `CausalLeakageFirewall.stream_causally`. Named queued consumer per `R.06`/`R.11`; the firewall is not
-  "done" in the full sense until `L0.13` runs through it.
+- ~~**The leakage firewall has no replay consumer yet**~~ — CLOSED 2026-08-11 (`A.70`): `L0.13`
+  `ReplaySessionClock` owns the firewall, and the daily run replays the closed session over the
+  real corpus (720,240 rows, 44,526 blocked) as a standing proof the guard still guards.
 - **Revision leakage is modelled but not enforced** (`L0.11`). `LeakageReason.REVISED_AFTER_DECISION`
   exists and nothing raises it yet: catching a value that was silently restated after the fact needs the
   store's revision history joined per row. The other three reasons are enforced and verified on real data.
+- **`L0.12` replay experience provenance is BLOCKED on a store that does not exist** (`A.70`). It
+  tags experience as replayed vs live, and the rebuild has no experience-memory store to tag.
+  Building it now would create the orphan `R.06` forbids. Unblocks when the experience store is built.
+- **The replay clock has no strategy consumer yet** (`L0.13`). It is wired into the daily run as a
+  standing leakage proof — real work, not its final purpose. The full consumer is a replay/backtest
+  engine that steps a strategy through `step_through_session`. Named queued consumer per `R.06`.
