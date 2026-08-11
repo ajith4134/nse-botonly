@@ -57,6 +57,15 @@ from nse_algo_trader.capital_configuration import (
 from nse_algo_trader.corporate_action_adjustment_engine import (
     CorporateActionAdjustmentEngine,
 )
+from nse_algo_trader.dashboard.dashboard_surface_screenshot_capture import (
+    DEFAULT_BASE_URL,
+    DEFAULT_OUTPUT_ROOT,
+    DashboardCaptureError,
+    capture_dashboard,
+    capture_failed,
+    read_access_token,
+    summarise_capture,
+)
 from nse_algo_trader.kite_instrument_master import (
     InstrumentMasterStore,
     fetch_instrument_dump,
@@ -232,6 +241,27 @@ def _verify_broker_client() -> str:
     if client is None:
         return "no valid token — the system runs on stored data only (Kite-decoupled)"
     return f"authenticated client built ({type(client).__name__})"
+
+
+def _capture_dashboard_surfaces() -> str:
+    """`R.08` visual confirmation, run nightly instead of when someone remembers.
+
+    A 200 from `curl` says bytes came back; it does not say the page painted. The defect
+    that motivated this — five CSS rules silently deleted by a stray semicolon, one of
+    four regime series invisible — returned 200 on every request and passed ruff, mypy
+    and the whole suite (`A.64`). It was visible only as absent pixels.
+
+    A failure here does not stop the run: an unreachable dashboard must not prevent the
+    bhavcopy from being fetched, and rolling sources cannot be re-fetched tomorrow.
+    """
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    results = capture_dashboard(
+        DEFAULT_BASE_URL, DEFAULT_OUTPUT_ROOT / f"{stamp}_daily", read_access_token()
+    )
+    summary = summarise_capture(results)
+    if capture_failed(results):
+        raise DashboardCaptureError(summary)
+    return summary
 
 
 def _report_capital() -> str:
@@ -419,6 +449,9 @@ def main() -> int:
     _run_step(report, "universe", _report_universe)
     _run_step(report, "corporate actions", _report_corporate_actions)
     _run_step(report, "bar store", _report_bar_store)
+    # Last: the surface should be photographed AFTER the run has changed the state
+    # it displays, so the capture shows the day that just happened.
+    _run_step(report, "dashboard surfaces", _capture_dashboard_surfaces)
 
     print()
     print(report.describe())
