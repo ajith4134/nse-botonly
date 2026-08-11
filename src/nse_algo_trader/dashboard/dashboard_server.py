@@ -22,7 +22,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+)
 
 from nse_algo_trader.dashboard.module_surface_catalogue import build_module_catalogue
 from nse_algo_trader.dashboard.operations_wall_renderer import render_operations_wall
@@ -51,15 +56,55 @@ def read_access_token() -> str | None:
     return token or None
 
 
+ACCESS_COOKIE_NAME = "nse_dashboard_key"
+"""The token is carried in a cookie AFTER the first authorised request, so it never
+appears in a link again.
+
+This exists because of a real defect, not a preference. The first version threaded the
+key through every link as `?key=...`, reflecting an attacker-controlled string into
+`href` and `<meta refresh>` attributes. With a token file present auth happened to block
+it — but the no-token path is a configuration this server deliberately supports, and
+there a raw `<script>` tag reached the response body. Proven, then fixed by removing the
+reflection entirely rather than escaping it in two places and hoping a third is never
+added."""
+
+
 def _is_authorised(request: Request) -> bool:
+    """Cookie first, then the query parameter that sets it."""
     expected = read_access_token()
     if expected is None:
         return True
-    supplied = request.query_params.get("key", "")
-    # Constant-time comparison: a length-or-prefix leak on a token is free to avoid.
     import hmac
 
-    return hmac.compare_digest(supplied, expected)
+    # Constant-time both ways: a length-or-prefix leak on a token is free to avoid.
+    return any(
+        supplied and hmac.compare_digest(supplied, expected)
+        for supplied in (
+            request.cookies.get(ACCESS_COOKIE_NAME, ""),
+            request.query_params.get("key", ""),
+        )
+    )
+
+
+def _unauthorised_html() -> HTMLResponse:
+    """A fixed string. Nothing from the request is echoed back, ever."""
+    return HTMLResponse("<h1>401</h1><p>access key required</p>", status_code=401)
+
+
+def _remember_key(response: HTMLResponse | RedirectResponse, request: Request) -> None:
+    """Store a VALIDATED key so later links need no query string.
+
+    Only ever called after `_is_authorised`, so the value written is the configured token
+    and not attacker input. `httponly` keeps it away from scripts and `SameSite=Lax`
+    blunts cross-site use. It is deliberately NOT marked Secure — the server speaks plain
+    HTTP, so a Secure cookie would simply never be sent. That is a real limitation of
+    running without TLS, recorded rather than papered over.
+    """
+    supplied = request.query_params.get("key")
+    if supplied:
+        response.set_cookie(
+            ACCESS_COOKIE_NAME, supplied, httponly=True, samesite="lax", path="/"
+        )
 
 
 SURFACED_MODULES: frozenset[str] = frozenset(
@@ -106,24 +151,28 @@ def build_dashboard_app() -> FastAPI:
     """The app. Constructed by a function so tests get a fresh instance."""
     app = FastAPI(title="nse-algo-trader dashboard", docs_url=None, redoc_url=None)
 
-    @app.get("/", response_class=HTMLResponse)
-    def index(request: Request) -> HTMLResponse:
+    @app.get("/", response_model=None)
+    def index(request: Request) -> HTMLResponse | RedirectResponse:
+        """Trade the key for a cookie, then send the browser to a CLEAN url.
+
+        Nothing from the request is interpolated into the response, which is what makes
+        reflected XSS impossible here rather than merely escaped.
+        """
         if not _is_authorised(request):
-            return HTMLResponse("<h1>401</h1><p>access key required</p>", status_code=401)
-        query = f"?key={request.query_params.get('key')}" if request.query_params.get("key") else ""
-        return HTMLResponse(
-            f'<meta http-equiv="refresh" content="0;url=/wall{query}">'
-            f'<a href="/wall{query}">operations wall</a>'
-        )
+            return _unauthorised_html()
+        redirect = RedirectResponse("/wall", status_code=303)
+        _remember_key(redirect, request)
+        return redirect
 
     @app.get("/wall", response_class=HTMLResponse)
     def operations_wall(request: Request) -> HTMLResponse:
         """`L13.06` — every module, measured. New engines appear here with no edit."""
         if not _is_authorised(request):
-            return HTMLResponse("<h1>401</h1><p>access key required</p>", status_code=401)
+            return _unauthorised_html()
         summary = build_module_catalogue(REPOSITORY_ROOT, SURFACED_MODULES)
-        key = request.query_params.get("key")
-        return HTMLResponse(render_operations_wall(summary, f"?key={key}" if key else ""))
+        response = HTMLResponse(render_operations_wall(summary))
+        _remember_key(response, request)
+        return response
 
     @app.get("/healthz", response_class=PlainTextResponse)
     def healthz() -> PlainTextResponse:
@@ -133,7 +182,7 @@ def build_dashboard_app() -> FastAPI:
     @app.get("/regime", response_class=HTMLResponse)
     def regime_surface(request: Request, instrument_token: int | None = None) -> HTMLResponse:
         if not _is_authorised(request):
-            return HTMLResponse("<h1>401</h1><p>access key required</p>", status_code=401)
+            return _unauthorised_html()
         try:
             snapshot = measure_regime_brain(instrument_token=instrument_token)
         except RegimeReadModelError as failure:
@@ -142,7 +191,9 @@ def build_dashboard_app() -> FastAPI:
             return HTMLResponse(
                 f"<h1>Cannot measure regime brain</h1><p>{failure}</p>", status_code=503
             )
-        return HTMLResponse(render_regime_brain_page(snapshot))
+        response = HTMLResponse(render_regime_brain_page(snapshot))
+        _remember_key(response, request)
+        return response
 
     @app.get("/manifest")
     def manifest(request: Request) -> JSONResponse:

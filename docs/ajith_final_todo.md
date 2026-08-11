@@ -627,7 +627,9 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       real-data coverage from the `real_data` marker (`R.05`); tier from the module's own vocabulary
       (`R.23b`). Sorted WORST FIRST — alphabetical would hide its own findings. **Measured now: 53
       modules, 21% healthy, 26 orphans, 8 untested, 8 owing a real-data pass.** Token-gated because it
-      binds a public interface. 9 tests.*
+      binds a public interface, and the token is traded for an HttpOnly cookie so it never appears in a
+      link — a reflected-XSS defect found by security review, PROVEN exploitable on the no-token path,
+      then fixed by deleting the reflection rather than escaping it (`O.43`). 9 tests + 5 XSS regressions.*
 - [ ] **5.17** Feature-catalogue AST resolver + live freshness — `L13.05`
 - [ ] **5.18** Operations wall (`/wall`) — `L13.06`
 - [ ] **5.19** Segment-bot surface prober — `L13.07`

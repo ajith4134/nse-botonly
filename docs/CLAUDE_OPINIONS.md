@@ -610,6 +610,30 @@ and adversarial suite was green while the engine was incapable of ever acting. *
 thought to write would have caught it** — only running the thing on real data did, because the defect
 was in what the composition MEANT, not in what any component computed.
 
+## O.43 · 2026-08-11 · Auth in front of a reflection hides the bug, it does not fix it
+
+**Opinion:** when request input is echoed into a response, "but you need a valid token to reach it" is
+not a defence, and I nearly accepted it as one.
+**Reasoning:** an automated review flagged the dashboard for reflected XSS — the access key was threaded
+through every link as `?key=…` and interpolated into `href` and `<meta refresh>` attributes. My first
+instinct was that auth constrained it: to get the reflection you must already know the token, and if you
+know the token you are already in. **That was wrong, and I proved it before acting.** The server
+deliberately supports a no-token configuration where the gate is open, and on that path a raw
+`<script>alert(1)</script>` reached the response body verbatim. The reasoning failed because it assumed
+one deployment shape and the vulnerability lived in another.
+**The fix removes the class, not the instances.** The key is traded for an HttpOnly cookie on first
+authorised request and every link drops its query string, so there is nothing left to reflect. The
+renderer's `access_query` parameter was **deleted rather than escaped** — escaping two call sites leaves
+the third one someone adds next month.
+**Confidence:** measured. Exploited it against the real app, then confirmed absence after the fix, then
+re-verified on the live server: hostile key returns a fixed 401 body, and the rendered wall contains zero
+`?key=` occurrences.
+**Would change my mind:** nothing. The one honest limitation is that the cookie cannot be `Secure`
+because the server speaks plain HTTP — recorded in the code rather than glossed.
+**The generalisation:** "an attacker would need X" is a claim about the deployment, and deployments
+change without the code changing. `O.42` was the same shape one layer down — I reasoned about what my
+composition meant instead of running it. Both times the answer took one script.
+
 ---
 
 ## Maintenance

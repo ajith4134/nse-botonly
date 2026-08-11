@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from nse_algo_trader.dashboard.module_surface_catalogue import (
+    CatalogueSummary,
     ModuleTier,
     SurfaceHealth,
     build_module_catalogue,
@@ -22,12 +23,12 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(scope="module")
-def catalogue():  # noqa: ANN201 — CatalogueSummary
+def catalogue() -> CatalogueSummary:
     return build_module_catalogue(REPOSITORY_ROOT)
 
 
 @pytest.mark.real_data
-def test_the_catalogue_measures_the_real_tree(catalogue) -> None:  # noqa: ANN001
+def test_the_catalogue_measures_the_real_tree(catalogue: CatalogueSummary) -> None:
     """`R.05` for an audit engine: its real data IS the repository."""
     names = {surface.module_name for surface in catalogue.surfaces}
     assert "nse_algo_trader.regime.soft_regime_weighting_brain" in names
@@ -36,7 +37,7 @@ def test_the_catalogue_measures_the_real_tree(catalogue) -> None:  # noqa: ANN00
 
 
 @pytest.mark.unit
-def test_tier_is_read_from_the_modules_own_vocabulary(catalogue) -> None:  # noqa: ANN001
+def test_tier_is_read_from_the_modules_own_vocabulary(catalogue: CatalogueSummary) -> None:
     """`R.23(b)`: a module calling itself an engine has claimed the full loop."""
     by_name = {surface.module_name: surface for surface in catalogue.surfaces}
     assert by_name[
@@ -122,7 +123,7 @@ def test_test_pairing_and_real_data_coverage_are_measured(tmp_path: Path) -> Non
 
 
 @pytest.mark.unit
-def test_worst_findings_sort_to_the_top(catalogue) -> None:  # noqa: ANN001
+def test_worst_findings_sort_to_the_top(catalogue: CatalogueSummary) -> None:
     """A wall sorted alphabetically hides its own findings."""
     ordered = worst_first(catalogue.surfaces)
     healths = [surface.health for surface in ordered]
@@ -136,7 +137,7 @@ def test_worst_findings_sort_to_the_top(catalogue) -> None:  # noqa: ANN001
 
 
 @pytest.mark.unit
-def test_the_wall_renders_every_module_with_its_state(catalogue) -> None:  # noqa: ANN001
+def test_the_wall_renders_every_module_with_its_state(catalogue: CatalogueSummary) -> None:
     page = render_operations_wall(catalogue)
     assert "<table" in page
     for health in SurfaceHealth:
@@ -146,7 +147,7 @@ def test_the_wall_renders_every_module_with_its_state(catalogue) -> None:  # noq
 
 
 @pytest.mark.unit
-def test_the_wall_states_counts_that_match_the_catalogue(catalogue) -> None:  # noqa: ANN001
+def test_the_wall_states_counts_that_match_the_catalogue(catalogue: CatalogueSummary) -> None:
     page = render_operations_wall(catalogue)
     assert f"{catalogue.total} modules" in page
     assert f"<b>{catalogue.count_of(SurfaceHealth.ORPHAN)}</b> orphaned" in page

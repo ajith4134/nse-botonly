@@ -66,10 +66,10 @@ def _health_strip(summary: CatalogueSummary) -> str:
     return f'<div class="strip">{segments}</div><div class="legend">{labels}</div>'
 
 
-def _module_row(surface: ModuleSurface, access_query: str) -> str:
+def _module_row(surface: ModuleSurface) -> str:
     colour = _HEALTH_COLOUR[surface.health]
     panel_cell = (
-        f'<a href="/regime{access_query}">panel</a>'
+        '<a href="/regime">panel</a>'
         if surface.has_dedicated_panel
         else '<span class="muted">catalogue only</span>'
     )
@@ -89,11 +89,14 @@ def _module_row(surface: ModuleSurface, access_query: str) -> str:
     </tr>"""
 
 
-def render_operations_wall(summary: CatalogueSummary, access_query: str = "") -> str:
-    """The whole wall. Server-rendered, self-contained, no external requests."""
-    rows = "".join(
-        _module_row(surface, access_query) for surface in worst_first(summary.surfaces)
-    )
+def render_operations_wall(summary: CatalogueSummary) -> str:
+    """The whole wall. Server-rendered, self-contained, no external requests.
+
+    Takes NO request-derived string. An earlier version threaded the access key through
+    every `href`, reflecting attacker input into an attribute; the parameter is REMOVED
+    rather than escaped, so no later caller can reintroduce it.
+    """
+    rows = "".join(_module_row(surface) for surface in worst_first(summary.surfaces))
     tier_counts = "".join(
         f'<span class="legend-item">{escape(tier.value)} <b>{len(summary.by_tier(tier))}</b></span>'
         for tier in ModuleTier

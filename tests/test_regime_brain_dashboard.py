@@ -15,7 +15,6 @@ from fastapi.testclient import TestClient
 
 from nse_algo_trader.dashboard.dashboard_server import (
     SURFACED_MODULES,
-    build_dashboard_app,
     discover_engine_modules,
 )
 from nse_algo_trader.dashboard.regime_brain_read_model import (
@@ -50,9 +49,16 @@ def _snapshot() -> RegimeBrainSnapshot:
         measured_at=now,
         panels=(
             ClassifierPanel("trend_strength", True, True, 2289,
-                            dict(RegimeDistribution.from_scores(
-                                {MarketRegime.RANGING: 3.0, MarketRegime.TRENDING: 1.0,
-                                 MarketRegime.VOLATILE: 1.0, MarketRegime.QUIET: 1.0}).probabilities),
+                            dict(
+                                RegimeDistribution.from_scores(
+                                    {
+                                        MarketRegime.RANGING: 3.0,
+                                        MarketRegime.TRENDING: 1.0,
+                                        MarketRegime.VOLATILE: 1.0,
+                                        MarketRegime.QUIET: 1.0,
+                                    }
+                                ).probabilities
+                            ),
                             0.4, 1.0, "ADX=12.3"),
             ClassifierPanel("volatility", False, True, 2200,
                             MarketRegime.uniform_probabilities(), 0.25, 0.0, "vol=0.01"),
@@ -100,7 +106,7 @@ def test_every_surfaced_module_actually_exists() -> None:
     """Guards the other direction: a declared surface for a deleted module would
     over-report coverage."""
     real = {entry.module_name for entry in discover_engine_modules()}
-    assert SURFACED_MODULES <= real, SURFACED_MODULES - real
+    assert real >= SURFACED_MODULES, SURFACED_MODULES - real
 
 
 # --------------------------------------------------------------- rendering
@@ -158,8 +164,11 @@ def test_engine_evidence_is_escaped_into_the_page() -> None:
 
 
 @pytest.mark.unit
-def test_the_manifest_route_reports_real_counts() -> None:
-    client = TestClient(build_dashboard_app())
+def test_the_manifest_route_reports_real_counts(monkeypatch: pytest.MonkeyPatch) -> None:
+    import nse_algo_trader.dashboard.dashboard_server as server_module
+
+    monkeypatch.setattr(server_module, "read_access_token", lambda: None)
+    client = TestClient(server_module.build_dashboard_app())
     payload = client.get("/manifest").json()
     assert payload["modules_total"] > 0
     assert payload["unsurfaced_count"] == len(payload["unsurfaced"])
@@ -172,11 +181,15 @@ def test_a_failed_measurement_returns_503_rather_than_a_pretty_placeholder(
 ) -> None:
     """A placeholder page showing green while measuring nothing is precisely the
     hand-authored status R.08 forbids."""
+    import nse_algo_trader.dashboard.dashboard_server as server_module
+
+    monkeypatch.setattr(server_module, "read_access_token", lambda: None)
     monkeypatch.setattr(
-        "nse_algo_trader.dashboard.dashboard_server.measure_regime_brain",
+        server_module,
+        "measure_regime_brain",
         lambda **_kwargs: (_ for _ in ()).throw(RegimeReadModelError("no data")),
     )
-    response = TestClient(build_dashboard_app()).get("/regime")
+    response = TestClient(server_module.build_dashboard_app()).get("/regime")
     assert response.status_code == 503
     assert "Cannot measure" in response.text
 
@@ -200,3 +213,79 @@ def test_the_surface_measures_real_engines_over_real_bars() -> None:
         "an unarmed classifier must contribute zero weight"
     )
     assert "<html" in render_regime_brain_page(snapshot)
+
+
+# ------------------------------- reflected XSS, found by security review and fixed
+
+
+@pytest.mark.adversarial
+def test_no_request_input_is_reflected_when_the_gate_is_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The proven defect: with NO token file the gate is open by design, and the first
+    version echoed the `key` parameter into an href and a meta-refresh — a raw script tag
+    reached the body. Fixed by removing the reflection, so this asserts absence of the
+    input rather than presence of escaping."""
+    import nse_algo_trader.dashboard.dashboard_server as server_module
+
+    monkeypatch.setattr(server_module, "read_access_token", lambda: None)
+    client = TestClient(server_module.build_dashboard_app(), follow_redirects=False)
+    payload = '"><script>alert(1)</script>'
+    for path in ("/", "/wall"):
+        response = client.get(path, params={"key": payload})
+        assert "<script>alert(1)</script>" not in response.text
+        assert "alert(1)" not in response.text, f"{path} still reflects request input"
+
+
+@pytest.mark.adversarial
+def test_the_401_page_echoes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    import nse_algo_trader.dashboard.dashboard_server as server_module
+
+    monkeypatch.setattr(server_module, "read_access_token", lambda: "realtoken")
+    client = TestClient(server_module.build_dashboard_app())
+    response = client.get("/wall", params={"key": "<script>alert(1)</script>"})
+    assert response.status_code == 401
+    assert "alert(1)" not in response.text
+
+
+@pytest.mark.unit
+def test_a_valid_key_is_traded_for_a_cookie_so_links_carry_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import nse_algo_trader.dashboard.dashboard_server as server_module
+
+    monkeypatch.setattr(server_module, "read_access_token", lambda: "realtoken")
+    client = TestClient(server_module.build_dashboard_app(), follow_redirects=False)
+    response = client.get("/", params={"key": "realtoken"})
+    assert response.status_code == 303
+    assert response.headers["location"] == "/wall"
+    cookie = response.headers.get("set-cookie", "")
+    assert server_module.ACCESS_COOKIE_NAME in cookie
+    assert "httponly" in cookie.lower()
+    assert "samesite=lax" in cookie.lower()
+
+
+@pytest.mark.unit
+def test_the_cookie_alone_authorises_later_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Which is what lets every link drop its query string."""
+    import nse_algo_trader.dashboard.dashboard_server as server_module
+
+    monkeypatch.setattr(server_module, "read_access_token", lambda: "realtoken")
+    client = TestClient(server_module.build_dashboard_app())
+    client.cookies.set(server_module.ACCESS_COOKIE_NAME, "realtoken")
+    assert client.get("/wall").status_code == 200
+    client.cookies.set(server_module.ACCESS_COOKIE_NAME, "wrong")
+    assert client.get("/wall").status_code == 401
+
+
+@pytest.mark.unit
+def test_the_wall_emits_no_key_bearing_links(monkeypatch: pytest.MonkeyPatch) -> None:
+    import nse_algo_trader.dashboard.dashboard_server as server_module
+
+    monkeypatch.setattr(server_module, "read_access_token", lambda: "realtoken")
+    client = TestClient(server_module.build_dashboard_app())
+    client.cookies.set(server_module.ACCESS_COOKIE_NAME, "realtoken")
+    body = client.get("/wall").text
+    assert "?key=" not in body, "a link still carries the token"
