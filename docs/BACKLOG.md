@@ -8,12 +8,29 @@ Reconcile with the live task list at each session start.
 
 Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) · ⛔ blocked
 
-## Shared NSE ingest core (`A.46`, spec `research/209`) — 🟡 spec written, sourcing in flight
+## Shared NSE ingest core (`A.46`, spec `research/209`) — 🟢 CORE BUILT, adapters queued
 
-- 🟡 **Sourcing gate open (`R.I`).** `research/210` is being produced now — NSE-specific libraries
-  (`jugaad-data`, `nsepython`, `nsepy`, …) and generic retry/bitemporal parts, each installed and
-  called against the REAL endpoints. **No adapter is built until it lands**, so that an existing
-  library is adopted rather than reimplemented.
+Core built 2026-08-11: `nse_source_fetcher` (content-aware failure classification) ·
+`ingest_source_adapter` (the typed contract) · `bitemporal_ingest_store` ·
+`nse_source_ingest_runner` · `ingest_coverage_self_check`, plus the conformance suite at
+`tests/nse_ingest_conformance.py`. 46 core tests, gate green.
+
+- 🟢 **Sourcing gate CLOSED** — `research/210`, verdict in `A.49`.
+- 🟢 **R.05 real-data pass for the classifier**: run against live NSE endpoints. All six
+  classifications correct, including a **first-hand reproduction of the stale-Sunday trap** —
+  requesting `sec_bhavdata_full_09082026.csv` returns **HTTP 200 with 374KB of real-looking data
+  dated 07-Aug-2026**. Classified `content_mismatch`; every library evaluated would have stored
+  Friday's prices as Sunday's.
+- 🟢 **The conformance suite is proven to REJECT** — six deliberately broken adapters, each caught by
+  the clause it violates. Guarding the guard found **two defects in the suite itself**: a
+  `pytest.raises` that caught the assertion raised inside its own block (so the clause passed
+  unconditionally), and a natural-key check satisfied by `("",)`.
+- ⛔ **R.05 END-TO-END is still OPEN.** The classifier is verified on real endpoints and the store and
+  runner are verified hermetically, but no real adapter exists yet, so the full fetch→parse→store
+  path has not run against a real source. Closes with wave 1.
+- 🔴 **Wave 1 (next):** `nse_bhavcopy` (two schema eras, largest volume) and `fo_ban_list` (rolling,
+  today-only). Vendor-and-adapt `nse` (BennyThadikaran) and `nselib` respectively, per `A.49`.
+- 🔴 **R.08 no dashboard surface** for ingest coverage or blocked sources yet.
 - ⛔ **Three of nine sources are BLOCKED and are not being scoped down (`R.16`).** `atm_implied_volatility`
   (NSE option-chain API 404), historical `bulk_block_deals` (503 bot-block), `circuit_band_asm_gsm`
   (ASM page is a JS shell with no fetchable data). Each needs an acquisition path found, not a reduced

@@ -142,6 +142,12 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       **This does NOT close `B.04`** — that blocker is about deep *intraday* history, which remains unfree.
       Narrow `B.04`'s wording once this completes; do not tick it.
 
+      *(The shared ingest core these nine depend on was built 2026-08-11 — `A.46`, spec `research/209`,
+      sourcing `research/210`. `src/nse_algo_trader/nse_ingest/`: content-aware fetcher, adapter
+      contract, bitemporal store, runner, coverage self-check, plus the conformance suite adapters
+      must pass and may not edit. 46 tests. R.05 on the classifier PASSED against live NSE endpoints,
+      including a first-hand reproduction of the stale-Sunday trap. End-to-end R.05 opens with wave 1.)*
+
 **— L1 —**
 
 - [ ] **1.35** NSE transaction-cost engine — `L1.01`
