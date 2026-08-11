@@ -381,6 +381,17 @@ planned · atlas L10
 **L3.25**  Blue-green deploy + config versioning and rollback. ⟨V⟩ · ultra · planned · atlas L10
 **L3.26**  Safety-incident forensic store — append-only, survives restart. 2 incidents recorded.
 ⟨VII⟩ · adv · archived · r/113
+**L3.28**  **Scheduled daily operations — a systemd USER timer, twice per session day.** Fires
+`run_daily_operations.py` at 19:00 IST (same-day bhavcopy and the NEXT day's F&O ban list, published
+after the close) and 08:15 IST (files published overnight, notably the MWPL `combineoi` feed which 404s
+until the following morning). Two firings because NSE publishes on two clocks and one run cannot catch
+both; neither double-counts, since re-ingesting identical content is a content-hash no-op. A **USER**
+unit with linger, not a system unit: SELinux denies `init_t` reading `user_home_t`, so a system service
+cannot execute anything under `/home` — measured as a 203/EXEC failure, not assumed. `Persistent=true`
+so a missed firing runs on boot, because the rolling sources are unrecoverable; `RandomizedDelaySec` so
+the one bot-walling host is never hit at the same second daily. ⟨IV⟩ · base · **built 2026-08-11** ·
+`A.61`
+
 **L3.27**  Systemd service management for the dashboard — auto-restart, journald logging. ⟨IV⟩ · base ·
 archived · `deploy/README_dashboard_service.md`
 **L3.28**  Kite-decoupled architecture guard — a test that fails if `kiteconnect` is imported anywhere
@@ -2620,6 +2631,23 @@ sdist**, so no pip path exists; `nautilus_trader` publishes `manylinux_2_35_aarc
 SOTA analog is a depth *comparison*, not an import — but no spec may plan to depend on either. Where a
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
+
+**A.61 · 2026-08-11 · The daily runner is scheduled as a systemd USER timer, and three assumptions
+died on the way.** Operator instruction. Two firings per session day (19:00 and 08:15 IST) because NSE
+publishes on two different clocks — the ban list and same-day bhavcopy after the close, the MWPL feed
+only the next morning — and a single run cannot catch both.
+
+Three things were wrong and were found by running it rather than reasoning about it. **(1)** A system
+unit cannot work here at all: SELinux denies `init_t` reading `user_home_t`, so systemd could not even
+locate the venv interpreter under `/home` (203/EXEC). My first hypothesis was `ProtectHome`, which was
+wrong — the audit log named the real cause. Resolved with a **user** unit plus linger rather than by
+relabelling the tree, which would have weakened SELinux to suit a layout choice. **(2)** `journalctl
+--user` captures nothing from user units on this host, so a unit logging only to the journal would have
+run silently every night; output now also appends to a file. **(3)** The runner defaulted to *today*,
+but at an 08:15 firing today is a real session that has not traded, so every fetch would 404 against
+files NSE has not published and the gap planner would record them as established absences. It now
+targets the most recent CLOSED session. *Supersedes the BACKLOG entry "nothing yet schedules the
+runner".*
 
 **A.60 · 2026-08-11 · The 26 orphans are closed by ONE daily operations runner, not by 26 imports.**
 The operations wall measured 26 modules that no runnable thing reached (`R.06`). Two of those were a

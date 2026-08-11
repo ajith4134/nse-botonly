@@ -327,6 +327,14 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **2.56** Structured audit log of every decision — `L3.24`
 - [ ] **2.57** Blue-green deploy + config versioning and rollback — `L3.25`
 - [ ] **2.58** Safety-incident forensic store — `L3.26`
+- [~] **2.59a** SCHEDULED DAILY OPERATIONS — systemd user timer — `L3.28` — *built 2026-08-11 (`A.61`).
+      Fires twice per session day: 19:00 IST (same-day bhavcopy + next day's ban list) and 08:15 IST
+      (overnight MWPL). A **USER** unit with linger, because SELinux denies `init_t` reading
+      `user_home_t` — a system unit failed 203/EXEC and could not execute the venv at all. Logs to a
+      FILE as well as journald, because `journalctl --user` captures nothing from user units on this
+      host. `Persistent=true` (missed firings run on boot — rolling sources are unrecoverable) and
+      `RandomizedDelaySec=600`. Enabled and active; next firing verified. `[~]` until a full run has
+      been observed end to end.*
 - [ ] **2.59** Systemd service management for the dashboard — `L3.27`
 - [ ] **2.60** Kite-decoupled architecture guard — `L3.28`
 

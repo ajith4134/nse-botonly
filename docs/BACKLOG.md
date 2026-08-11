@@ -30,9 +30,12 @@ Open items:
   exists in git history at `63aa3a1` (`market_data/delisted_securities_source.py`, research/79), built
   precisely because NSE's list was inadequate. Port it as a second adapter, `delisted_securities_bse`.
 - 🟢 **CLOSED 2026-08-11 — `scripts/run_daily_operations.py`** (`A.60`) runs all nine adapters through
-  the core, plus gap backfill and coverage reporting. **Still needs a cron/systemd timer to fire it
-  daily** — the runner exists; nothing yet schedules the scheduler. That is now the highest-value
-  remaining action for the ingest layer, and until it lands the rolling sources still accrue nothing.
+  the core, plus gap backfill and coverage reporting. **Scheduled 2026-08-11** as a systemd user timer
+  (`L3.28`, `A.61`), firing 19:00 and 08:15 IST. Remaining: a full run has not yet been observed end to
+  end — the first attempt was killed at 900s and the ATM-IV expiry ladder dominates the runtime, so the
+  run is slow rather than broken. **Open: measure per-step timings from the first complete run and
+  decide whether ATM IV needs its own less-frequent timer.** The dashboard itself still runs via nohup
+  rather than a unit, so it will not survive a reboot.
 - 🔴 **No dashboard surface** for ingest coverage, blocked sources, or gap classification (`R.08`).
 
 ## Shared NSE ingest core (`A.46`, spec `research/209`) — 🟢 CORE BUILT, adapters queued

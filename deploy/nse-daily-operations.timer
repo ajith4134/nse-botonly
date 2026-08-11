@@ -1,0 +1,30 @@
+[Unit]
+Description=Fire NSE daily operations twice a session day
+Documentation=file:///home/opc/nse-algo-trader/docs/ajith_final_todo.md
+
+[Timer]
+# Two firings, because NSE publishes on two different clocks and one run cannot
+# catch both:
+#   19:00 IST — same-day bhavcopy and the NEXT day's F&O ban list, published after
+#               the close. The ban list is a ROLLING file with no archive, so a
+#               missed evening is a day of history that cannot be recovered.
+#   08:15 IST — files published overnight, notably the MWPL combineoi feed, which
+#               404s until the following morning.
+# The runner itself picks the most recent CLOSED session, so the morning firing
+# ingests yesterday and the evening firing ingests today. Neither double-counts:
+# re-ingesting identical content is a no-op keyed on a content hash.
+OnCalendar=Mon..Fri 19:00 Asia/Kolkata
+OnCalendar=Tue..Sat 08:15 Asia/Kolkata
+
+# Spread the load so this box never hits NSE at the same second every day — the one
+# host in this project that bot-walls is reached by these runs.
+RandomizedDelaySec=600
+
+# If the machine was off when a firing was due, run once on boot rather than
+# skipping the day. Missing a rolling source is unrecoverable.
+Persistent=true
+
+Unit=nse-daily-operations.service
+
+[Install]
+WantedBy=timers.target

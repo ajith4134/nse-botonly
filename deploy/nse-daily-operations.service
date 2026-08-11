@@ -1,0 +1,54 @@
+[Unit]
+Description=NSE daily operations — ingest, backfill, and store reporting
+Documentation=file:///home/opc/nse-algo-trader/scripts/run_daily_operations.py
+# Network target only says the stack is up, not that NSE is reachable; the runner
+# classifies its own fetch failures, so a wait-online dependency would add nothing.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=opc
+Group=opc
+WorkingDirectory=/home/opc/nse-algo-trader
+ExecStart=/home/opc/nse-algo-trader/.venv/bin/python -u scripts/run_daily_operations.py
+
+# Generous but BOUNDED. A measured run took over twelve minutes, dominated by the
+# ATM-IV expiry ladder; an unbounded job would sit on a bot-walled host indefinitely
+# and silently overlap tomorrow's firing.
+TimeoutStartSec=5400
+
+# The runner exits non-zero when any step failed, which is the signal a scheduler
+# needs. It is NOT a reason to retry the whole run — a blocked NSE endpoint stays
+# blocked for minutes, and the gap planner already re-drives what is worth re-fetching
+# on the next firing.
+Restart=no
+
+# Journald AND a file. The user journal on this host captures nothing from user units
+# — measured, `journalctl --user` returned "No entries" while the unit was demonstrably
+# running — so relying on it alone would have left every nightly run silent. The file is
+# the one that is guaranteed to exist; append rather than truncate so a run never erases
+# the evidence of the previous one.
+StandardOutput=append:/home/opc/nse_archive/daily_operations.log
+StandardError=append:/home/opc/nse_archive/daily_operations.log
+SyslogIdentifier=nse-daily-ops
+
+# Least privilege, within what this layout permits. The runner reads the repo and
+# writes only its own state directory and archive.
+#
+# ProtectHome is deliberately NOT set: the venv interpreter and the whole project live
+# under /home/opc, and ProtectHome=read-only made systemd fail to even locate the
+# executable (203/EXEC, "Permission denied"). Measured, not assumed — the first install
+# failed exactly this way. ProtectSystem=strict still makes the REST of the filesystem
+# read-only, which is the larger share of the protection; the remaining exposure is the
+# operator's own home, which this service legitimately needs.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/opc/.nse_algo_trader /home/opc/nse_archive
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

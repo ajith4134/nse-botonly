@@ -23,10 +23,12 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 import traceback
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
+from datetime import time as dt_time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -106,9 +108,32 @@ MAXIMUM_BACKFILL_DATES_PER_RUN = 5
 """A bound, so a source years behind cannot turn one nightly run into an unbounded crawl
 of a host that bot-blocks. When it truncates, the report says so."""
 
+NSE_SESSION_CLOSE_IST = dt_time(15, 30)
+"""Continuous trading ends. An exchange fact, and the boundary that decides whether
+today's files can exist yet."""
+
 PERSISTENT_FAILURE_ATTEMPTS = 3
 """`R.21` three strikes, applied to acquisition: a date that has failed this often will
 not fix itself and is escalated to a human rather than retried forever in silence."""
+
+
+def most_recent_closed_session(
+    now_ist: datetime, calendar: NseTradingSessionCalendar
+) -> date:
+    """The latest session whose files can actually exist yet.
+
+    Today counts only once trading has closed. A nightly job firing at 08:00 IST would
+    otherwise pick TODAY — a real trading session that has not traded — and every fetch
+    would 404 against files NSE has not published, which the gap planner would then have
+    to classify as an established absence. Scheduling made this matter; it never showed
+    up in a hand-run.
+    """
+    candidate = now_ist.date()
+    if now_ist.time() < NSE_SESSION_CLOSE_IST:
+        candidate -= timedelta(days=1)
+    while not calendar.is_trading_session(candidate):
+        candidate -= timedelta(days=1)
+    return candidate
 
 
 @dataclass
@@ -118,6 +143,7 @@ class StepOutcome:
     name: str
     detail: str = ""
     failure: str | None = None
+    seconds: float = 0.0
 
     @property
     def succeeded(self) -> bool:
@@ -139,7 +165,10 @@ class DailyRunReport:
         lines = [f"daily operations — started {self.started_at:%Y-%m-%d %H:%M} UTC", ""]
         for outcome in self.outcomes:
             marker = "ok  " if outcome.succeeded else "FAIL"
-            lines.append(f"  [{marker}] {outcome.name}: {outcome.detail or outcome.failure}")
+            lines.append(
+                f"  [{marker}] {outcome.name} ({outcome.seconds:.1f}s): "
+                f"{outcome.detail or outcome.failure}"
+            )
         lines.append("")
         lines.append(
             f"{len(self.outcomes) - len(self.failures)}/{len(self.outcomes)} steps succeeded"
@@ -148,17 +177,30 @@ class DailyRunReport:
 
 
 def _run_step(report: DailyRunReport, name: str, action: Callable[[], str]) -> None:
-    """Run one step, guarded.
+    """Run one step, guarded, and say so as it happens.
 
     A blocked NSE endpoint must not stop the bar store from being reported, so a failure
     here is recorded and the loop continues. The traceback's last line is kept because a
     bare exception type rarely says enough to act on the next morning.
+
+    Progress is printed per step rather than only in the closing summary. The first
+    scheduled-shape run produced NO output for twelve minutes, which makes a nightly job
+    impossible to diagnose from journald — you cannot tell slow from hung.
     """
+    print(f"  -> {name} ...", flush=True)
+    started = time.monotonic()
     try:
-        report.outcomes.append(StepOutcome(name, detail=action()))
+        detail = action()
+        elapsed = time.monotonic() - started
+        report.outcomes.append(StepOutcome(name, detail=detail, seconds=elapsed))
+        print(f"  ok  {name} ({elapsed:.1f}s): {detail}", flush=True)
     except Exception as failure:  # noqa: BLE001 — recorded and surfaced, never swallowed
+        elapsed = time.monotonic() - started
         last_line = traceback.format_exc().strip().splitlines()[-1]
-        report.outcomes.append(StepOutcome(name, failure=f"{type(failure).__name__}: {last_line}"))
+        report.outcomes.append(
+            StepOutcome(name, failure=f"{type(failure).__name__}: {last_line}", seconds=elapsed)
+        )
+        print(f"  FAIL {name} ({elapsed:.1f}s): {last_line}", flush=True)
 
 
 def _refresh_kite_session() -> str:
@@ -319,7 +361,9 @@ def main() -> int:
     arguments = parser.parse_args()
 
     calendar = NseTradingSessionCalendar()
-    target = arguments.for_date or datetime.now(IST).date()
+    target = arguments.for_date or most_recent_closed_session(
+        datetime.now(IST), calendar
+    )
     while not calendar.is_trading_session(target):
         target -= timedelta(days=1)
 
