@@ -2634,6 +2634,30 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.65 · 2026-08-11 · The scheduled runner had NEVER executed once, and `A.61`'s sign-off was wrong.**
+The unit carried `User=opc` / `Group=opc`. In a USER unit those are not merely redundant — the per-user
+manager has no privilege to setgid, so systemd aborted with **216/EXIT_GROUP before opening stdout**.
+That ordering is the whole story: the failure happened earlier than the logging that was supposed to
+reveal it, so the unit produced not one byte and the log file was never even created. Every firing since
+install died this way.
+
+**`A.61` claimed a service-started run was confirmed working. That was wrong.** The evidence I accepted
+— a freshly written ingest database and live TLS sockets — came from a MANUAL invocation of the same
+script running concurrently. I checked that work was happening, not that the unit was doing it, and the
+two were indistinguishable from where I looked. `WantedBy=multi-user.target` was wrong for the same
+reason: that target does not exist in the user manager.
+
+With the directives removed the unit runs, and the first real execution immediately surfaced two defects
+that no amount of reasoning had found in the day since the runner was written. **(1)** The instrument
+master step called `store.ingest(records, observed_on=...)` where the method takes `ingested_on` — a
+`TypeError` on every run. **(2)** The same line treated the return value as a count of rows, but `ingest`
+returns TOKEN REASSIGNMENTS, so a healthy day would have reported "0 ingested" and a day needing
+attention a small positive number — a status line that reads best exactly when it is worst.
+
+*Supersedes `A.61`'s verification claim. The lesson is `O.44`'s, which I stated correctly and then did
+not apply: a unit is verified by evidence that the UNIT produced, and "the work is happening" is not
+that evidence when something else is also doing the work.*
+
 **A.64 · 2026-08-11 · Five CSS rules had been silently deleted by stray semicolons, and only pixels
 could see it.** Found by the harness from `A.63` on its first real use. The regime surface carried
 `.bar-value{...};` — a stray `;` at stylesheet top level, five times over. A semicolon there is a parse

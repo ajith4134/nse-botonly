@@ -749,3 +749,38 @@ after the first was found by eye, and every gate had been green before and staye
 any parse error in the rendered stylesheet. That would subsume both my new tests and catch the failure
 modes they miss, and I should prefer it to hand-rolled string assertions — recorded in BACKLOG rather
 than done now, because the immediate defect is fixed and this is a change to how the surface is tested.
+
+## O.50 · 2026-08-11 · "The work is happening" is not evidence the scheduler is working
+
+**Opinion.** I signed off `A.61` on a freshly written ingest database and live TLS sockets to NSE. Both
+facts were true and neither was evidence for the claim I made, because a manual run of the same script
+was in flight and produced identical symptoms. I verified the WORLD had changed, not that the thing I
+built had changed it.
+
+**Reasoning.** This is the failure `O.44` exists to prevent, committed on the same day I wrote it. The
+correction there was "verify a service by killing it" — I applied that to the dashboard and then, for
+the timer, fell back to looking for downstream effects. Downstream effects are the weakest possible
+evidence when anything else can produce them, and during active development something else almost always
+can. The strong forms are: read the unit's own exit status, or make the unit produce something nothing
+else could.
+
+**Confidence: measured.** `ExecMainStatus=216` (EXIT_GROUP) on a unit I had declared working. The log
+file it was supposed to write did not exist, and had never existed.
+
+**What would change my mind.** Nothing. The concrete rule I am taking: never accept a side effect as
+proof a scheduler ran when a manual invocation of the same code is or was in flight — check
+`ExecMainStatus` and the unit's own log, which cost one command and would have caught this immediately.
+
+## O.51 · 2026-08-11 · Logging cannot capture a failure that happens before logging starts
+
+**Opinion.** I added file logging to this unit precisely so nightly failures would not be silent, and
+then hit a failure class it structurally cannot catch: sandbox and credential setup happens before
+systemd opens stdout, so `216/EXIT_GROUP` wrote nothing anywhere. An empty log is not "nothing went
+wrong" and it is not even "logging is broken" — it is a distinct third state I had no reading for.
+
+**Confidence: measured** — the log file did not exist at all, while `systemctl show` reported a real
+non-zero `ExecMainStatus`.
+
+**What would change my mind.** Nothing about the mechanism. What it changes is where I look first: the
+unit's exit status is authoritative and always present, whereas the log is a thing the unit must survive
+long enough to write. I had been treating the log as primary and the status as a formality.

@@ -8,8 +8,11 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=opc
-Group=opc
+# NO User=/Group=. This is a USER unit: the per-user manager already runs as opc and
+# has no privilege to setgid, so systemd aborts with 216/EXIT_GROUP *before* opening
+# stdout — which is why the failure produced an empty log rather than a message. Every
+# firing since install died this way; the run previously taken as evidence the unit
+# worked was a manual invocation of the same script.
 WorkingDirectory=/home/opc/nse-algo-trader
 ExecStart=/home/opc/nse-algo-trader/.venv/bin/python -u scripts/run_daily_operations.py
 
@@ -51,4 +54,5 @@ ProtectControlGroups=true
 RestrictSUIDSGID=true
 
 [Install]
-WantedBy=multi-user.target
+# default.target, not multi-user.target — the latter does not exist in the user manager.
+WantedBy=default.target

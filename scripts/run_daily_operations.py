@@ -240,8 +240,15 @@ def _refresh_instrument_master() -> str:
     dump = fetch_instrument_dump()
     records = parse_instrument_dump(dump)
     with InstrumentMasterStore(MARKET_DATA_DATABASE) as store:
-        stored = store.ingest(records, observed_on=datetime.now(IST).date())
-    return f"{len(records):,} instruments parsed, {stored} ingested"
+        reassignments = store.ingest(records, ingested_on=datetime.now(IST).date())
+    # `ingest` returns TOKEN REASSIGNMENTS, not a count of rows. Reporting `len()` of it
+    # as "ingested" would have printed 0 on every healthy day and a small number on
+    # exactly the days something needed attention — a status line that reads best when
+    # it is worst.
+    detail = f"{len(records):,} instruments"
+    if reassignments:
+        detail += f", {len(reassignments)} token reassignment(s)"
+    return detail
 
 
 def _run_ingest(for_dates: Sequence[date]) -> str:
