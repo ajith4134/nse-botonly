@@ -84,7 +84,7 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       actions 2001-2026**. Review found 8 defects incl. a critical false positive (`DRREDDY` factor 1/7 on a
       flat day); all fixed, mutation 10/10. Empirical end-to-end check: 65/66 sampled ex-dates within 20% of
       1.0, median 1.016. `[~]` per R.08 + F&O factor acquisition unbuilt.*
-- [ ] **1.8** Symbol-rename / ISIN / merger record store — `L0.08`
+- [x] **1.8** Symbol-rename / ISIN / merger record store — `L0.08` · 166 renames + 199 unsafe symbols found in 43,209 real observations; wired into the daily run (`A.68`)
 - [~] **1.9** Delisted-securities master (BSE-sourced) — `L0.09` — *NSE half built and certified (328
       rows, real fetch); handles a raw newline inside a quoted CSV field and two-digit years.
       ⛔ **NOT DONE — the plan says BSE-sourced and I routed the agent to NSE (`A.51`).** Measured: NSE's

@@ -110,11 +110,16 @@ from nse_algo_trader.nse_ingest.nse_source_fetcher import NseSourceFetcher, Retr
 from nse_algo_trader.nse_ingest.nse_source_ingest_runner import NseSourceIngestRunner
 from nse_algo_trader.nse_trading_session_calendar import NseTradingSessionCalendar
 from nse_algo_trader.point_in_time_universe_engine import PointInTimeUniverseEngine
+from nse_algo_trader.security_identity_record_store import (
+    SecurityIdentityRecordStore,
+    observations_from_bhavcopy_rows,
+)
 
 IST = ZoneInfo("Asia/Kolkata")
 STATE_DIRECTORY = Path("~/.nse_algo_trader").expanduser()
 INGEST_DATABASE = STATE_DIRECTORY / "nse_ingest.sqlite3"
 MARKET_DATA_DATABASE = STATE_DIRECTORY / "market_data.sqlite3"
+SECURITY_IDENTITY_DATABASE = STATE_DIRECTORY / "security_identity.sqlite3"
 DISCOVERY_MEMO_DATABASE = STATE_DIRECTORY / "nse_ingest.sqlite3"
 
 MAXIMUM_BACKFILL_DATES_PER_RUN = 5
@@ -262,6 +267,28 @@ def _capture_dashboard_surfaces() -> str:
     if capture_failed(results):
         raise DashboardCaptureError(summary)
     return summary
+
+
+def _refresh_security_identity() -> str:
+    """`L0.08` — keep the ISIN-to-symbol history current, so a symbol is never an identity.
+
+    Reads the cash bhavcopy rows already in the ingest store rather than re-fetching: the
+    identity history IS the accumulated bhavcopy, and re-downloading it to learn something
+    already held would be a second request against a host that bot-walls.
+    """
+    with (
+        BitemporalIngestStore(INGEST_DATABASE) as ingest,
+        SecurityIdentityRecordStore(SECURITY_IDENTITY_DATABASE) as identities,
+    ):
+        # Every date present, not just today's: a rename is only visible ACROSS dates,
+        # and the store is append-only so re-reading history is idempotent.
+        rows = [
+            (row.effective_date.isoformat(), row.values)
+            for effective_date in ingest.effective_dates_present("nse_bhavcopy_cash")
+            for row in ingest.rows_for("nse_bhavcopy_cash", effective_date)
+        ]
+        recorded = identities.record(observations_from_bhavcopy_rows(rows))
+        return f"{recorded:,} new · {identities.describe()}"
 
 
 def _report_capital() -> str:
@@ -446,6 +473,7 @@ def main() -> int:
         lambda: _backfill_gaps(target - timedelta(days=arguments.backfill_days), target),
     )
     _run_step(report, "ingest coverage", _report_ingest_coverage)
+    _run_step(report, "security identity", _refresh_security_identity)
     _run_step(report, "universe", _report_universe)
     _run_step(report, "corporate actions", _report_corporate_actions)
     _run_step(report, "bar store", _report_bar_store)

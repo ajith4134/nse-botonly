@@ -3383,3 +3383,12 @@ expiries; EXIDEIND + NUVAMA held 1 and left F&O ~35 trading days later). `DALBHA
   property values, which neither currently would.
 - ~~**Screenshot capture is not wired into any gate**~~ — CLOSED 2026-08-11 (`A.67`): moved into
   the package and wired as the last step of the daily run; verified 6 screenshots in 7.2s.
+- **No issuer registry, so ISIN-to-issuer identity cannot be decided** (`L0.08`, `A.68`). The store
+  reports that a symbol referred to several ISINs; it cannot say whether those ISINs are the same legal
+  company. Classifying by shared ISIN prefix was tried and FAILED on real data — it called `TATASTEEL` a
+  different company (`IN9081A01010` vs `INE081A01012` differ at position 3, the issuer TYPE) and split
+  `ECLFINANCE`'s fifteen debt series apart; all 8 hits were false positives. Needs a real issuer
+  registry (NSDL/CDSL issuer master, or NSE's equity list with company names) rather than string surgery.
+- **Identity history is only as dense as the bhavcopy corpus** (`L0.08`). 13 distinct dates across six
+  years, so a rename is bracketed by `last_seen_before`/`first_seen_after` that can span years. The
+  algorithm is full (`R.04`); the PRECISION is data-bound and improves as the corpus fills in.

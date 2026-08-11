@@ -2661,6 +2661,24 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.68 · 2026-08-11 · `L0.08` built: ISIN is the key, and the store refuses to guess when a symbol
+is not one.** Measured on the project's own 43,209 real bhavcopy observations: **166 ISINs have traded
+under more than one symbol** (`CADILAHC`->`ZYDUSLIFE`, `ADANIGAS`->`ATGL`, `SASTASUNDR`->`HEALTHX`) and
+**199 symbols have referred to more than one ISIN** — `SRTRANSFIN` alone carries 28. A backtest keyed on
+symbol truncates the first group's history at the rename and welds the second group's across a security
+that changed underneath it; neither error announces itself.
+
+**A classification was attempted and abandoned on evidence.** Deciding same-issuer by a shared
+8-character ISIN prefix called `TATASTEEL` a different company — `IN9081A01010` and `INE081A01012` differ
+at position 3, which is the issuer TYPE (`9` partly-paid, `E` equity) — and split `ECLFINANCE`'s fifteen
+debt series apart. All eight hits were false positives from guessing at a numbering standard rather than
+reading one. The store therefore reports symbol ambiguity and does NOT adjudicate issuer identity;
+an issuer registry is recorded as a blocker (`R.16`) rather than the gap being papered over.
+
+What changes behaviour: `resolve_isin_for_symbol` RAISES on an ambiguous symbol instead of picking one,
+so a caller keyed on symbols is forced to confront it rather than receive a confident wrong answer.
+Point-in-time by construction — resolution never reads an observation later than the date asked about.
+
 **A.67 · 2026-08-11 · `scripts/` enters the type gate, and the four reported issues are closed.**
 Operator instruction to fix all four. The root cause under two of them: `scripts/` was outside mypy
 entirely and the package shipped no `py.typed`, so every import in the OPERATIONAL SPINE resolved to
