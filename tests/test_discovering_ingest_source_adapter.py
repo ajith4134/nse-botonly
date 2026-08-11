@@ -21,6 +21,7 @@ from nse_algo_trader.nse_ingest.discovering_ingest_source_adapter import (
     DiscoveringNseIngestSourceAdapter,
     DiscoveryOutcome,
     DiscoveryResult,
+    UnsafeDiscoveredParameterError,
     discovery_result_from_json_list,
     plan_targets_with_discovery,
     validity_horizon_from_dates,
@@ -324,3 +325,49 @@ def test_discovery_costs_exactly_the_real_parameters_while_the_ladder_costs_its_
     assert guessed.used_fallback
     if ladder_width > len(real_expiries):
         assert asked.request_count < guessed.request_count
+
+
+# ------------------------------- the one sink where remote data reaches a request
+
+
+@pytest.mark.adversarial
+@pytest.mark.parametrize(
+    "hostile_value",
+    [
+        "28-Aug-2026&symbol=EVIL",
+        "28-Aug-2026#fragment",
+        "../../etc/passwd",
+        "https://attacker.example/x",
+        "28-Aug-2026 OR 1=1",
+        "28-Aug-2026\r\nHost: evil",
+        "%2e%2e%2f",
+        "x" * 200,
+        "",
+        "   ",
+    ],
+)
+def test_a_discovered_value_that_could_reshape_a_request_is_refused(
+    hostile_value: str,
+) -> None:
+    """Discovery is the ONLY place in the ingest core where remote data flows into URL
+    construction — the value arrives in an NSE response and goes into the next fetch.
+    Everything else builds URLs from our own dates and symbols."""
+    with pytest.raises(UnsafeDiscoveredParameterError):
+        DiscoveredParameter("expiry", hostile_value, date(2026, 8, 28))
+
+
+@pytest.mark.unit
+def test_real_parameter_values_are_accepted() -> None:
+    """The guard must not reject what NSE actually sends."""
+    for value in ("28-Aug-2026", "RELIANCE", "NIFTY", "NIFTY NEXT 50".replace(" ", "-")):
+        assert DiscoveredParameter("expiry", value, date(2026, 12, 31)).parameter_value
+
+
+@pytest.mark.adversarial
+def test_a_hostile_payload_cannot_reach_the_memo_or_a_fetch_target() -> None:
+    """End to end: the guard is at construction, so no path — parse, remember, plan —
+    can carry an unsafe value through to a request."""
+    adapter = ExpiryDiscoveringAdapter()
+    hostile = json.dumps({"expiryDates": ["28-Aug-2026&symbol=EVIL"]}).encode()
+    with pytest.raises((UnsafeDiscoveredParameterError, IngestAdapterError)):
+        adapter.parse_discovery(hostile, adapter.discovery_targets([TODAY])[0])

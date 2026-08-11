@@ -205,7 +205,10 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       nearest expiry passes, never a typed-in TTL. `ANSWERED_EMPTY` is a third outcome, distinct from
       failure and from absence. **R.05 on the live chain: 19 requests vs ~2,700, 99.3% eliminated**; the
       derived horizon correctly picked the nearest FUTURE expiry (2026-08-18), not today's. Wired into the
-      runner, so not an orphan. `[~]` per `R.08`: no dashboard surface yet.*
+      runner, so not an orphan. **Security hardening after a review finding:** discovery is the ONLY
+      place in the ingest core where remote payload data reaches URL construction, so discovered values
+      are validated at construction — URL control characters, control bytes, unbounded length and empty
+      values all refused, with 10 hostile inputs tested. `[~]` per `R.08`: no dashboard surface yet.*
 - [ ] **1.31** Point-in-time market rules + calendar history — `L0.31`
 - [ ] **1.32** Clock sync + drift alert — `L0.32`
 - [ ] **1.33** Multi-broker consolidated feed with liquidity-weighted cross-check — `L0.33`

@@ -77,6 +77,31 @@ class DiscoveryOutcome(Enum):
     justified and the run must say it fell back."""
 
 
+_URL_CONTROL_CHARACTERS = frozenset('?&#/\\%\'"<> \t\r\n')
+"""Characters that would let a discovered value stop being a value and start being URL
+structure. Rejected outright rather than escaped, because a legitimate NSE parameter —
+an expiry, a symbol, an index name — contains none of them, so anything that does is
+either a defect or an attack and neither should be fetched."""
+
+FIRST_PRINTABLE_CHARACTER_CODE = 0x20
+"""ASCII space. Anything below it is a control character, never part of a real value."""
+
+MAXIMUM_DISCOVERED_VALUE_LENGTH = 64
+"""A bound, not a guess about content: real parameters are short tokens like
+`28-Aug-2026` or `RELIANCE`. An unbounded value from a remote payload has no business
+being interpolated into a request."""
+
+
+class UnsafeDiscoveredParameterError(ValueError):
+    """Raised when a discovered value could alter the structure of a request.
+
+    Discovery is the one place in the ingest core where **remote data flows into URL
+    construction** — the value comes out of an NSE response and goes into the next fetch.
+    Everything else builds URLs from our own dates and symbols. So this is the sink that
+    needs validating, and it is validated at construction so no path can bypass it.
+    """
+
+
 @dataclass(frozen=True)
 class DiscoveredParameter:
     """One learned parameter and the horizon over which it stays true."""
@@ -88,6 +113,30 @@ class DiscoveredParameter:
     nearest expiry passes — never a fixed time-to-live."""
 
     evidence: str = ""
+
+    def __post_init__(self) -> None:
+        value = self.parameter_value
+        if not value or not value.strip():
+            raise UnsafeDiscoveredParameterError(
+                f"{self.parameter_kind}: empty discovered value"
+            )
+        if len(value) > MAXIMUM_DISCOVERED_VALUE_LENGTH:
+            raise UnsafeDiscoveredParameterError(
+                f"{self.parameter_kind}: discovered value is {len(value)} characters, "
+                f"over the {MAXIMUM_DISCOVERED_VALUE_LENGTH} bound — refusing to put "
+                f"unbounded remote data into a request"
+            )
+        offending = sorted(set(value) & _URL_CONTROL_CHARACTERS)
+        if offending:
+            raise UnsafeDiscoveredParameterError(
+                f"{self.parameter_kind}: discovered value {value!r} contains URL "
+                f"control character(s) {offending} — it would change the shape of the "
+                f"request rather than fill a field in it"
+            )
+        if any(ord(character) < FIRST_PRINTABLE_CHARACTER_CODE for character in value):
+            raise UnsafeDiscoveredParameterError(
+                f"{self.parameter_kind}: discovered value contains control characters"
+            )
 
     def is_valid_on(self, day: date) -> bool:
         return day <= self.valid_until
