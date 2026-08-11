@@ -2661,6 +2661,31 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.71 · 2026-08-11 · `L0.14` built on the two brokers that actually answer, and the other three are
+blocked with MEASURED reasons rather than assumed ones.** All five SDKs were installed and probed live
+(`R.17` wants mechanical evidence, not README prose). Result: **Kite OK**, **Angel One OK** via TOTP,
+**Upstox 401** (expired token, refresh is an OAuth redirect flow), **Groww `Access forbidden`** — which
+CONFIRMS the plan's `L0.19` subscription blocker and corrects my own doubt about it — and **ICICI Breeze**
+needing a daily web-minted session key.
+
+Adapters were written only for the two that can be run against their real broker. An adapter that cannot
+be executed is untestable code that looks finished, which is the failure mode `A.64` already cost a day
+to.
+
+The interface earns itself on evidence. Fetching RELIANCE daily bars 2026-08-07..11: **Kite returned 3
+bars, Angel One returned 2** — Angel had no 08-07 — while closes agreed EXACTLY on shared dates (1327.3,
+1320.6). Volume did not: 08-11 was 8,508,600 at Kite and 8,701,285 at Angel. Brokers are interchangeable
+in meaning and NOT in coverage, and prices agreeing does not mean fields agree — both facts feed `L0.15`.
+
+Angel is the adapter that proves the interface is not Kite-shaped: one dict argument, singular interval
+words (`FIVE_MINUTE`), positional list rows, and — the quirk that matters — **failure signalled by
+`status: false` inside a 200 response**. A caller catching only exceptions would read a broker refusal as
+an empty window, turning a broken feed into a silent hole in history.
+
+`available_from` is the bar's own CLOSE, not the fetch time: its start would be a one-bar lookahead and
+the fetch time would make every historical bar unavailable during replay. Prices convert via `str` so a
+broker's `1320.6` does not arrive carrying binary error.
+
 **A.70 · 2026-08-11 · `L0.13` built ahead of `L0.12`, and the honest clock is enforced by a detector
 rather than by discipline.** `L0.12` tags experience as replayed versus live; the rebuild has no
 experience-memory store to tag, so building it now would create precisely the orphan `R.06` forbids. It

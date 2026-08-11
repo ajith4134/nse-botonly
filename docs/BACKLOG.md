@@ -3404,3 +3404,18 @@ expiries; EXIDEIND + NUVAMA held 1 and left F&O ~35 trading days later). `DALBHA
 - **The replay clock has no strategy consumer yet** (`L0.13`). It is wired into the daily run as a
   standing leakage proof — real work, not its final purpose. The full consumer is a replay/backtest
   engine that steps a strategy through `step_through_session`. Named queued consumer per `R.06`.
+- **Three of five brokers cannot serve historical bars today** (`L0.14`, `A.71`). Measured live, not
+  assumed: **Upstox** returns 401 — its access token expired and refreshing it is an OAuth redirect flow
+  (operator). **Groww** returns `Access forbidden` — this CONFIRMS the plan's `L0.19` subscription
+  blocker; credentials exist but the ₹499/mo API is not active. **ICICI Breeze** needs a session key
+  minted from a daily web login (operator). Adapters for these are deliberately NOT written: an adapter
+  that cannot be run against its real broker is untestable code that looks finished.
+- **Fyers needs an access token, not just app id + secret** (`L0.18`, `A.71`). Credentials supplied
+  2026-08-11 and stored in gitignored `.env`. `fyers-apiv3` is installed and `FyersModel(client_id, token)`
+  requires a token minted via `SessionModel(redirect_uri=...)` and a browser auth-code exchange —
+  operator action. ⚠️ The secret was pasted into a session transcript and should be ROTATED, same class
+  of exposure as `B.10`.
+- **`L0.15` cross-source failover has its first measured case** (`A.71`). Kite holds RELIANCE 2026-08-07;
+  Angel One does not. Closes agreed exactly on shared dates (1327.3, 1320.6) while VOLUME differed on
+  08-11 (kite 8,508,600 vs angel 8,701,285) — so reconciliation cannot assume fields agree just because
+  prices do.
