@@ -2586,6 +2586,41 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.52 · 2026-08-11 · Verification effort is REBALANCED — the checks stay, the ceremony goes.** The
+operator challenged the share of effort going into test files rather than feature code. Measured before
+answering: 4,602 source lines against 4,237 test lines across today's work, so feature code exceeds test
+code and the ratio was never the problem. The leak was ceremony *around* the tests: (a) satisfying
+`PLR2004` magic-value lint inside test files, when an expected value IS the test — now exempted for
+`tests/*` and still enforced in `src/`, where an unexplained constant is exactly the `R.03` defect the
+rule exists to catch; (b) re-running mutation iteratively rather than once per engine; (c) running the
+full gate after every small edit rather than batching before commit. **What is NOT reduced**, because it
+demonstrably paid for itself today: real-payload fixtures (which found the bulk-deals key collision),
+fresh-subagent adversarial review (5 CRITICAL, including a `stop()` deadlock that would have cost the
+whole tape), and the `R.05` real-data pass. The distinction that matters: a check that has caught a real
+defect is an asset; a check that only ever renames a literal is overhead. *Supersedes nothing; refines how
+`R.23`'s loop is executed, not whether.*
+
+**A.51 · 2026-08-11 · The delisted master is BSE-sourced, and my routing of it to NSE was wrong.**
+Plan entry `L0.09` reads "(BSE-sourced)" and I dispatched the adapter agent at NSE's list instead.
+Measured consequence: NSE's `delisted.csv` is real but **frozen since 2020-11-11 at 328 rows**, while
+BSE's endpoint returns **4,612 rows and is live today**. A prior pre-reset implementation already existed
+in git history at `63aa3a1`, built precisely because NSE's list was inadequate. The NSE adapter is kept —
+it is correct for what it covers and the two disagree usefully — but the BSE adapter is the one `L0.09`
+actually asks for and is now queued in `BACKLOG.md`. *Supersedes my dispatch instruction, not the plan,
+which was right all along.*
+
+**A.50 · 2026-08-11 · The current MWPL feed EXISTS and is `combineoi_{DDMMYYYY}.zip`.** `research/207`
+§3 recorded the successor to the dead `nseoi_` file as "NOT LOCATED"; it was found on the first probe at
+`nsearchives.nseindia.com/archives/nsccl/mwpl/`. Verified to coexist with `nseoi_` back to 2011 AND to
+keep working through the 2024-04-30 boundary to the most recent session, so it is a strict superset and
+the adapter uses it exclusively — offering both filenames would make the runner double-ingest every date
+as a spurious revision. CSV is authoritative over the XML sibling on evidence, not preference: the XML is
+malformed in both eras that matter (a tag name containing spaces in the current file, an unescaped `&` in
+`SBI CARDS & PAY SER LTD` in the legacy one). **Independent corroboration worth recording:** the only two
+rows whose `Limit for Next Day` reads `"No Fresh Positions"` are `BANDHANBNK` and `SAIL` — exactly the two
+symbols the real ban-list file names as banned for 2026-08-11. Two unrelated NSE files agreeing is the
+strongest evidence either parser is right. *Supersedes `research/207` §3's "not located" finding.*
+
 **A.49 · 2026-08-11 · The ingest core ADOPTS `nse` (BennyThadikaran) for bhavcopy and `nselib` for the
 ban list, and BUILDS the failure classifier and bitemporal layer.** From `research/210`, every verdict
 from an install plus a real call: eleven libraries evaluated, and the July-2024 UDiFF layout change sorted

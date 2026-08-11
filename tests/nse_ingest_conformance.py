@@ -173,15 +173,21 @@ class NseIngestAdapterConformance(abc.ABC):
         assert adapter.content_mismatch_reason(payload, target) is None, (
             "the adapter rejects its own real payload"
         )
+        if not target.expects:
+            # A source that cannot be addressed by date — a rolling file, or a master
+            # list spanning decades — has nothing to disagree with, so there is no
+            # wrong-date case to detect. Skipping is correct here, and stated rather
+            # than silent.
+            return
+
         impostor = FetchTarget(
-            url=target.url.replace("2026", "1999"),
+            url=target.url,
             source_name=adapter.source_name,
-            expects="a date this payload is definitely not for",
+            expects="1999-01-04",
         )
-        if impostor.url != target.url:
-            assert adapter.content_mismatch_reason(payload, impostor) is not None, (
-                "a payload for the wrong date was accepted as correct"
-            )
+        assert adapter.content_mismatch_reason(payload, impostor) is not None, (
+            "a payload for the wrong date was accepted as correct"
+        )
 
     # ------------------------------------------------------------------- storage
 

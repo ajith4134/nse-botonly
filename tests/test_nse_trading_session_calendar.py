@@ -328,7 +328,7 @@ def test_a_mixed_window_separates_real_gaps_from_unverifiable_ones(
         frozenset(), date(1996, 12, 1), date(1997, 1, 31)
     )
     assert all(day.year == FIRST_RELIABLE_YEAR for day in report.uncollected_sessions)
-    assert all(day.year == 1996 for day in report.unverifiable_dates)  # noqa: PLR2004
+    assert all(day.year == 1996 for day in report.unverifiable_dates)
     assert report.uncollected_sessions and report.unverifiable_dates
 
 

@@ -85,7 +85,11 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       flat day); all fixed, mutation 10/10. Empirical end-to-end check: 65/66 sampled ex-dates within 20% of
       1.0, median 1.016. `[~]` per R.08 + F&O factor acquisition unbuilt.*
 - [ ] **1.8** Symbol-rename / ISIN / merger record store — `L0.08`
-- [ ] **1.9** Delisted-securities master (BSE-sourced) — `L0.09`
+- [~] **1.9** Delisted-securities master (BSE-sourced) — `L0.09` — *NSE half built and certified (328
+      rows, real fetch); handles a raw newline inside a quoted CSV field and two-digit years.
+      ⛔ **NOT DONE — the plan says BSE-sourced and I routed the agent to NSE (`A.51`).** Measured: NSE's
+      list is **frozen since 2020-11-11 at 328 rows**, BSE returns **4,612 rows live today**. The BSE
+      adapter is queued in BACKLOG; a proven prior implementation exists at `63aa3a1`.*
 - [~] **1.10** Gap detection + provenance-flagged backfill — `L0.10` — *built on the ingest core.
       The content is the CLASSIFICATION, not the list: a missing date is never-attempted (work
       outstanding), established-absent (asked, archive said 404 — stop retrying) or recoverable-failure
@@ -132,7 +136,14 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       both eras; idempotent re-run inserted 0. The F&O natural key carries expiry/strike/option-type —
       a symbol-only key would collapse a whole option chain into one row and discard the rest as
       revisions. `[~]` per `R.08`: no dashboard surface yet.*
-- [ ] **1.24** MWPL position-limit ingest — `L0.24`
+- [~] **1.24** MWPL position-limit ingest — `L0.24` — *built on the ingest core. **The current feed
+      was FOUND** at `combineoi_{DDMMYYYY}.zip`, closing what `research/207` §3 recorded as "not
+      located" (`A.50`) — it is a strict superset of the dead `nseoi_` file, working from 2011 through
+      today. CSV chosen over the XML sibling on evidence: the XML is malformed in both eras (spaces in
+      a tag name; an unescaped `&` in `SBI CARDS & PAY SER LTD`). Schema changed three times (7/6/8
+      columns), handled by reading whatever header a payload carries. Cross-source corroboration: the
+      only two `"No Fresh Positions"` rows are BANDHANBNK and SAIL — exactly the ban-list symbols.
+      21 tests. `[~]` per `R.08`: no dashboard surface.*
 - [~] **1.25** F&O ban-list ingest — `L0.25` — *built on the shared ingest core. A ROLLING file with
       no archive: NSE overwrites `fo_secban.csv` in place, so history accrues only from the first
       snapshot and is never retrievable retroactively — the same permanent-loss shape as the depth

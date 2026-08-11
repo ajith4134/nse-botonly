@@ -8,6 +8,18 @@ Reconcile with the live task list at each session start.
 
 Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) · ⛔ blocked
 
+## Wave 2 adapters (2026-08-11) — 🟡 four landed, two in flight
+
+- ⛔ **`L0.09` needs its BSE adapter — the plan said BSE-sourced and I routed to NSE (`A.51`).** NSE's
+  list is frozen since 2020-11-11 (328 rows); BSE is live with 4,612. A proven prior implementation
+  exists in git history at `63aa3a1` (`market_data/delisted_securities_source.py`, research/79), built
+  precisely because NSE's list was inadequate. Port it as a second adapter, `delisted_securities_bse`.
+- 🔴 **Nothing schedules any ingest run.** Four adapters exist and three of the sources are rolling
+  files that accrue forward only (`fo_ban_list`, bulk/block deals, and any undated source). Without a
+  daily scheduled run the history they exist to build does not build. This is the single highest-value
+  next action for the ingest layer.
+- 🔴 **No dashboard surface** for ingest coverage, blocked sources, or gap classification (`R.08`).
+
 ## Shared NSE ingest core (`A.46`, spec `research/209`) — 🟢 CORE BUILT, adapters queued
 
 Core built 2026-08-11: `nse_source_fetcher` (content-aware failure classification) ·

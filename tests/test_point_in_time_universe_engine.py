@@ -202,7 +202,7 @@ def test_the_ladder_norm_is_the_cross_sectional_mode_of_that_date(
         [_observation(f"SYM{i}", day, ladder_depth=4) for i in range(9)]
         + [_observation("SHRINKING", day, ladder_depth=1)]
     )
-    assert engine.ladder_norm_on(day) == 4  # noqa: PLR2004 - the point of the test
+    assert engine.ladder_norm_on(day) == 4
 
 
 @pytest.mark.unit
@@ -382,8 +382,8 @@ def test_the_real_universe_is_stable_across_the_window(tmp_path: Path) -> None:
     sizes = [
         len(engine.snapshot_as_of(day).members) for day in engine.collected_dates()
     ]
-    assert min(sizes) >= 200  # noqa: PLR2004 - a floor, not a threshold under test
-    assert max(sizes) - min(sizes) <= 5  # noqa: PLR2004 - measured churn is 3
+    assert min(sizes) >= 200
+    assert max(sizes) - min(sizes) <= 5
     engine.close()
 
 
@@ -655,8 +655,8 @@ def test_the_real_cash_universe_illiquidity_claim(tmp_path: Path) -> None:
             *[set(engine.snapshot_as_of(day).members) for day in collected]
         )
         total = {symbol for _, symbol in rows}
-        assert len(total) == 3419  # noqa: PLR2004 - the measured figure, pinned
-        assert len(total) - len(everywhere) == 324  # noqa: PLR2004 - the 324, verified
+        assert len(total) == 3419
+        assert len(total) - len(everywhere) == 324
         # No ladder anywhere in cash, so nothing may be called an exit.
         assert engine.exit_warnings_on(collected[-1]) == ()
 
@@ -711,7 +711,7 @@ def test_a_full_universe_snapshot_is_not_quadratic(tmp_path: Path) -> None:
     elapsed = time.monotonic() - started
     engine.close()
     assert snapshot.members
-    assert elapsed < 5.0, f"snapshot_as_of took {elapsed:.2f}s"  # noqa: PLR2004
+    assert elapsed < 5.0, f"snapshot_as_of took {elapsed:.2f}s"
 
 
 @pytest.mark.adversarial

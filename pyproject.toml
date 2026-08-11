@@ -80,7 +80,10 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S", "ARG", "PD901"]
+# PLR2004 exempted in tests deliberately: an expected value IS the test. Naming every
+# literal `EXPECTED_...` adds ceremony, not safety, and the churn was measurable.
+# It stays ON for src/, where an unexplained constant is the R.03 defect it exists to catch.
+"tests/*" = ["S", "ARG", "PD901", "PLR2004"]
 "tests/fixtures_rupee_literal_evasions/*" = ["ALL"]  # deliberate violations, by design
 
 [tool.ruff.lint.flake8-builtins]

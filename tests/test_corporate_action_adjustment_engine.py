@@ -527,7 +527,7 @@ def test_the_factor_timeline_is_cached_and_invalidated_on_ingest(
     engine.ingest([_action("Bonus 1:1", ex=date(2021, 1, 10))])
     refreshed = engine._factor_timeline("ACME", None)
     assert refreshed is not first
-    assert len(refreshed) == 2  # noqa: PLR2004 - both actions, cache correctly rebuilt
+    assert len(refreshed) == 2
 
 
 @pytest.mark.adversarial
