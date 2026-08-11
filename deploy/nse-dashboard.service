@@ -1,0 +1,35 @@
+[Unit]
+Description=NSE algo trader dashboard — operations wall and regime surface
+Documentation=file:///home/opc/nse-algo-trader/src/nse_algo_trader/dashboard/dashboard_server.py
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/opc/nse-algo-trader
+ExecStart=/home/opc/nse-algo-trader/.venv/bin/python -m uvicorn \
+    nse_algo_trader.dashboard.dashboard_server:app \
+    --host 0.0.0.0 --port 8080 --no-access-log
+
+# A dashboard that dies at 3am and stays dead is worse than no dashboard: the wall is
+# how R.08 status is meant to be seen, so silence reads as "nothing to report".
+Restart=always
+RestartSec=5
+
+# Do not thrash. If it cannot start five times in a minute the problem is the code or
+# the port, and restarting forever would bury the real error under identical entries.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Journald AND a file. Measured on this host: `journalctl --user` returns "No entries"
+# for user units even while they are demonstrably running, so a unit logging only to
+# the journal would leave every crash invisible.
+StandardOutput=append:/home/opc/nse_archive/dashboard.log
+StandardError=append:/home/opc/nse_archive/dashboard.log
+SyslogIdentifier=nse-dashboard
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

@@ -335,7 +335,7 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       host. `Persistent=true` (missed firings run on boot — rolling sources are unrecoverable) and
       `RandomizedDelaySec=600`. Enabled and active; next firing verified. `[~]` until a full run has
       been observed end to end.*
-- [ ] **2.59** Systemd service management for the dashboard — `L3.27`
+- [x] **2.59** Systemd service management for the dashboard — `L3.27` · user unit + linger, `Restart=always`, crash-recovery verified by `kill -9` (`A.62`)
 - [ ] **2.60** Kite-decoupled architecture guard — `L3.28`
 
 **— L7 —**

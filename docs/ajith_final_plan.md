@@ -392,8 +392,10 @@ so a missed firing runs on boot, because the rolling sources are unrecoverable; 
 the one bot-walling host is never hit at the same second daily. ⟨IV⟩ · base · **built 2026-08-11** ·
 `A.61`
 
-**L3.27**  Systemd service management for the dashboard — auto-restart, journald logging. ⟨IV⟩ · base ·
-archived · `deploy/README_dashboard_service.md`
+**L3.27**  Systemd service management for the dashboard — auto-restart, file logging. ⟨IV⟩ · base ·
+BUILT `A.62` · `deploy/nse-dashboard.service` — USER unit + linger, `Restart=always`, burst-capped.
+*Supersedes its own "journald logging" clause: measured on this host, `journalctl --user` captures
+nothing from user units, so journald alone would hide every crash.*
 **L3.28**  Kite-decoupled architecture guard — a test that fails if `kiteconnect` is imported anywhere
 outside the broker seam. Everything except live trading runs broker-independent. ⟨IV⟩ · adv · archived ·
 `kite_decoupled_architecture.md`
@@ -2631,6 +2633,32 @@ sdist**, so no pip path exists; `nautilus_trader` publishes `manylinux_2_35_aarc
 SOTA analog is a depth *comparison*, not an import — but no spec may plan to depend on either. Where a
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
+
+**A.62 · 2026-08-11 · The dashboard is a systemd USER service, and the honest reason is that it had
+been lying about its own uptime.** Operator instruction, and the second half of `A.61`'s work — the
+runner was scheduled that morning while the surface that reports on it was still a `nohup` process that
+would not survive a reboot.
+
+Both `A.61` lessons transferred unchanged and were re-verified rather than assumed: a **user** unit,
+because SELinux still denies `init_t` reading `user_home_t`; and **file logging**, because
+`journalctl --user` still captures nothing here. What did not transfer is the restart policy — a timer
+runs and exits, a server is supposed to stay up, so this unit carries `Restart=always` with
+`StartLimitBurst=5` in sixty seconds. The cap is the point: a dashboard that cannot bind its port should
+stop and say so, not restart forever and bury the real error under identical entries.
+
+Two things were found by installing it rather than by reasoning about it. **(1)** The first start failed
+with `[Errno 98] address already in use` — the `nohup` instance was still holding 8080 because the
+pattern I killed on required the full venv path and the process had been launched as bare `python`. A
+unit that cannot take over from what it replaces is not a deployment. **(2)** Verification is
+`kill -9` on the main PID and then NOT touching it: recovery came back on a new PID serving 200, which
+is the only evidence that matters, because `is-active` immediately after a hand-restart proves nothing
+about a 3am crash. Auth re-checked live under the unit — `/wall` 401 without a key, 200 with.
+
+*Supersedes the operating memory that this host runs `nse-dashboard` as a SYSTEM unit restarted with
+`sudo systemctl restart` — after the reset that is false in two ways: system units cannot execute from
+`/home` here, and the correct command is now `systemctl --user restart nse-dashboard`. The memory's
+real warning survives and is now enforced by the unit itself: never `pkill` plus `nohup`, which is
+exactly the failure mode that produced the port collision above.*
 
 **A.61 · 2026-08-11 · The daily runner is scheduled as a systemd USER timer, and three assumptions
 died on the way.** Operator instruction. Two firings per session day (19:00 and 08:15 IST) because NSE

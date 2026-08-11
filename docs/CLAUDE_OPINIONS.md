@@ -641,3 +641,42 @@ composition meant instead of running it. Both times the answer took one script.
 Appended at the moment an opinion is formed, per **R.25**. Opinions that turn out wrong are **corrected in
 place with the correction dated and the original left visible** — the history of a wrong judgement is more
 useful than a clean file.
+
+## O.44 · 2026-08-11 · A service is not verified by `is-active`; it is verified by `kill -9`
+
+**Opinion.** The only evidence that a supervised service works is that it recovers from a kill nobody
+issued on purpose. `systemctl is-active` right after a hand-restart proves the binary starts, which was
+never in doubt — the claim being made is about 3am, when nobody is watching, and that claim is only
+tested by killing the main PID and refusing to touch it afterward.
+
+**Reasoning.** Every failure this unit exists to survive is one I cannot be present for. The dashboard
+had been running under `nohup` for days and looked perfectly healthy the entire time; its defect was
+invisible precisely because nothing had killed it yet. `Restart=always` is a claim about the future, and
+a claim about the future is verified by causing the future, not by observing that the present is fine.
+
+**Confidence: measured.** `kill -9 190218` returned a new main PID 190379, state `active`, `/healthz`
+200, `NRestarts=1` — with no intervening command from me.
+
+**What would change my mind.** Nothing about the method. But it is deliberately incomplete: I killed the
+process, not the machine, so reboot survival rests on `Linger=yes` being read correctly rather than on a
+reboot I have observed. That is a weaker claim than the crash claim and I am not entitled to state them
+in the same breath.
+
+## O.45 · 2026-08-11 · A restart policy without a burst cap converts one bug into silence
+
+**Opinion.** `Restart=always` with no `StartLimitBurst` is worse than no supervision for a server whose
+job is to report status. A process that cannot bind its port will retry forever, writing an identical
+error every five seconds, and the log becomes uniform — which reads exactly like nothing being wrong.
+
+**Reasoning.** This is the same failure as the regime brain in `A.59` and the wall's alphabetical
+ordering: a system that reports its problems in a form indistinguishable from its healthy state has not
+reported them. Failing loudly and staying failed is more informative than recovering forever, because
+a stopped unit is a state a human notices and an infinite retry loop is not.
+
+**Confidence: reasoned.** The specific failure mode was observed here — the first start did hit
+`address already in use`, and with an uncapped policy it would have retried against a port the old
+`nohup` process held indefinitely. I did not run the uncapped variant to watch it happen.
+
+**What would change my mind.** A monitor that alerts on restart RATE rather than on unit state. Then
+infinite retry carries the information the cap currently provides, and the cap becomes the worse choice
+because transient causes — a slow network mount at boot — would resolve themselves.
