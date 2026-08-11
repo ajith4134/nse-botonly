@@ -29,10 +29,15 @@ SESSION_OPEN = datetime(2026, 8, 11, 3, 45, tzinfo=UTC)
 SESSION_SECONDS = 6.5 * 3600
 STEADY_TOKEN = 1001
 SPARSE_TOKEN = 1002
-EXPECTED_QUARTILE_FENCE = -0.5
+EXPECTED_CLAMPED_FENCE = 0.0
+EXPECTED_FENCE_ON_TIGHT_SPREAD = 0.875
 HEALTHY_INSTRUMENT_COUNT = 10
 NEGLIGIBLE_COVERAGE = 0.01
 MEASURED_ROW_COUNT = 400
+REQUIRED_COVERAGE = 0.5
+"""The policy input the report now demands: how much of a session must be covered
+before the data is fit for microstructure work. Explicit, because the relative fence
+alone cannot catch a session in which the whole feed was equally degraded."""
 HALF = 0.5
 MINIMUM_INTERRUPTION_GAP_SECONDS = 2600
 NEARLY_THE_WHOLE_SESSION = 0.9
@@ -84,8 +89,20 @@ def _evenly_spaced(token: int, count: int, spacing_seconds: float) -> list[Depth
 
 
 @pytest.mark.unit
-def test_tukey_fence_is_the_conventional_boundary() -> None:
-    assert tukey_lower_fence([1.0, 2.0, 3.0, 4.0]) == pytest.approx(EXPECTED_QUARTILE_FENCE)
+def test_the_fence_is_clamped_so_it_can_actually_fire() -> None:
+    """Coverage fractions live in [0, 1], so an unclamped Q1 - 1.5*IQR goes negative on
+    any wide spread and can then never fail an instrument. Adversarial review measured
+    a real session spanning 5%..99% coverage producing a fence of -0.42 and passing
+    every instrument, including the one at 5%."""
+    assert tukey_lower_fence([1.0, 2.0, 3.0, 4.0]) == EXPECTED_CLAMPED_FENCE
+    assert tukey_lower_fence([0.05, 0.5, 0.99]) == EXPECTED_CLAMPED_FENCE
+
+
+@pytest.mark.unit
+def test_the_fence_still_fires_on_a_tight_spread() -> None:
+    """Clamping must not disable the fence where it genuinely applies."""
+    tight = [0.90, 0.91, 0.92, 0.93, 0.94, 0.95]
+    assert tukey_lower_fence(tight) == pytest.approx(EXPECTED_FENCE_ON_TIGHT_SPREAD, abs=0.01)
 
 
 @pytest.mark.unit
@@ -104,7 +121,7 @@ def test_evenly_covered_instruments_are_usable(tmp_path: Path) -> None:
         tmp_path,
         {token: _evenly_spaced(token, 200, 100.0) for token in range(1001, 1011)},
     )
-    report = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS)
+    report = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS, REQUIRED_COVERAGE)
     assert (
         report.count_by_usability()[InstrumentSessionUsability.USABLE]
         == HEALTHY_INSTRUMENT_COUNT
@@ -121,7 +138,7 @@ def test_an_instrument_that_stopped_early_is_failed_against_its_peers(
     packets = {token: _evenly_spaced(token, 200, 100.0) for token in range(1001, 1011)}
     packets[SPARSE_TOKEN] = _evenly_spaced(SPARSE_TOKEN, 6, 10.0)
     _write_tape(tmp_path, packets)
-    report = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS)
+    report = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS, REQUIRED_COVERAGE)
     sparse = report.quality_for(SPARSE_TOKEN)
     assert sparse is not None
     assert sparse.usability is InstrumentSessionUsability.UNUSABLE
@@ -139,9 +156,15 @@ def test_a_uniformly_degraded_session_does_not_silently_pass_everything(
         tmp_path,
         {token: _evenly_spaced(token, 5, 10.0) for token in range(1001, 1011)},
     )
-    report = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS)
+    report = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS, REQUIRED_COVERAGE)
     for quality in report.instrument_quality:
         assert quality.coverage_fraction < NEGLIGIBLE_COVERAGE
+    # The verdict, not just the number: a relative fence cannot flag a session where
+    # every instrument is equally bad, which is why an absolute floor is also applied.
+    assert report.count_by_usability()[InstrumentSessionUsability.UNUSABLE] == (
+        HEALTHY_INSTRUMENT_COUNT
+    )
+    assert report.usable_tokens() == ()
 
 
 @pytest.mark.unit
@@ -153,7 +176,11 @@ def test_dropped_packets_are_always_at_least_a_caveat(tmp_path: Path) -> None:
         {token: _evenly_spaced(token, 200, 100.0) for token in range(1001, 1011)},
     )
     report = build_session_report(
-        tmp_path, SESSION_DATE, SESSION_SECONDS, dropped_packets_by_token={STEADY_TOKEN: 12}
+        tmp_path,
+        SESSION_DATE,
+        SESSION_SECONDS,
+        REQUIRED_COVERAGE,
+        dropped_packets_by_token={STEADY_TOKEN: 12},
     )
     quality = report.quality_for(STEADY_TOKEN)
     assert quality is not None
@@ -169,7 +196,7 @@ def test_crossed_books_downgrade_to_caveats(tmp_path: Path) -> None:
         {token: _evenly_spaced(token, 200, 100.0) for token in range(1001, 1011)},
         flags_by_token={STEADY_TOKEN: IntegrityFlag.BOOK_CROSSED},
     )
-    report = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS)
+    report = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS, REQUIRED_COVERAGE)
     quality = report.quality_for(STEADY_TOKEN)
     assert quality is not None
     assert quality.usability is InstrumentSessionUsability.USABLE_WITH_CAVEATS
@@ -183,9 +210,10 @@ def test_missing_exchange_timestamps_downgrade_to_caveats(tmp_path: Path) -> Non
         {token: _evenly_spaced(token, 200, 100.0) for token in range(1001, 1011)},
         flags_by_token={STEADY_TOKEN: IntegrityFlag.EXCHANGE_TIME_ABSENT},
     )
-    quality = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS).quality_for(
-        STEADY_TOKEN
+    report = build_session_report(
+        tmp_path, SESSION_DATE, SESSION_SECONDS, REQUIRED_COVERAGE
     )
+    quality = report.quality_for(STEADY_TOKEN)
     assert quality is not None
     assert quality.usability is InstrumentSessionUsability.USABLE_WITH_CAVEATS
 
@@ -198,7 +226,7 @@ def test_excluding_caveats_narrows_the_usable_set(tmp_path: Path) -> None:
         {token: _evenly_spaced(token, 200, 100.0) for token in range(1001, 1011)},
         flags_by_token={STEADY_TOKEN: IntegrityFlag.BOOK_CROSSED},
     )
-    report = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS)
+    report = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS, REQUIRED_COVERAGE)
     assert STEADY_TOKEN in report.usable_tokens(include_caveats=True)
     assert STEADY_TOKEN not in report.usable_tokens(include_caveats=False)
 
@@ -208,9 +236,10 @@ def test_an_instrument_with_one_packet_is_wholly_uncovered(tmp_path: Path) -> No
     packets = {token: _evenly_spaced(token, 200, 100.0) for token in range(1001, 1011)}
     packets[SPARSE_TOKEN] = _evenly_spaced(SPARSE_TOKEN, 1, 1.0)
     _write_tape(tmp_path, packets)
-    quality = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS).quality_for(
-        SPARSE_TOKEN
+    report = build_session_report(
+        tmp_path, SESSION_DATE, SESSION_SECONDS, REQUIRED_COVERAGE
     )
+    quality = report.quality_for(SPARSE_TOKEN)
     assert quality is not None
     assert quality.covered_seconds == 0.0
     assert quality.usability is InstrumentSessionUsability.UNUSABLE
@@ -219,7 +248,7 @@ def test_an_instrument_with_one_packet_is_wholly_uncovered(tmp_path: Path) -> No
 @pytest.mark.adversarial
 def test_a_zero_length_session_is_reported_not_divided_by(tmp_path: Path) -> None:
     _write_tape(tmp_path, {STEADY_TOKEN: _evenly_spaced(STEADY_TOKEN, 10, 1.0)})
-    report = build_session_report(tmp_path, SESSION_DATE, 0.0)
+    report = build_session_report(tmp_path, SESSION_DATE, 0.0, REQUIRED_COVERAGE)
     assert any("unmeasurable" in note for note in report.notes)
     assert report.instrument_quality[0].coverage_fraction == 0.0
 
@@ -227,7 +256,7 @@ def test_a_zero_length_session_is_reported_not_divided_by(tmp_path: Path) -> Non
 @pytest.mark.unit
 def test_the_report_measures_the_tape_it_read(tmp_path: Path) -> None:
     _write_tape(tmp_path, {STEADY_TOKEN: _evenly_spaced(STEADY_TOKEN, MEASURED_ROW_COUNT, 10.0)})
-    report = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS)
+    report = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS, REQUIRED_COVERAGE)
     assert report.total_rows == MEASURED_ROW_COUNT
     assert report.total_bytes > 0
     assert report.bytes_per_row > 0
@@ -248,9 +277,10 @@ def test_the_gap_threshold_is_the_instruments_own_extreme_interval(tmp_path: Pat
         for i in range(100)
     ]
     _write_tape(tmp_path, {STEADY_TOKEN: interrupted})
-    quality = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS).quality_for(
-        STEADY_TOKEN
+    report = build_session_report(
+        tmp_path, SESSION_DATE, SESSION_SECONDS, REQUIRED_COVERAGE
     )
+    quality = report.quality_for(STEADY_TOKEN)
     assert quality is not None
     # The hole is excluded from coverage, so covered time is far below the span.
     span = (interrupted[-1].receipt_time - interrupted[0].receipt_time).total_seconds()
@@ -267,8 +297,9 @@ def test_largest_gap_accounts_for_time_outside_the_observed_span(tmp_path: Path)
         for i in range(60)
     ]
     _write_tape(tmp_path, {STEADY_TOKEN: brief})
-    quality = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS).quality_for(
-        STEADY_TOKEN
+    report = build_session_report(
+        tmp_path, SESSION_DATE, SESSION_SECONDS, REQUIRED_COVERAGE
     )
+    quality = report.quality_for(STEADY_TOKEN)
     assert quality is not None
     assert quality.largest_gap_seconds > SESSION_SECONDS * NEARLY_THE_WHOLE_SESSION

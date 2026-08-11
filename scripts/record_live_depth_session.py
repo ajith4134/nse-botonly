@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import csv
 import io
+import json
 import queue
 import signal
 import sys
@@ -43,6 +44,10 @@ from nse_algo_trader.broker_sessions.kite_access_token_store import (
 from nse_algo_trader.market_depth.depth_capture_admission_controller import (
     DepthCaptureAdmissionController,
     InstrumentCaptureCandidate,
+)
+from nse_algo_trader.market_depth.depth_capture_session_report import (
+    InstrumentSessionUsability,
+    build_session_report,
 )
 from nse_algo_trader.market_depth.depth_packet_integrity_classifier import (
     NSE_QUOTING_WINDOW_CLOSES_IST,
@@ -216,6 +221,13 @@ def main() -> int:
     )
     parser.add_argument("--calibration-minutes", type=float, default=5.0)
     parser.add_argument("--calibration-cohort-size", type=int, default=300)
+    parser.add_argument(
+        "--minimum-coverage-fraction",
+        type=float,
+        required=True,
+        help="how much of the session an instrument must cover to be judged usable — "
+        "a policy input, like retention, and deliberately not defaulted",
+    )
     parser.add_argument("--max-buffered-rows", type=int, default=20_000)
     parser.add_argument("--max-seconds-between-flushes", type=float, default=60.0)
     arguments = parser.parse_args()
@@ -365,6 +377,7 @@ def main() -> int:
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
 
+    session_open_used = datetime.now(IST)
     recorder.start()
     log("capturing")
     try:
@@ -373,6 +386,52 @@ def main() -> int:
         recorder.stop()
     report(recorder, "session")
     log(f"tape now holds {reader.total_bytes_on_disk() / 1024**3:.2f} GiB")
+
+    # The usability verdict every downstream consumer of this tape must consult. Built
+    # here rather than left to a caller that does not exist: a tape whose provenance is
+    # never judged is a tape of unknown provenance (`L0.12`).
+    dropped_by_token: dict[int, int] = {}
+    for shard in recorder.shards:
+        for token, dropped in shard.statistics.drops_by_token.items():
+            dropped_by_token[token] = dropped_by_token.get(token, 0) + dropped
+    session_report = build_session_report(
+        tape_root=arguments.tape_root,
+        session_date=now_ist.date(),
+        session_seconds=(session_close - session_open_used).total_seconds(),
+        minimum_coverage_fraction=arguments.minimum_coverage_fraction,
+        dropped_packets_by_token=dropped_by_token,
+    )
+    counts = session_report.count_by_usability()
+    log(
+        f"usability: {counts[InstrumentSessionUsability.USABLE]:,} usable · "
+        f"{counts[InstrumentSessionUsability.USABLE_WITH_CAVEATS]:,} with caveats · "
+        f"{counts[InstrumentSessionUsability.UNUSABLE]:,} unusable "
+        f"(coverage floor {arguments.minimum_coverage_fraction:.0%}, "
+        f"session fence {session_report.coverage_lower_fence:.1%})"
+    )
+    log(
+        f"session bytes/row {session_report.bytes_per_row:.1f} "
+        f"over {session_report.total_rows:,} rows"
+    )
+    for note in session_report.notes:
+        log(f"  note: {note}")
+    verdict_path = arguments.tape_root / f"session_report_{now_ist:%Y-%m-%d}_{capture_run_id}.json"
+    verdict_path.write_text(
+        json.dumps(
+            {
+                "session_date": now_ist.date().isoformat(),
+                "capture_run_id": capture_run_id,
+                "minimum_coverage_fraction": arguments.minimum_coverage_fraction,
+                "coverage_lower_fence": session_report.coverage_lower_fence,
+                "total_rows": session_report.total_rows,
+                "bytes_per_row": session_report.bytes_per_row,
+                "usable_tokens": list(session_report.usable_tokens()),
+                "counts": {key.value: value for key, value in counts.items()},
+            },
+            indent=2,
+        )
+    )
+    log(f"verdict written to {verdict_path}")
     return 0
 
 

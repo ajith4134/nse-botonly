@@ -267,19 +267,53 @@ class DepthCaptureAdmissionController:
         liquidity_value_by_token: Mapping[int, float],
         projected_remaining_bytes: float,
         remaining_budget_bytes: float,
+        projected_bytes_by_token: Mapping[int, float] | None = None,
     ) -> tuple[int, ...]:
         """The lowest-value instruments to drop when the budget contracts mid-session.
 
         Shedding, rather than truncating the session, is the deliberate choice: what
         survives is then complete for the instruments that matter, instead of every
         instrument being uniformly half-recorded and none of them usable.
+
+        **Per-instrument costs, not a flat mean.** An earlier version divided the total
+        projection by the instrument count and assumed each shed token freed that much.
+        The tokens it sheds are the lowest-liquidity ones, which are also the *cheapest*
+        — so it consistently freed far less than it believed. Adversarial review
+        measured a case needing 7.16 MB freed where it shed 51 tokens and recovered
+        408 KB, missing by 17x, and another where a zero projection divided by zero.
+        Costs now come from the same measured per-instrument rates the admission
+        decision used, and tokens are shed until the budget is genuinely met.
         """
-        if projected_remaining_bytes <= remaining_budget_bytes or not admitted_tokens:
+        if not admitted_tokens:
             return ()
-        by_value = sorted(
-            admitted_tokens, key=lambda token: (liquidity_value_by_token.get(token, 0.0), token)
+        if projected_remaining_bytes <= remaining_budget_bytes:
+            return ()
+
+        if projected_bytes_by_token:
+            cost_of_token = {
+                token: float(projected_bytes_by_token.get(token, 0.0))
+                for token in admitted_tokens
+            }
+        else:
+            # No per-instrument costs supplied: fall back to an equal share, and say so
+            # rather than pretending the result is precise.
+            share = projected_remaining_bytes / len(admitted_tokens)
+            cost_of_token = dict.fromkeys(admitted_tokens, share)
+
+        by_value_then_token = sorted(
+            admitted_tokens,
+            key=lambda token: (liquidity_value_by_token.get(token, 0.0), token),
         )
-        bytes_per_token = projected_remaining_bytes / len(admitted_tokens)
-        overshoot = projected_remaining_bytes - remaining_budget_bytes
-        shed_count = min(len(by_value), int(overshoot / bytes_per_token) + 1)
-        return tuple(by_value[:shed_count])
+        must_free = projected_remaining_bytes - remaining_budget_bytes
+        freed = 0.0
+        shed: list[int] = []
+        for token in by_value_then_token:
+            if freed >= must_free:
+                break
+            shed.append(token)
+            freed += cost_of_token.get(token, 0.0)
+            if cost_of_token.get(token, 0.0) <= 0:
+                # A zero-cost token frees nothing; shedding more of them would loop
+                # forever without progress, so stop and report what could be freed.
+                continue
+        return tuple(shed)

@@ -17,6 +17,7 @@ store stay lock-free, and it is why shards map one-to-one onto both feeds and st
 
 from __future__ import annotations
 
+import contextlib
 import queue
 import threading
 import time
@@ -46,6 +47,7 @@ class ShardCaptureStatistics:
     packets_enqueued: int = 0
     packets_written: int = 0
     packets_dropped_to_overflow: int = 0
+    packets_arriving_after_stop: int = 0
     drops_by_token: dict[int, int] = field(default_factory=dict)
     flag_counts: dict[IntegrityFlag, int] = field(default_factory=dict)
     first_packet_at: datetime | None = None
@@ -81,6 +83,8 @@ class LiveOrderBookDepthRecorder:
         admission_decision: AdmissionDecision,
         session_ends_at: datetime,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        writer_poll_seconds: float = 0.5,
+        writer_join_timeout_seconds: float = 60.0,
     ) -> None:
         if not shards:
             raise DepthRecorderError("a capture needs at least one shard")
@@ -93,6 +97,9 @@ class LiveOrderBookDepthRecorder:
         self._writer_threads: list[threading.Thread] = []
         self._stop_requested = threading.Event()
         self._started = False
+        self._stopped = False
+        self._writer_poll_seconds = writer_poll_seconds
+        self._writer_join_timeout_seconds = writer_join_timeout_seconds
 
     @property
     def shards(self) -> tuple[ShardRuntime, ...]:
@@ -112,11 +119,20 @@ class LiveOrderBookDepthRecorder:
     def total_packets_dropped(self) -> int:
         return sum(shard.statistics.packets_dropped_to_overflow for shard in self._shards)
 
+    def total_packets_after_stop(self) -> int:
+        return sum(shard.statistics.packets_arriving_after_stop for shard in self._shards)
+
     def _handler_for(self, shard: ShardRuntime) -> Callable[[Sequence[DepthPacket]], None]:
         """The socket thread's entry point. Must never block and never raise."""
 
         def handle(packets: Sequence[DepthPacket]) -> None:
             statistics = shard.statistics
+            if self._stop_requested.is_set():
+                # The socket was told to close but frames are still in flight. Queuing
+                # these would put them behind the sentinel to be dropped unrecorded,
+                # which is the one thing this module promises never to do.
+                statistics.packets_arriving_after_stop += len(packets)
+                return
             try:
                 shard.packet_queue.put_nowait(packets)
                 statistics.packets_enqueued += len(packets)
@@ -129,10 +145,26 @@ class LiveOrderBookDepthRecorder:
         return handle
 
     def _writer_loop(self, shard: ShardRuntime) -> None:
+        """Drain, classify and store until asked to stop AND the queue is empty.
+
+        Polling with a timeout rather than blocking forever on `get()` does three jobs
+        at once: it lets a time-based flush actually fire on a shard whose feed has gone
+        quiet, it lets the writer notice a stop request without depending on a sentinel
+        reaching it, and it removes the interleaving where `stop()` blocks forever
+        putting a sentinel into a full queue that no live consumer will ever drain.
+        """
         statistics = shard.statistics
         try:
             while True:
-                batch = shard.packet_queue.get()
+                try:
+                    batch = shard.packet_queue.get(timeout=self._writer_poll_seconds)
+                except queue.Empty:
+                    # Nothing arrived. This is exactly when a quiet shard's buffered
+                    # tail would otherwise sit in RAM past its configured flush bound.
+                    shard.store.flush_if_due()
+                    if self._stop_requested.is_set():
+                        break
+                    continue
                 if batch is None:
                     break
                 for packet in batch:
@@ -192,18 +224,51 @@ class LiveOrderBookDepthRecorder:
     def stop(self) -> None:
         """Disconnect, drain every queue, flush every store. Idempotent.
 
-        Ordering matters and is deliberate: stop the feeds first so nothing new
-        arrives, then drain, then flush. Flushing before draining would leave the
-        buffered tail in memory to be lost.
+        Ordering is deliberate: stop the feeds first so nothing new arrives, then let
+        the writers drain what is queued, then close. Flushing before draining would
+        leave the buffered tail in memory to be lost.
+
+        Three failure paths are handled explicitly because each was found by adversarial
+        review, and each loses data silently:
+
+        - The sentinel is offered **without blocking**. A dead writer plus a full queue
+          would otherwise hang `stop()` forever, and since `stop()` runs in the script's
+          `finally`, the session would need `kill -9` — taking every other shard's
+          buffer with it. The stop event, not the sentinel, is what the writers obey.
+        - Every store is closed inside its own guard. An unguarded loop lets one shard's
+          disk-full `close()` abort the loop and destroy the *healthy* shards' tails.
+        - Writers that do not exit in time are reported rather than assumed finished.
         """
+        if self._stopped:
+            return
+        self._stopped = True
+
         for shard in self._shards:
             shard.feed.stop()
+        # A socket close is asynchronous; in-flight frames can still arrive. Setting
+        # this first means late packets are counted as late instead of vanishing.
+        self._stop_requested.set()
+
+        for shard, writer_thread in zip(self._shards, self._writer_threads, strict=False):
+            if writer_thread.is_alive():
+                # The stop event is what ends the loop; the sentinel only makes it
+                # prompt. A full queue is therefore not a problem to handle, it is a
+                # case where the shortcut is simply unavailable.
+                with contextlib.suppress(queue.Full):
+                    shard.packet_queue.put_nowait(None)
+
+        unfinished_writers = []
+        for shard, writer_thread in zip(self._shards, self._writer_threads, strict=False):
+            writer_thread.join(timeout=self._writer_join_timeout_seconds)
+            if writer_thread.is_alive():
+                unfinished_writers.append(shard.shard_index)
+
+        close_failures: list[tuple[int, BaseException]] = []
         for shard in self._shards:
-            shard.packet_queue.put(None)
-        for writer_thread in self._writer_threads:
-            writer_thread.join(timeout=60.0)
-        for shard in self._shards:
-            shard.store.close()
+            try:
+                shard.store.close()
+            except BaseException as close_failure:  # noqa: BLE001 — all shards get their chance
+                close_failures.append((shard.shard_index, close_failure))
 
         first_exception = next(
             (
@@ -217,6 +282,16 @@ class LiveOrderBookDepthRecorder:
             raise DepthRecorderError(
                 "a tape writer died during the session; the tape is incomplete"
             ) from first_exception
+        if close_failures:
+            shard_indexes = ", ".join(str(index) for index, _ in close_failures)
+            raise DepthRecorderError(
+                f"shard(s) {shard_indexes} failed to close; their buffered tail is lost"
+            ) from close_failures[0][1]
+        if unfinished_writers:
+            raise DepthRecorderError(
+                f"writer thread(s) {unfinished_writers} did not finish draining within "
+                f"{self._writer_join_timeout_seconds}s; the tape may be incomplete"
+            )
 
     def __enter__(self) -> LiveOrderBookDepthRecorder:
         self.start()

@@ -168,6 +168,20 @@ class MarketDepthTapeStore:
         elapsed = time.monotonic() - self._last_flush_monotonic
         return bool(self._buffer) and elapsed >= self._max_seconds_between_flushes
 
+    def flush_if_due(self) -> TapeFlushRecord | None:
+        """Flush only when a bound has been reached — the time bound's only caller.
+
+        `_flush_is_due` used to be consulted exclusively from `append`, so the
+        `max_seconds_between_flushes` bound could not fire on a shard whose feed had
+        gone quiet: no packet meant no check, and the buffer sat in RAM indefinitely
+        past the bound the operator configured. Under the `kill -9` this module treats
+        as the expected end of an unattended capture, that whole buffer was lost. The
+        writer thread now calls this whenever its queue poll times out.
+        """
+        if self._closed or not self._flush_is_due():
+            return None
+        return self.flush()
+
     def flush(self) -> TapeFlushRecord | None:
         """Write the buffer as one atomic part file. Returns None if nothing buffered."""
         if not self._buffer:
@@ -303,6 +317,15 @@ class MarketDepthTapeReader:
         """The last known book at or before `as_of`, or None if nothing precedes it.
 
         This is the reconstruction primitive `1.22` will build on.
+
+        **Ordered by time first, sequence second.** `receipt_sequence` counts within one
+        FEED, not within a session: a recorder restarted mid-session — or a calibration
+        pass followed by a full session — starts a fresh feed whose counter begins again
+        at zero. Ordering by sequence alone therefore lets an older run's high sequence
+        beat a newer run's low one and return a stale book. Measured on the 2026-08-11
+        tape: two runs with overlapping ranges 1..132,313 across 4,236 shared
+        instruments. `receipt_time` is the cross-run truth; the sequence only breaks
+        ties inside a single feed's sub-second batches, which is exactly what it can do.
         """
         session_start = datetime.combine(session_date, datetime.min.time(), tzinfo=UTC)
         rows = self.read_instrument_window(
@@ -310,7 +333,9 @@ class MarketDepthTapeReader:
         )
         if rows.num_rows == 0:
             return None
-        ordered = rows.sort_by([("receipt_sequence", "ascending")])
+        ordered = rows.sort_by(
+            [(time_column, "ascending"), ("receipt_sequence", "ascending")]
+        )
         return {name: ordered.column(name)[-1].as_py() for name in ordered.column_names}
 
     def instrument_tokens(self, session_date: date) -> list[int]:

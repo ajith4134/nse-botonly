@@ -8,11 +8,13 @@ the `R.05` real-data pass against the live socket.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import queue
 import subprocess
 import sys
 import threading
+import time
 from collections.abc import Iterable, Sequence
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -64,6 +66,10 @@ KITE_CONNECTION_CEILING = 3_000
 SESSION_PACKET_COUNT = 200
 LEAST_LIQUID_TOKEN = 30
 MOST_LIQUID_TOKEN = 20
+NEWER_RUN_PRICE_PAISE = 200_000
+IN_FLIGHT_PACKET_COUNT = 100
+MINIMUM_ATOMIC_RENAMES = 2
+MINIMUM_FSYNC_CALLS = 2
 SINGLE_SIGHTING_TOKEN = 999
 
 
@@ -105,9 +111,17 @@ class DeterministicDepthFeed:
         self.start_count += 1
 
     def emit_all(self, batch_size: int = 1) -> None:
-        assert self._handler is not None
         for index in range(0, len(self._packets), batch_size):
-            self._handler(self._packets[index : index + batch_size])
+            self.deliver(self._packets[index : index + batch_size])
+
+    def deliver(self, packets: Sequence[DepthPacket]) -> None:
+        """Push one batch through the handler, as a real socket thread would.
+
+        Exposed deliberately: several tests need to deliver frames at a moment
+        `emit_all` cannot express — after `stop()`, or once a writer has died.
+        """
+        assert self._handler is not None
+        self._handler(packets)
 
     def subscribe(self, instrument_tokens: Iterable[int]) -> None:
         self._subscribed.update(instrument_tokens)
@@ -859,3 +873,207 @@ def test_a_row_exactly_at_the_window_end_is_excluded(tmp_path: Path) -> None:
         738561, BASE_TIME, exact_receipt, SESSION_DATE
     )
     assert table.num_rows == 0
+
+
+# ------------------------------- defects found by adversarial review (C1-C5, T1-T3)
+
+
+@pytest.mark.adversarial
+def test_stop_does_not_hang_when_a_writer_died_and_the_queue_is_full(tmp_path: Path) -> None:
+    """C1. `stop()` runs in the script's `finally`, so a hang there means the session
+    must be `kill -9`'d — taking every other shard's buffered tail with it. The trigger
+    is the disk-full case the spec explicitly lists."""
+    recorder, feed, shard = _recorder(tmp_path, [], queue_size=2)
+
+    class ExplodingStore:
+        def append(self, *_args: object, **_kwargs: object) -> None:
+            raise OSError("No space left on device")
+
+        def flush_if_due(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    object.__setattr__(shard, "store", ExplodingStore())
+    recorder.start()
+    feed.deliver([_packet(sequence=1)])
+    deadline = time.monotonic() + 20.0
+    while shard.statistics.writer_exception is None and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert shard.statistics.writer_exception is not None
+    # Fill the queue now that nothing is draining it.
+    for sequence in range(10):
+        with contextlib.suppress(queue.Full):
+            shard.packet_queue.put_nowait([_packet(sequence=sequence)])
+    assert shard.packet_queue.full()
+
+    finished = threading.Event()
+
+    def stop_in_background() -> None:
+        with contextlib.suppress(DepthRecorderError):
+            recorder.stop()
+        finished.set()
+
+    threading.Thread(target=stop_in_background, daemon=True).start()
+    assert finished.wait(timeout=30.0), "stop() blocked with a dead writer and a full queue"
+
+
+@pytest.mark.adversarial
+def test_book_at_prefers_the_newest_row_across_capture_runs(tmp_path: Path) -> None:
+    """C2. `receipt_sequence` restarts at zero for every feed, so an older run's high
+    sequence must not beat a newer run's low one. Measured on the 2026-08-11 tape:
+    two runs with overlapping ranges over 4,236 shared instruments."""
+    with _store(tmp_path, capture_run_id="calibration") as first_run:
+        for sequence in range(300, 400):
+            first_run.append(_packet(sequence=sequence, price=100_000), IntegrityFlag.NONE)
+    with _store(tmp_path, capture_run_id="fullsession") as second_run:
+        for sequence in range(1, 50):
+            second_run.append(
+                DepthPacket(
+                    instrument_token=738561,
+                    exchange="NSE",
+                    exchange_time=BASE_TIME + timedelta(hours=2),
+                    receipt_time=BASE_TIME + timedelta(hours=2, seconds=sequence),
+                    receipt_sequence=sequence,
+                    last_price_paise=200_000,
+                    last_traded_quantity=1,
+                    average_traded_price_paise=200_000,
+                    volume_traded=sequence,
+                    total_buy_quantity=1,
+                    total_sell_quantity=1,
+                    open_interest=0,
+                    bids=tuple(DepthLevel(199_990 - i, 1, 1) for i in range(5)),
+                    asks=tuple(DepthLevel(200_010 + i, 1, 1) for i in range(5)),
+                ),
+                IntegrityFlag.NONE,
+            )
+    book = MarketDepthTapeReader(tmp_path).book_at(
+        738561, BASE_TIME + timedelta(hours=3), SESSION_DATE
+    )
+    assert book is not None
+    assert book["last_price_paise"] == NEWER_RUN_PRICE_PAISE, "stale cross-run book"
+
+
+@pytest.mark.adversarial
+def test_packets_arriving_after_stop_are_counted_not_silently_dropped(
+    tmp_path: Path,
+) -> None:
+    """C3. A socket close is asynchronous, so in-flight frames still arrive. Queuing
+    them behind the sentinel loses them without any counter moving — the one thing the
+    module docstring promises never happens."""
+    recorder, feed, shard = _recorder(tmp_path, [])
+    recorder.start()
+    recorder.stop()
+    feed.deliver([_packet(sequence=n) for n in range(IN_FLIGHT_PACKET_COUNT)])
+    assert shard.statistics.packets_arriving_after_stop == IN_FLIGHT_PACKET_COUNT
+    assert recorder.total_packets_after_stop() == IN_FLIGHT_PACKET_COUNT
+
+
+@pytest.mark.adversarial
+def test_one_shards_failing_close_does_not_destroy_another_shards_tail(
+    tmp_path: Path,
+) -> None:
+    """C4. An unguarded close loop lets a disk-full shard abort the loop, so every
+    healthy shard after it never flushes and loses its whole buffer."""
+    healthy_store = _store(tmp_path, shard_index=9, max_buffered_rows=1_000_000)
+
+    class UnclosableStore:
+        def append(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+        def flush_if_due(self) -> None:
+            return None
+
+        def close(self) -> None:
+            raise OSError("No space left on device")
+
+    from nse_algo_trader.market_depth.depth_capture_admission_controller import (
+        AdmissionDecision,
+    )
+
+    shards = [
+        ShardRuntime(
+            0,
+            DeterministicDepthFeed([]),
+            UnclosableStore(),  # type: ignore[arg-type]
+            queue.Queue(),
+            ShardCaptureStatistics(),
+        ),
+        ShardRuntime(
+            9,
+            DeterministicDepthFeed([]),
+            healthy_store,
+            queue.Queue(),
+            ShardCaptureStatistics(),
+        ),
+    ]
+    recorder = LiveOrderBookDepthRecorder(
+        session_date=SESSION_DATE,
+        shards=shards,
+        classifier=DepthPacketIntegrityClassifier(),
+        admission_decision=AdmissionDecision((), (), 0.0, 1.0, 1.0, 1.0, False, 0, None),
+        session_ends_at=datetime.now(UTC) + timedelta(seconds=30),
+    )
+    recorder.start()
+    healthy_store.append(_packet(sequence=1), IntegrityFlag.NONE)
+    with pytest.raises(DepthRecorderError, match="failed to close"):
+        recorder.stop()
+    assert healthy_store.rows_written == 1, "the healthy shard's tail was lost"
+
+
+@pytest.mark.adversarial
+def test_a_quiet_shard_still_flushes_on_the_time_bound(tmp_path: Path) -> None:
+    """C5. `_flush_is_due` was consulted only from `append`, so a shard whose feed went
+    quiet held its buffer past the configured bound — and lost it on `kill -9`."""
+    store = _store(tmp_path, max_buffered_rows=1_000_000, max_seconds_between_flushes=0.2)
+    store.append(_packet(sequence=1), IntegrityFlag.NONE)
+    assert store.rows_written == 0
+    time.sleep(0.3)
+    assert store.flush_if_due() is not None
+    assert store.rows_written == 1
+
+
+@pytest.mark.adversarial
+def test_a_part_is_published_only_by_an_atomic_rename(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T1. The atomicity claim was entirely untested: the old test hand-created a
+    `.tmp` file and so verified pyarrow's dot-file filtering, not the writer's naming.
+    This asserts the final path never exists until a rename publishes it."""
+    renames: list[tuple[str, str]] = []
+    original_replace = Path.replace
+
+    def recording_replace(self: Path, target: object) -> Path:
+        assert self.name.startswith("."), "part was written under its final name"
+        assert not Path(str(target)).exists(), "final path existed before the rename"
+        renames.append((self.name, Path(str(target)).name))
+        return original_replace(self, target)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "replace", recording_replace)
+    with _store(tmp_path, max_buffered_rows=2) as store:
+        for sequence in range(1, 5):
+            store.append(_packet(sequence=sequence), IntegrityFlag.NONE)
+    assert len(renames) >= MINIMUM_ATOMIC_RENAMES
+    assert all(temp.endswith(".tmp") and final.endswith(".parquet") for temp, final in renames)
+
+
+@pytest.mark.adversarial
+def test_a_flush_fsyncs_both_the_part_and_its_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T2. `kill -9` never drops page cache, so the kill test could not possibly have
+    exercised fsync — deleting both fsync calls left the suite green. Only power loss
+    would show it, so the calls are asserted directly."""
+    fsync_calls: list[int] = []
+    original_fsync = os.fsync
+
+    def counting_fsync(file_descriptor: int) -> None:
+        fsync_calls.append(file_descriptor)
+        original_fsync(file_descriptor)
+
+    monkeypatch.setattr(os, "fsync", counting_fsync)
+    with _store(tmp_path, max_buffered_rows=1) as store:
+        store.append(_packet(sequence=1), IntegrityFlag.NONE)
+    # One for the part file's contents, one for the directory entry naming it.
+    assert len(fsync_calls) >= MINIMUM_FSYNC_CALLS

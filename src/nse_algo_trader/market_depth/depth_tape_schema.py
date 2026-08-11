@@ -110,8 +110,12 @@ class DepthPacket:
     exist because **the feed carries no sequence number and `exchange_time` has only
     one-second resolution**, while the measured p10 inter-packet gap is 0.25s — so
     several packets per instrument per exchange-second are routine and exchange time
-    alone cannot order them. Receipt sequence is the only total order the tape can
-    honestly offer.
+    alone cannot order them.
+
+    `receipt_sequence` is monotonic **within one feed**, NOT across a session: a
+    restarted recorder, or a calibration pass followed by a full session, starts a
+    fresh counter at zero. Readers must order by `receipt_time` first and use the
+    sequence only to break ties within one feed's sub-second batches.
     """
 
     instrument_token: int
@@ -198,8 +202,10 @@ DEPTH_TAPE_ARROW_SCHEMA = pa.schema(
         b"price_scale": b"paise",
         b"depth_levels_per_side": str(DEPTH_LEVELS_PER_SIDE).encode(),
         b"receipt_sequence_semantics": (
-            b"monotonic per capture session; the only total order, as the feed "
-            b"carries no sequence number and exchange_time is second-resolution"
+            b"monotonic within ONE FEED, not across a session: a restarted recorder "
+            b"or a calibration pass starts a fresh counter at zero. Order by "
+            b"receipt_time first and use this only to break ties inside one feed's "
+            b"sub-second batches, since exchange_time is second-resolution"
         ),
     },
 )

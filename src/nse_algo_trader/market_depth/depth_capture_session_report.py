@@ -31,6 +31,12 @@ from pathlib import Path
 from nse_algo_trader.market_depth.depth_tape_schema import IntegrityFlag
 from nse_algo_trader.market_depth.market_depth_tape_store import MarketDepthTapeReader
 
+GAP_MULTIPLE_OF_MEDIAN_INTERVAL = 3.0
+"""How many times its own median inter-arrival an instrument may pause before the pause
+counts as a gap. A multiple of a robust centre rather than a fixed number of seconds,
+because the measured cross-sectional rate spread is 130x — a name quoting twice a second
+and one quoting every eight seconds cannot share a wall-clock threshold."""
+
 MINIMUM_RECEIPTS_FOR_A_GAP = 2
 """An inter-arrival needs two arrivals; with fewer there is no gap to measure and the
 instrument counts as wholly uncovered."""
@@ -140,7 +146,12 @@ def tukey_lower_fence(values: Sequence[float]) -> float:
 
     first_quartile = quantile(0.25)
     third_quartile = quantile(0.75)
-    return first_quartile - 1.5 * (third_quartile - first_quartile)
+    fence = first_quartile - 1.5 * (third_quartile - first_quartile)
+    # Coverage fractions live in [0, 1], so an unclamped fence goes negative whenever
+    # the IQR exceeds two-thirds of Q1 — the normal shape given a 130x rate spread —
+    # and can then never fire. Adversarial review measured exactly that: a session
+    # spanning 5% to 99% coverage produced a fence of -0.42 and passed everything.
+    return max(fence, 0.0)
 
 
 def _gap_statistics(
@@ -148,24 +159,31 @@ def _gap_statistics(
 ) -> tuple[float, float]:
     """(covered seconds, largest gap seconds) for one instrument's receipts.
 
-    A gap is an inter-arrival longer than that instrument's own 99th-percentile
-    inter-arrival — its own notion of a pause, not a global one. Coverage is the
-    session time not inside such a gap.
+    A gap is an inter-arrival longer than `GAP_MULTIPLE_OF_MEDIAN_INTERVAL` times that
+    instrument's own **median** inter-arrival.
+
+    The median, not a high quantile. An earlier version used the instrument's own 99th
+    percentile, which is self-referential in the worst way: if more than 1% of intervals
+    are outages then the "normal" interval *is* an outage and no gap is ever counted.
+    Adversarial review measured the consequence — an instrument that quoted for 380
+    seconds of a 6.5-hour session, in twenty 20-minute-separated bursts, reported **99%
+    coverage and a clean verdict**. The median has a 50% breakdown point, so it keeps
+    describing normal behaviour until an instrument is silent more often than not.
+
+    Coverage is measured against the whole session, so time before the first packet and
+    after the last counts as uncovered — an instrument that quoted only in the last ten
+    minutes covered ten minutes, not "all of its span".
     """
     if len(receipt_times) < MINIMUM_RECEIPTS_FOR_A_GAP:
         return (0.0, session_seconds)
     ordered = sorted(receipt_times)
-    intervals = [
-        (later - earlier).total_seconds()
-        for earlier, later in pairwise(ordered)
-    ]
+    intervals = [(later - earlier).total_seconds() for earlier, later in pairwise(ordered)]
     sorted_intervals = sorted(intervals)
-    extreme_index = min(len(sorted_intervals) - 1, int(0.99 * len(sorted_intervals)))
-    normal_interval = sorted_intervals[extreme_index]
-    gap_seconds = sum(interval for interval in intervals if interval > normal_interval)
+    median_interval = sorted_intervals[len(sorted_intervals) // 2]
+    gap_threshold = max(median_interval * GAP_MULTIPLE_OF_MEDIAN_INTERVAL, 0.0)
+    covered = sum(interval for interval in intervals if interval <= gap_threshold)
     span = (ordered[-1] - ordered[0]).total_seconds()
     outside_span = max(0.0, session_seconds - span)
-    covered = max(0.0, span - gap_seconds)
     return (covered, max([*intervals, outside_span]))
 
 
@@ -173,9 +191,24 @@ def build_session_report(
     tape_root: Path,
     session_date: date,
     session_seconds: float,
+    minimum_coverage_fraction: float,
     dropped_packets_by_token: Mapping[int, int] | None = None,
 ) -> DepthCaptureSessionReport:
-    """Read a session's tape and judge every instrument in it."""
+    """Read a session's tape and judge every instrument in it.
+
+    `minimum_coverage_fraction` is a **policy input and is required**, in the same way
+    `retention_sessions` is: how much of a session must be covered before the data is
+    fit for microstructure work is a judgement about the intended use, not a fact
+    recoverable from the tape. It is demanded rather than defaulted because the relative
+    fence alone cannot catch a session in which the whole feed was degraded — every
+    instrument is then equally bad, no instrument is an outlier, and adversarial review
+    measured ten instruments that each quoted 40 seconds of a 6.5-hour session all
+    passing as `USABLE`.
+
+    The two tests are complementary and both are applied: the absolute floor catches a
+    uniformly bad session, and the relative fence catches an instrument that is bad
+    *for this session* even when the floor is generous.
+    """
     reader = MarketDepthTapeReader(tape_root)
     dropped = dict(dropped_packets_by_token or {})
     tokens = reader.instrument_tokens(session_date)
@@ -222,6 +255,12 @@ def build_session_report(
             usability = InstrumentSessionUsability.UNUSABLE
             reasons.append("no rows captured")
         else:
+            if coverage_fraction < minimum_coverage_fraction:
+                usability = InstrumentSessionUsability.UNUSABLE
+                reasons.append(
+                    f"coverage {coverage_fraction:.1%} is below the required "
+                    f"{minimum_coverage_fraction:.1%}"
+                )
             if coverage_fraction < lower_fence:
                 usability = InstrumentSessionUsability.UNUSABLE
                 reasons.append(
@@ -269,12 +308,19 @@ def build_session_report(
     if total_dropped:
         notes.append(f"{total_dropped:,} packets were dropped to queue overflow overall")
 
+    # This session's bytes, not the whole tape's: dividing all-sessions bytes by
+    # one-session rows overstated bytes/row 5x in review, and that figure is what the
+    # admission controller sizes the capture universe from.
+    session_directory = tape_root / f"session_date={session_date.isoformat()}"
+    session_bytes = sum(
+        part.stat().st_size for part in session_directory.rglob("*.parquet")
+    )
     return DepthCaptureSessionReport(
         session_date=session_date,
         tape_root=tape_root,
         instrument_quality=tuple(qualities),
         total_rows=total_rows,
-        total_bytes=reader.total_bytes_on_disk(),
+        total_bytes=session_bytes,
         coverage_lower_fence=lower_fence,
         notes=tuple(notes),
     )
