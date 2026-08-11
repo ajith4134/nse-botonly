@@ -8,6 +8,21 @@ Reconcile with the live task list at each session start.
 
 Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) · ⛔ blocked
 
+## Shared NSE ingest core (`A.46`, spec `research/209`) — 🟡 spec written, sourcing in flight
+
+- 🟡 **Sourcing gate open (`R.I`).** `research/210` is being produced now — NSE-specific libraries
+  (`jugaad-data`, `nsepython`, `nsepy`, …) and generic retry/bitemporal parts, each installed and
+  called against the REAL endpoints. **No adapter is built until it lands**, so that an existing
+  library is adopted rather than reimplemented.
+- ⛔ **Three of nine sources are BLOCKED and are not being scoped down (`R.16`).** `atm_implied_volatility`
+  (NSE option-chain API 404), historical `bulk_block_deals` (503 bot-block), `circuit_band_asm_gsm`
+  (ASM page is a JS shell with no fetchable data). Each needs an acquisition path found, not a reduced
+  feature.
+- 🔴 **Rolling today-only sources are accruing nothing until built.** The F&O ban list, bulk/block
+  deals and the circuit-band `sec_list.csv` have NO archive — history exists only from the day
+  snapshotting starts. Same permanent-loss shape as the depth tape (`A.44`), so these are the highest
+  urgency of the nine.
+
 ## Live depth capture `L0.20`/`L0.21` (2026-08-11) — 🟡 capturing, consumers queued
 
 Built and R.05-verified on the live socket during the 2026-08-11 session (see `A.44`, `A.45`,
