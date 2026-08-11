@@ -447,3 +447,96 @@ def test_coverage_reports_a_source_with_nothing(store: BitemporalIngestStore) ->
     assert not report.has_any_data
     assert report.years == ()
     assert report.worst_year() is None
+
+
+# ------------------------------------ gaps found by mutation testing (ingest core)
+
+
+@pytest.mark.adversarial
+def test_a_not_found_is_not_retried() -> None:
+    """A 404 means the file does not exist — usually a holiday. Retrying it turns every
+    non-session day into four pointless requests against a host that bot-blocks."""
+
+    class NotFoundSession:
+        headers: ClassVar[dict[str, str]] = {}
+        calls = 0
+
+        def get(self, *_args: object, **_kwargs: object) -> object:
+            NotFoundSession.calls += 1
+
+            class Response:
+                status_code = 404
+                content = b"not found"
+
+            return Response()
+
+    fetcher = NseSourceFetcher(
+        http_session=NotFoundSession(),  # type: ignore[arg-type]
+        retry_policy=RetryPolicy(maximum_attempts=4, initial_backoff_seconds=0.0),
+        sleep=lambda _seconds: None,
+    )
+    outcome = fetcher.fetch(_target())
+    assert outcome.status is FetchStatus.NOT_FOUND
+    assert outcome.attempts == 1
+    assert NotFoundSession.calls == 1
+
+
+@pytest.mark.unit
+def test_require_payload_returns_the_bytes_on_success() -> None:
+    """The happy path of the guard. Inverting its condition would raise on every good
+    fetch and hand back bytes for every bad one."""
+    payload = _payload_for(date(2026, 8, 10))
+    outcome = _outcome(_target(), FetchStatus.RETRIEVED, payload)
+    assert outcome.require_payload() == payload
+
+
+@pytest.mark.unit
+def test_todays_effective_date_is_accepted() -> None:
+    """The rolling ban list is dated TODAY. A future-date guard written as `>=` would
+    reject the one source that most needs storing, every single day."""
+    import tempfile
+
+    with (
+        tempfile.TemporaryDirectory() as scratch,
+        BitemporalIngestStore(Path(scratch) / "today.sqlite3") as store,
+    ):
+        observed = datetime.now(UTC)
+        fetch_id = store.record_fetch(SOURCE, "u", observed, "retrieved", "e", 1)
+        today = datetime.now(UTC).date()
+        result = store.ingest_rows(
+            SOURCE, [IngestRow({"x": 1}, today, ("A",))], observed, fetch_id
+        )
+        assert result.rows_inserted == 1
+
+
+@pytest.mark.unit
+def test_an_outcome_only_succeeds_when_fetched_and_parsed(
+    store: BitemporalIngestStore,
+) -> None:
+    """`succeeded` must require BOTH. An `or` would report a blocked fetch as a success
+    and a run would look clean while storing nothing."""
+    from nse_algo_trader.nse_ingest.nse_source_ingest_runner import TargetIngestOutcome
+
+    clean = TargetIngestOutcome(_target(), FetchStatus.RETRIEVED, "ok")
+    blocked = TargetIngestOutcome(_target(), FetchStatus.BOT_BLOCKED, "HTTP 403")
+    unparsed = TargetIngestOutcome(
+        _target(), FetchStatus.RETRIEVED, "ok", parse_error="bad csv"
+    )
+    assert clean.succeeded
+    assert not blocked.succeeded
+    assert not unparsed.succeeded
+
+
+@pytest.mark.unit
+def test_the_coverage_report_counts_failed_fetches_separately(
+    store: BitemporalIngestStore,
+) -> None:
+    """A source blocked for a week must be visible as failures, not folded into the
+    successes or subtracted the wrong way."""
+    now = datetime.now(UTC)
+    store.record_fetch(SOURCE, "u", now, "retrieved", "ok", 1)
+    store.record_fetch(SOURCE, "u", now, "bot_blocked", "HTTP 403", 4)
+    store.record_fetch(SOURCE, "u", now, "not_found", "HTTP 404", 1)
+    report = build_source_coverage_report(store, SOURCE)
+    assert report.successful_fetches == 1
+    assert report.failed_fetches == EXPECTED_TWO_OBSERVATIONS
