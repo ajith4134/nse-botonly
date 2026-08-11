@@ -110,15 +110,36 @@ class NseIngestAdapterConformance(abc.ABC):
     @pytest.mark.unit
     def test_parsed_rows_are_well_formed(self, adapter: NseIngestSourceAdapter) -> None:
         for target, payload, _ in self.sample_payloads():
-            for row in adapter.parse(payload, target):
+            rows = adapter.parse(payload, target)
+            for row in rows:
                 assert isinstance(row, IngestRow)
                 assert row.natural_key, "a row must be uniquely identifiable"
-                assert all(str(part).strip() for part in row.natural_key), (
-                    "a natural key with an empty part is not uniquely identifiable — "
-                    f"every row of {adapter.source_name} would collide into one"
+                # At least one part must carry information. Deliberately NOT "every
+                # part": a composite key across a segment with optional dimensions has
+                # legitimately empty components — a cash equity has no expiry, strike or
+                # option type, while an option in the same schema has all three. The
+                # property that matters is informativeness plus uniqueness, checked
+                # below, and an earlier version of this clause demanded every part be
+                # non-empty and so rejected a correct adapter.
+                assert any(str(part).strip() for part in row.natural_key), (
+                    "a natural key with no non-empty part identifies nothing — every "
+                    f"row of {adapter.source_name} would collide into one"
                 )
                 assert row.values, "a row with no values carries no information"
                 assert row.effective_date >= adapter.coverage_floor.earliest_date
+
+            # The real guarantee: within one payload no two rows share a key. A key too
+            # coarse to separate them makes the store treat siblings as revisions of one
+            # another and silently keep only the last — which for an option chain means
+            # discarding hundreds of contracts per underlying per day.
+            keys_by_date: dict[object, set[tuple[str, ...]]] = {}
+            for row in rows:
+                seen = keys_by_date.setdefault(row.effective_date, set())
+                assert row.natural_key not in seen, (
+                    f"{adapter.source_name}: natural key {row.natural_key} repeats "
+                    f"within {row.effective_date} — rows would be lost as revisions"
+                )
+                seen.add(row.natural_key)
 
     @pytest.mark.adversarial
     def test_malformed_payloads_raise_rather_than_yielding_rows(

@@ -25,11 +25,18 @@ Core built 2026-08-11: `nse_source_fetcher` (content-aware failure classificatio
   the clause it violates. Guarding the guard found **two defects in the suite itself**: a
   `pytest.raises` that caught the assertion raised inside its own block (so the clause passed
   unconditionally), and a natural-key check satisfied by `("",)`.
-- ⛔ **R.05 END-TO-END is still OPEN.** The classifier is verified on real endpoints and the store and
-  runner are verified hermetically, but no real adapter exists yet, so the full fetch→parse→store
-  path has not run against a real source. Closes with wave 1.
-- 🔴 **Wave 1 (next):** `nse_bhavcopy` (two schema eras, largest volume) and `fo_ban_list` (rolling,
-  today-only). Vendor-and-adapt `nse` (BennyThadikaran) and `nselib` respectively, per `A.49`.
+- 🟢 **R.05 END-TO-END CLOSED (wave 1, 2026-08-11).** The real pipeline ran against live NSE:
+  **107,695 rows** across `nse_bhavcopy_cash`, `nse_bhavcopy_fo` and `fo_ban_list`, spanning BOTH
+  schema eras (legacy 2020-01-02 and UDiFF 2026-08-10) in one store. Sunday 2026-08-09 correctly
+  `not_found` rather than silently ingested; re-running inserted **0 rows** (idempotence on real
+  data); `RELIANCE` 2026-08-10 close 1327.30 read back correctly.
+- 🟢 **Wave 1 built and certified** — `nse_bhavcopy` (`L0.23`, cash + F&O) and `fo_ban_list`
+  (`L0.25`). Both pass the conformance suite on REAL captured payloads.
+- 🔴 **`fo_ban_list` accrues only forward.** Today's snapshot (BANDHANBNK, SAIL for 2026-08-11) is the
+  first. Needs a **daily scheduled run** or the history it exists to build will not build; nothing
+  schedules it yet.
+- 🔴 **Wave 2 (next):** the remaining seven adapters, fanned out per `A.46` now that the contract has
+  survived contact with two real sources.
 - 🔴 **R.08 no dashboard surface** for ingest coverage or blocked sources yet.
 - ⛔ **Three of nine sources are BLOCKED and are not being scoped down (`R.16`).** `atm_implied_volatility`
   (NSE option-chain API 404), historical `bulk_block_deals` (503 bot-block), `circuit_band_asm_gsm`

@@ -115,9 +115,22 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       and is the admission controller's key input. ArcticDB and `nautilus_trader` were both rejected on
       MECHANICAL evidence (`R.17`): neither is pip-installable on this ARM64 / glibc-2.34 host.
 - [ ] **1.22** Tick-level order-book reconstruction — `L0.22`
-- [ ] **1.23** NSE bhavcopy ingest — `L0.23`
+- [~] **1.23** NSE bhavcopy ingest — `L0.23` — *built on the shared ingest core (`A.46`), cash AND
+      F&O, across BOTH schema eras: legacy 14-column `SYMBOL`/`TIMESTAMP` files and 34-column UDiFF
+      `TckrSymb`/`TradDt` files, with the era boundary MEASURED (legacy 404s from 2024-07-08, UDiFF
+      404s before 2024-07-01, so the overlap is real). Certified through the conformance suite on real
+      captured payloads. **R.05 passed end-to-end on live NSE: 107,695 rows** across three sources and
+      both eras; idempotent re-run inserted 0. The F&O natural key carries expiry/strike/option-type —
+      a symbol-only key would collapse a whole option chain into one row and discard the rest as
+      revisions. `[~]` per `R.08`: no dashboard surface yet.*
 - [ ] **1.24** MWPL position-limit ingest — `L0.24`
-- [ ] **1.25** F&O ban-list ingest — `L0.25`
+- [~] **1.25** F&O ban-list ingest — `L0.25` — *built on the shared ingest core. A ROLLING file with
+      no archive: NSE overwrites `fo_secban.csv` in place, so history accrues only from the first
+      snapshot and is never retrievable retroactively — the same permanent-loss shape as the depth
+      tape (`A.44`). The file dates itself in a prose header (`Trade Date 11-AUG-2026`) and the URL
+      does not, which is what makes `observed_at` load-bearing. First real snapshot stored:
+      BANDHANBNK, SAIL for 2026-08-11. `[~]` per `R.11`: nothing schedules the daily run yet, and
+      without it the history this exists to build will not build.*
 - [ ] **1.26** Bulk / block deals ingest — `L0.26`
 - [ ] **1.27** ATM implied-volatility daily series — `L0.27`
 - [ ] **1.28** Circuit-band / ASM / GSM state per symbol — `L0.28`

@@ -89,6 +89,24 @@ class KeylessRowAdapter(WellBehavedAdapter):
         ]
 
 
+class CollidingKeyAdapter(WellBehavedAdapter):
+    """Keys every row by a constant, so siblings look like revisions of one another.
+
+    The failure mode this models is the expensive one: a natural key too coarse to
+    separate an option chain makes the store keep only the last contract per underlying
+    per day and discard the rest as revisions — silently, and without any count moving.
+    """
+
+    def parse(self, payload: bytes, target: FetchTarget) -> Sequence[IngestRow]:
+        rows = super().parse(payload, target)
+        return [
+            IngestRow(
+                values=row.values, effective_date=row.effective_date, natural_key=("SAME",)
+            )
+            for row in rows
+        ]
+
+
 class _ConformanceHarness(NseIngestAdapterConformance):
     """Runs the suite's clauses against an arbitrary adapter, outside pytest collection."""
 
@@ -128,7 +146,17 @@ def test_the_suite_rejects_rows_without_a_natural_key() -> None:
     """An empty-string key is not caught by `IngestRow`'s own guard, so the suite must
     catch it — otherwise every row of a source collides into one and revisions are lost."""
     harness = _ConformanceHarness(KeylessRowAdapter())
-    with pytest.raises(AssertionError, match="uniquely identifiable"):
+    with pytest.raises(AssertionError, match="identifies nothing"):
+        harness.test_parsed_rows_are_well_formed(harness.build_adapter())
+
+
+@pytest.mark.adversarial
+def test_the_suite_rejects_a_natural_key_too_coarse_to_separate_rows() -> None:
+    """Added when the clause it guards was corrected: demanding every key PART be
+    non-empty wrongly rejected a correct adapter (a cash equity has no strike), while
+    the property that actually matters — uniqueness — went untested."""
+    harness = _ConformanceHarness(CollidingKeyAdapter())
+    with pytest.raises(AssertionError, match="repeats within"):
         harness.test_parsed_rows_are_well_formed(harness.build_adapter())
 
 
