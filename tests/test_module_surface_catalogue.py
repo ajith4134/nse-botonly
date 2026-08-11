@@ -173,6 +173,10 @@ def test_a_package_is_reachable_when_any_submodule_is(tmp_path: Path) -> None:
     (package / "__init__.py").write_text("")
     (nested / "__init__.py").write_text("")
     (nested / "deep_engine.py").write_text("VALUE = 1\n")
+    # Real content, so the package keeps a row to assert reachability on: empty markers
+    # are excluded from the catalogue as punctuation, which would remove the subject of
+    # this test without changing the reachability rule it exists to prove.
+    (nested / "__init__.py").write_text("PACKAGE_MARKER = 1\n")
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "run.py").write_text(
         "from nse_algo_trader.regime.deep_engine import VALUE\n"
@@ -194,7 +198,9 @@ def test_an_unused_package_is_still_an_orphan(tmp_path: Path) -> None:
     unused = package / "abandoned"
     unused.mkdir(parents=True)
     (package / "__init__.py").write_text("")
-    (unused / "__init__.py").write_text("")
+    # Real content for the same reason as above — an EMPTY unreachable marker is not a
+    # hidden orphan, because there is no code in it to strand.
+    (unused / "__init__.py").write_text("PACKAGE_MARKER = 1\n")
     (unused / "stranded.py").write_text("VALUE = 1\n")
     (tmp_path / "scripts").mkdir()
     (tmp_path / "tests").mkdir()
@@ -205,3 +211,74 @@ def test_an_unused_package_is_still_an_orphan(tmp_path: Path) -> None:
     }
     assert not states["abandoned"].is_reachable
     assert not states["abandoned.stranded"].is_reachable
+
+
+def test_empty_package_marker_is_not_reported_as_an_untested_module(tmp_path: Path) -> None:
+    """An empty `__init__.py` is punctuation, not a module owing tests.
+
+    Regression for a filter that could never fire: `_module_name_for` strips the
+    `__init__` part, so the `name.endswith("__init__")` guard excluded nothing and five
+    zero-byte package markers padded the wall's UNTESTED count with rows no amount of
+    work could ever clear.
+    """
+    package = tmp_path / "src" / "nse_algo_trader"
+    (package / "quiet").mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    (package / "quiet" / "__init__.py").write_text("")
+    (package / "quiet" / "real_module.py").write_text("VALUE = 1\n")
+    (tmp_path / "scripts").mkdir()
+
+    names = {surface.module_name for surface in build_module_catalogue(tmp_path).surfaces}
+
+    assert "nse_algo_trader.quiet" not in names, "empty package marker was counted"
+    assert "nse_algo_trader.quiet.real_module" in names
+
+
+def test_package_marker_with_real_code_still_owes_tests(tmp_path: Path) -> None:
+    """The fix must not become a blanket skip — a re-exporting `__init__` is real code.
+
+    `broker_credentials/__init__.py` carries fifteen live lines of re-exports, so dropping
+    every `__init__` would have hidden a genuine finding while fixing a cosmetic one.
+    """
+    package = tmp_path / "src" / "nse_algo_trader"
+    (package / "loud").mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    (package / "loud" / "__init__.py").write_text(
+        '"""Docstring alone would not count."""\n'
+        "from __future__ import annotations\n"
+        "EXPORTED = 42\n"
+    )
+    (tmp_path / "scripts").mkdir()
+
+    names = {surface.module_name for surface in build_module_catalogue(tmp_path).surfaces}
+    assert "nse_algo_trader.loud" in names
+
+
+def test_docstring_only_package_marker_counts_as_empty(tmp_path: Path) -> None:
+    """A module that only describes itself has no behaviour to assert on."""
+    package = tmp_path / "src" / "nse_algo_trader"
+    (package / "described").mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    (package / "described" / "__init__.py").write_text(
+        '"""Just a description."""\nfrom __future__ import annotations\n'
+    )
+    (tmp_path / "scripts").mkdir()
+
+    names = {surface.module_name for surface in build_module_catalogue(tmp_path).surfaces}
+    assert "nse_algo_trader.described" not in names
+
+
+def test_empty_package_marker_never_becomes_an_orphan_either(tmp_path: Path) -> None:
+    """Excluding empty markers must not be a way to hide unreachable code.
+
+    The exclusion is narrow on purpose: it drops rows with NOTHING in them. A package
+    marker holding real code that nothing reaches must still surface as an ORPHAN.
+    """
+    package = tmp_path / "src" / "nse_algo_trader"
+    (package / "unreached").mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    (package / "unreached" / "__init__.py").write_text("UNREACHED = 1\n")
+    (tmp_path / "scripts").mkdir()
+
+    surfaces = {s.module_name: s for s in build_module_catalogue(tmp_path).surfaces}
+    assert surfaces["nse_algo_trader.unreached"].health is SurfaceHealth.ORPHAN

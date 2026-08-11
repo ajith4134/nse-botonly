@@ -169,6 +169,34 @@ def _defines_asgi_application(source: str) -> bool:
     )
 
 
+def _has_testable_content(source: str) -> bool:
+    """Whether a module contains anything a test could exercise.
+
+    An EMPTY package marker is not an untested module; it is punctuation. Reporting five
+    zero-byte `__init__.py` files as UNTESTED inflated the wall's headline count with rows
+    no work could ever clear — the opposite of `R.08`, since a metric that cannot reach
+    zero stops being read.
+
+    The distinction is content, never filename. `broker_credentials/__init__.py` carries
+    fifteen lines of real re-export code and DOES owe tests, so a blanket "skip every
+    `__init__`" rule would have hidden a genuine finding while fixing a cosmetic one.
+
+    Docstrings and `from __future__` imports do not count: a module that only describes
+    itself has no behaviour to assert on.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return True  # Unparseable is a finding, not something to quietly drop.
+    for node in tree.body:
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
+            continue
+        if isinstance(node, ast.ImportFrom) and node.module == "__future__":
+            continue
+        return True
+    return False
+
+
 def _tier_for(module_name: str) -> ModuleTier:
     words = set(module_name.replace(".", "_").split("_"))
     if words & DECISION_PATH_WORDS:
@@ -258,7 +286,12 @@ def build_module_catalogue(
             has_dedicated_panel=name in surfaced,
         )
         for name, (path, source) in sorted(module_sources.items())
-        if not name.endswith("__init__") and name != PACKAGE_ROOT_NAME
+        # `_module_name_for` already strips the `__init__` part, so the obvious
+        # `name.endswith("__init__")` guard this replaces could NEVER fire — it read as an
+        # exclusion for the whole life of the file while excluding nothing. Package
+        # markers are identified by their real PATH, and dropped only when empty.
+        if name != PACKAGE_ROOT_NAME
+        and (path.name != "__init__.py" or _has_testable_content(source))
     )
     return CatalogueSummary(surfaces=surfaces)
 

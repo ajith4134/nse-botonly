@@ -2634,6 +2634,33 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.63 · 2026-08-11 · Rule N becomes enforceable, and the first look at a screenshot found a
+catalogue defect.** The standing rule is that a change is confirmed by LOOKING at the surface, and it
+had been unenforceable on this host — no headless browser existed, so every "verified" claim about the
+dashboard rested on a 200 from `curl`. Those are different claims: every failure worth catching here
+returns 200 while doing it. Playwright's `--with-deps` install fails on Oracle Linux (it shells out to
+`apt-get`); the plain chromium install works.
+
+`scripts/capture_dashboard_screenshots.py` shoots every route in BOTH themes, because dark mode here is
+selected rather than flipped and a token that was never redefined only shows itself in pixels. It exits
+non-zero on a blank PNG or a console error, since a screenshot tool that silently writes a blank frame
+when the server is down leaves an artifact indistinguishable from a successful run.
+
+Looking at the first capture immediately found something `curl` could not: five rows reading UNTESTED at
+**one line each** — empty `__init__.py` package markers. The guard meant to exclude them,
+`name.endswith("__init__")`, could NEVER fire, because `_module_name_for` strips that part before the
+check; it had read as an exclusion for the file's whole life while excluding nothing. Markers are now
+identified by real PATH and dropped only when they hold no statements, so
+`broker_credentials/__init__.py` and its fifteen lines of live re-exports still owe tests — a blanket
+"skip every `__init__`" would have hidden a genuine finding while fixing a cosmetic one.
+
+Wall: 53 -> 48 modules, 12 -> 7 untested, 40% -> 44% healthy, orphans still 0. **This change made the
+metric look better by removing rows, which is the exact shape of the reward-hacking `R.23(d)` names.**
+It is defensible only because the removed rows were zero-byte files hiding no code, and a test now fails
+if the exclusion is ever used to conceal an unreachable module that does contain code. Two existing
+tests were updated rather than deleted: both proved a REACHABILITY rule and merely used an empty marker
+as the thing to observe it on, so each marker gained real content and the rule under test is unchanged.
+
 **A.62 · 2026-08-11 · The dashboard is a systemd USER service, and the honest reason is that it had
 been lying about its own uptime.** Operator instruction, and the second half of `A.61`'s work — the
 runner was scheduled that morning while the surface that reports on it was still a `nohup` process that

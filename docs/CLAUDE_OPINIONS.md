@@ -680,3 +680,37 @@ a stopped unit is a state a human notices and an infinite retry loop is not.
 **What would change my mind.** A monitor that alerts on restart RATE rather than on unit state. Then
 infinite retry carries the information the cap currently provides, and the cap becomes the worse choice
 because transient causes — a slow network mount at boot — would resolve themselves.
+
+## O.46 · 2026-08-11 · A guard that cannot fire is worse than a missing guard
+
+**Opinion.** `name.endswith("__init__")` in the catalogue excluded nothing, because the name had already
+been stripped of that part upstream. The cost was not the five junk rows — it was that the line READ as
+handled. Anyone auditing the file, including me on the day I wrote it, saw an exclusion and moved on.
+
+**Reasoning.** A missing check is discoverable by the symptom it fails to prevent. A check that is
+present and inert is actively camouflaging: it consumes the attention that would otherwise go to
+noticing the symptom. This is the same failure as `A.59`'s zero-probability and the uncapped restart
+policy in `O.45` — a system whose broken state is shaped like its working state.
+
+**Confidence: measured.** `_module_name_for(Path('src/nse_algo_trader/regime/__init__.py'), Path('src'))`
+returns `'nse_algo_trader.regime'`; `.endswith('__init__')` is `False`. The predicate was never true for
+any input the function could receive.
+
+**What would change my mind.** Nothing about this instance. The general lesson is narrower than it
+sounds, though: the fix is not "distrust all guards" but "a guard over a DERIVED name must be tested
+against what the derivation actually produces." I found this by eye, not by test, and a mutation test
+would have caught it years earlier than I did.
+
+## O.47 · 2026-08-11 · Verifying a surface with `curl` is verifying that bytes exist
+
+**Opinion.** Every dashboard failure worth catching returns HTTP 200 — an empty table, a dark-mode token
+that was never redefined, a `nan` where a number should be, a layout that overflows. A status check that
+passes on all of them is not a status check.
+
+**Confidence: measured, and immediately.** The very first screenshot captured under this rule exposed a
+defect that had survived every previous `curl`-based verification of the same page (`O.46`).
+
+**What would change my mind.** Nothing about the principle, but the harness is weaker than it looks: it
+proves the page PAINTED and logged no console error. It does not read the pixels, so a table showing
+plausible-but-wrong numbers still passes, and I am the remaining check on that. Automated visual
+diffing against a stored baseline would close it, at the cost of failing on every legitimate change.
