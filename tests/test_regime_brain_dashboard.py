@@ -289,3 +289,45 @@ def test_the_wall_emits_no_key_bearing_links(monkeypatch: pytest.MonkeyPatch) ->
     client.cookies.set(server_module.ACCESS_COOKIE_NAME, "realtoken")
     body = client.get("/wall").text
     assert "?key=" not in body, "a link still carries the token"
+
+
+def _stylesheet_of(page: str) -> str:
+    return page.split("<style>", 1)[1].split("</style>", 1)[0]
+
+
+@pytest.mark.unit
+def test_stylesheet_has_no_stray_semicolon_after_a_rule() -> None:
+    """A `;` at stylesheet top level silently DELETES the rule that follows it.
+
+    Regression for a real defect that reached the live surface: `.bar-value{...};` left a
+    stray semicolon, and the browser's error recovery consumed the whole next rule to
+    resync — which happened to be `.series-1`. The `trending` bars and legend swatch
+    rendered as nothing while `.series-2` onward were fine, because the parser resynced
+    after eating exactly one rule.
+
+    Nothing else could see it. The HTML was correct, the class was applied, the width was
+    right, the custom property was defined, and `curl` returned 200. It was visible only
+    as an absence of pixels.
+    """
+    stylesheet = _stylesheet_of(render_regime_brain_page(_snapshot()))
+    collapsed = "".join(stylesheet.split())
+    assert "};" not in collapsed, (
+        "stray ';' after a closing brace — CSS error recovery will discard the NEXT rule"
+    )
+
+
+@pytest.mark.unit
+def test_every_series_slot_is_defined_and_actually_reachable() -> None:
+    """Each of the four regime colours must have a variable AND a rule that consumes it.
+
+    A palette can pass every contrast and colour-vision check and still never reach the
+    page. Validating the VALUES is a different claim from validating that they render.
+    """
+    page = render_regime_brain_page(_snapshot())
+    stylesheet = "".join(_stylesheet_of(page).split())
+    for slot in range(1, 5):
+        assert f"--series-{slot}:" in stylesheet, f"--series-{slot} never defined"
+        assert f".series-{slot}{{background:var(--series-{slot})}}" in stylesheet, (
+            f".series-{slot} has no rule consuming its variable"
+        )
+        assert f'class="swatch series-{slot}"' in page, f"series-{slot} absent from legend"

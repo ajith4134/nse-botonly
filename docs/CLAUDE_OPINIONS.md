@@ -714,3 +714,38 @@ defect that had survived every previous `curl`-based verification of the same pa
 proves the page PAINTED and logged no console error. It does not read the pixels, so a table showing
 plausible-but-wrong numbers still passes, and I am the remaining check on that. Automated visual
 diffing against a stored baseline would close it, at the cost of failing on every legitimate change.
+
+## O.48 · 2026-08-11 · Validating a palette is not validating that it renders
+
+**Opinion.** I ran `validate_palette.js` over the regime colours, recorded the ΔE figures in the module
+docstring, and treated the palette as verified. Every one of those numbers was true and the `trending`
+series was invisible on the live page the whole time. The validator answers "are these four colours
+distinguishable"; it cannot answer "do these four colours reach a browser", and I let the first stand in
+for the second.
+
+**Reasoning.** This is the general shape of most of my false confidence: a check that is real, passed
+honestly, and load-bearing for a claim it never made. The same pattern produced `O.46` — a guard that
+was genuinely present and inert — and the `curl`-200 verification in `O.47`.
+
+**Confidence: measured.** 0 pixels of `#3987e5` in a 1440×1000 capture where the other three series had
+2,869–3,409 each; ~2,000 after the fix, in both themes.
+
+**What would change my mind.** Nothing here, but the honest scope is narrow: my new tests catch stray
+semicolons and unconsumed series variables, which is the mechanism I just met, not the category. A rule
+could still be killed by an unclosed brace, an invalid property value, or a specificity collision, and
+none of my tests would notice. Only rendering catches rendering, and I should stop reaching for
+string-level assertions as though they were.
+
+## O.49 · 2026-08-11 · An f-string that emits CSS gets no syntax checking from anything
+
+**Opinion.** The stray `}};` survived because it lives inside a Python f-string. Python validates the
+brace ESCAPING and stops there; ruff and mypy see a string literal; the tests asserted on substrings of
+the output. Five malformed rules passed the entire toolchain because no tool in it parses CSS.
+
+**Confidence: measured** — the four remaining instances were found by a regex over the rendered output
+after the first was found by eye, and every gate had been green before and stayed green after.
+
+**What would change my mind.** A real CSS parser in the test path (`tinycss2` would do it) that fails on
+any parse error in the rendered stylesheet. That would subsume both my new tests and catch the failure
+modes they miss, and I should prefer it to hand-rolled string assertions — recorded in BACKLOG rather
+than done now, because the immediate defect is fixed and this is a change to how the surface is tested.

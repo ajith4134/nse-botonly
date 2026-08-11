@@ -2634,6 +2634,29 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.64 · 2026-08-11 · Five CSS rules had been silently deleted by stray semicolons, and only pixels
+could see it.** Found by the harness from `A.63` on its first real use. The regime surface carried
+`.bar-value{...};` — a stray `;` at stylesheet top level, five times over. A semicolon there is a parse
+error, and the browser's error recovery consumes the NEXT rule to resync, so each one silently deleted a
+whole rule: `.series-1`, `.panel,.card`, `.panel-head`, `.legend-item` and `.meter-fill`.
+
+The live consequences were exactly as large as that list. The `trending` series — one of four regimes —
+painted **nothing at all**, bar and legend swatch alike, at every probability including 25%; the four
+classifier panels had no card background or border; the concentration and agreement meters showed a
+number with no bar; and the legend lost its spacing. The page had been shipped and reviewed in this
+state.
+
+Nothing else in the stack could see it. The HTML was correct, the class was applied, the width was
+right, the custom property was defined, `curl` returned 200, and ruff, mypy and every test passed. The
+defect existed only as an absence of pixels. Measured before: **0** pixels of `#3987e5` against ~3,000
+each for the other three. After: ~2,000, both themes.
+
+Two regression tests now guard the class of defect rather than the instance — one asserts no `}` is
+followed by `;` anywhere in the stylesheet, the other that every `--series-N` is defined AND consumed by
+a rule AND present in the legend. *Supersedes the implication in `A.59` that the regime palette was
+verified: `validate_palette.js` checked the colour VALUES, which is a different claim from the colours
+reaching the page. A validated palette that never renders passes every check it is given.*
+
 **A.63 · 2026-08-11 · Rule N becomes enforceable, and the first look at a screenshot found a
 catalogue defect.** The standing rule is that a change is confirmed by LOOKING at the surface, and it
 had been unenforceable on this host — no headless browser existed, so every "verified" claim about the

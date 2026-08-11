@@ -190,9 +190,9 @@ border-left:4px solid {hero_colour};
 .hero-action{{font-size:26px;font-weight:650;letter-spacing:-.01em}}
 .hero-why{{color:var(--text-secondary);font-size:13.5px;margin-top:6px}}
 .grid{{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
-margin-bottom:18px}};
+margin-bottom:18px}}
 .panel,.card{{background:var(--surface-1);border:1px solid var(--border);border-radius:10px;
-padding:14px 16px}};
+padding:14px 16px}}
 .panel-head{{display:flex;align-items:center;justify-content:space-between;gap:8px}}
 .panel-head h3{{font-size:14px;margin:0;font-weight:600}}
 .badge{{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;
@@ -203,20 +203,20 @@ padding:14px 16px}};
 .bar-track{{background:var(--surface-0);border-radius:4px;display:block;overflow:hidden}}
 .bar-fill{{display:block;height:100%;border-radius:0 4px 4px 0}}
 .bar-value{{font-size:11.5px;color:var(--text-secondary);text-align:right;
-font-variant-numeric:tabular-nums}};
+font-variant-numeric:tabular-nums}}
 .series-1{{background:var(--series-1)}} .series-2{{background:var(--series-2)}}
 .series-3{{background:var(--series-3)}} .series-4{{background:var(--series-4)}}
 .evidence{{font-size:11px;color:var(--text-muted);margin:10px 0 0;
 font-family:ui-monospace,monospace;
   word-break:break-word}}
 .legend{{display:flex;flex-wrap:wrap;gap:14px;margin:0 0 12px;font-size:12.5px;
-color:var(--text-secondary)}};
+color:var(--text-secondary)}}
 .legend-item{{display:inline-flex;align-items:center;gap:6px}}
 .swatch{{width:11px;height:11px;border-radius:3px;display:inline-block}}
 .meter{{margin-bottom:14px}}
 .meter-head{{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px}}
 .meter-track{{display:block;height:8px;background:var(--surface-0);border-radius:4px;
-overflow:hidden}};
+overflow:hidden}}
 .meter-fill{{display:block;height:100%;background:var(--text-secondary);border-radius:0 4px 4px 0}}
 .caption{{font-size:11.5px;color:var(--text-muted);margin:5px 0 0}}
 table{{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}}
