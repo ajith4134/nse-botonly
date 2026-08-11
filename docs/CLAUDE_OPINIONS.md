@@ -484,6 +484,63 @@ I verified `ps -p 131046` was gone and concluded the capture had stopped, when 1
 stopped. The check should have been on the thing itself (`pgrep -f` on the script), which is the same
 principle as `O.15`: verify the property you care about, not a proxy that usually coincides with it.
 
+## O.37 · 2026-08-11 · A green suite measures nothing until something has tried to break it
+
+**Opinion:** "tests pass" and "tests would catch this" are unrelated claims, and I have been
+conflating them.
+**Reasoning:** the depth engine's suite was 104 green tests written test-first, and I signed it off. Two
+independent checks then found what it could not see. Random-AST mutation scored it **21/36 (58%)** and
+adversarial review proved **7 tests vacuous** — including the two guarding the properties I had argued
+hardest for in the module docstring. Replacing the atomic-rename temp path with the final path (deleting
+atomicity outright) left the suite **green**. Deleting both `fsync` calls left it **green**, because
+`kill -9` never drops page cache, so the kill test I was proudest of *could not possibly* have exercised
+durability. `test_stop_is_idempotent` contained no assertion at all.
+**Confidence:** measured, twice, by two methods that agreed.
+**Would change my mind:** nothing. The two methods are complementary and both are now non-optional:
+mutation finds tests that do not constrain, review finds properties no test addresses.
+**The generalisation:** my instinct writes a test that *demonstrates* the behaviour. What is needed is a
+test that *fails when the behaviour is removed*. Those coincide less often than they feel like they do,
+and the gap is invisible from the inside — which is exactly why it needs a mechanical check rather than
+more care.
+
+## O.38 · 2026-08-11 · Self-referential thresholds fail hardest on the data they exist for
+
+**Opinion:** a threshold derived from an instrument's own distribution must use a **robust** statistic, or
+it silently inverts on the pathological cases it was built to catch.
+**Reasoning:** I defined a capture gap as an interval beyond the instrument's own **99th percentile**
+interval, reasoning that each instrument should have its own notion of a pause — which is right, given the
+measured 130x rate spread. But if more than 1% of intervals are outages, the 99th percentile *is* an
+outage, so nothing is ever a gap. Review measured the consequence: an instrument that quoted for **380
+seconds of a 6.5-hour session**, in twenty bursts separated by 20-minute holes, reported **99% coverage
+and a clean USABLE verdict**. The worse the data, the better it scored. The fix is the **median** (50%
+breakdown point) times a multiple, which keeps describing normal behaviour until an instrument is silent
+more often than not.
+**Confidence:** measured, with a repro.
+**The generalisation, which also caught the Tukey fence:** a statistic computed *from* the population it
+judges needs its breakdown point checked against the contamination it will actually meet. The same review
+found my coverage fence going **negative** (`Q1 - 1.5*IQR` on a metric bounded in [0,1]) and therefore
+never firing — measured at -0.42 on a real 5%..99% session. Both defects are the same mistake: I checked
+the formula's *definition* and not its *range on my data*.
+
+## O.39 · 2026-08-11 · Ship an existing library only after proving it handles the discontinuity
+
+**Opinion:** the deciding test for a data-source library is not whether it fetches today, but whether it
+handles the historical break — because that is what a README never mentions and a smoke test never reaches.
+**Reasoning:** eleven NSE libraries were installed and called against real endpoints. Most fetch *today's*
+bhavcopy fine. NSE changed the layout in July 2024 (UDiFF), and that one question sorted them: `nsepython`
+always uses the legacy schema, `nselib` always uses the UDiFF URL and returns **silently empty** for 2020
+with no error, `jugaad-data` falls back silently to the legacy schema on historical cash and throws
+`BadZipFile` on recent F&O, `nsepy` cannot connect at all (dead host). Exactly one — `nse`
+(BennyThadikaran) — branches explicitly on NSE's own `UDIFF_SWITCH_DATE` and fetches true historical UDiFF.
+**Confidence:** measured — every verdict came from an install plus a real call on both a pre-change and a
+post-change date.
+**Would change my mind:** a maintained fork of any rejected library that passes the same two-era test.
+**The finding that outranks all of them:** a real request for **Sunday 2026-08-09 returned Friday's data
+with HTTP 200**. No retry library and no NSE library tested handles that, because nothing about the
+response is an error. A fetcher that trusts a 200 will ingest stale data as fresh, silently — which is why
+the content-aware failure classifier is the one part of the ingest core that must be built rather than
+adopted.
+
 ---
 
 ## Maintenance

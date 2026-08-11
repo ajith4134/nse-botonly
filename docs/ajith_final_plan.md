@@ -2586,6 +2586,32 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.49 · 2026-08-11 · The ingest core ADOPTS `nse` (BennyThadikaran) for bhavcopy and `nselib` for the
+ban list, and BUILDS the failure classifier and bitemporal layer.** From `research/210`, every verdict
+from an install plus a real call: eleven libraries evaluated, and the July-2024 UDiFF layout change sorted
+them — `nse` is the only one that branches on NSE's own `UDIFF_SWITCH_DATE` and fetches true historical
+UDiFF for both eras. `nsepython` is legacy-schema-only, `nselib` returns silently empty for pre-2024 dates,
+`jugaad-data` falls back silently to the legacy schema and throws `BadZipFile` on recent F&O, `nsepy`
+cannot connect (dead host), and `nsetools`/`pynse`/`nseazy`/`bhavcopy`/`nse-utility` are rejected on
+mechanical grounds. **What must still be built:** a content-aware failure classifier, because a real
+request for Sunday 2026-08-09 returned **Friday's data with HTTP 200** and a JS-shell page also returned
+200 — no retry library treats a successful response carrying wrong data as a failure. `deltalake` installs
+and proves MERGE plus time-travel on aarch64, but supplies storage, not bitemporal semantics, so the query
+layer is ours. *Supersedes `research/209`'s open sourcing gate.*
+
+**A.48 · 2026-08-11 · The depth engine's shutdown and analysis paths were wrong, and the sign-off that
+missed them was mine.** Adversarial review returned 5 CRITICAL, 8 HIGH and 7 MEDIUM defects with
+mechanical repros, and proved 7 tests vacuous. The capture path and its `R.05` pass held; everything
+around it did not. The load-bearing ones: `stop()` could deadlock forever with a dead writer and a full
+queue, in a `finally` block, so the session would need `kill -9` and lose every shard's buffer;
+`receipt_sequence` is per-FEED not per-session, so `book_at()` returned books up to 150s stale across
+capture runs, **already true of 4,236 instruments on today's tape**; packets arriving after `stop()` were
+discarded with no counter moving; one shard's failing `close()` destroyed the healthy shards' tails; and
+the time-based flush could never fire on a quiet shard. All fixed with regression tests. **The process
+lesson recorded in `O.37`:** a green test-first suite scored 21/36 on mutation and its two proudest
+durability tests were provably vacuous — so mutation scoring and fresh-subagent review are now both
+non-optional before any engine is called done, not just steps in `R.23` I can report as performed.
+
 **A.47 · 2026-08-11 · The depth tape is partitioned by CAPTURE RUN, not only by session and shard.**
 Forced by a real fault: widening the live capture meant launching a second recorder, the first survived a
 kill aimed at the wrong PID, and both wrote into `shard=01` with independent part counters — so each could
