@@ -12,7 +12,7 @@ frontier.
 **Read top to bottom.** Order is dependency order. Each task carries its plan entry ID — read that entry
 before building it.
 
-**Standing rules apply to every task:** R.01–R.13. Most load-bearing: no hardcoded values (R.03), full
+**Standing rules apply to every task:** R.01–R.26. Most load-bearing: no hardcoded values (R.03), full
 function on thin data (R.04), real-data verification (R.05), no orphans (R.06), engine-grade depth (R.07),
 every feature visible (R.08), no silent skips (R.11), and **correctness of execution is not evidence of
 correctness of allocation** (R.13).
@@ -44,6 +44,7 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **0.5** **Revoke the leaked GitHub PAT**; reissue via `gh auth login` — `B.10` ⚠️ *operator action*
 - [x] **0.6** Repo skeleton — `src/nse_algo_trader` package, `pyproject.toml` with ruff (security, naming, datetime-awareness, blind-except bans) + strict mypy + pytest markers naming the R.23 test kinds; installed editable
 - [x] **0.7** Execution gate — the Stop hook now runs **ruff + mypy + pytest** and blocks the turn on any failure (`L2.32`, R.23 step 6)
+- [x] **0.7a** Rupee-literal detector — ***now actually wired*** via `scripts/check_no_hardcoded_money.py` into the Stop gate over `src/` + `scripts/`; firing proven with a planted violation (`A.43`, `O.30`). Was an orphan invoked only by its own test — AST guard failing the build on hardcoded money; enforces `R.03` mechanically — `L2.31a` *(retro-listed 2026-08-10: built earlier but had no plan entry or task, so it was an untracked orphan)*
 - [~] **0.8** Capital as a runtime parameter across ₹1 lakh → ₹1 crore, with **no rupee constant anywhere** — `A.23`, `R.03`
       · built: `capital_configuration` (Decimal money, high-precision context, validated in `__post_init__`) + `rupee_literal_detector` (26/26 evasion corpus caught, was 0)
       · spec `docs/research/200`; 42 tests; gate green; 3 mutants verified caught
@@ -67,11 +68,22 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       · ⚠️ **NOT R.11-done — consumer queued**: observation tiers (`L5.21c`, task 3.53d) and the option-chain feed (`L6.28`)
 - [~] **1.2** Instrument-token reuse guard — full-history lookup, rename-vs-reuse discrimination, persisted + auditable — `L0.02`
       · adversarial review found the original detected only same-day swaps, the one pattern Kite never produces
-- [ ] **1.3** Historical bar store (SQLite) — `L0.03`
-- [ ] **1.4** Bitemporal availability-time on the bar store — `L0.04`
-- [ ] **1.5** Point-in-time universe reconstruction — `L0.05`
-- [ ] **1.6** Frozen tradable-universe snapshot per date — `L0.06`
-- [ ] **1.7** Corporate-action adjustment — `L0.07`
+- [~] **1.3** Historical bar store (SQLite) — `L0.03` — *built, gated, mutation-tested 19/19, R.05 pass on all 659,990 retained bars. `[~]` not `[x]` per R.11: the primary consumer (indicator pipeline / backtest reader) is still queued.*
+- [~] **1.4** Bitemporal availability-time on the bar store — `L0.04` — *same slice; availability filtering is a property of the store. Same R.11 caveat.*
+- [~] **1.5** Point-in-time universe reconstruction — `L0.05` — *built; review found 13 defects, all fixed;
+      mutation 16/16; R.05 on real F&O + real cash + real MWPL. `[~]` per R.08 (no dashboard surface yet).*
+- [~] **1.5a** Absence classifier — six evidence-carrying classes, `UNKNOWN` first-class — `L0.05a` — *built
+      + review-hardened (gap ceiling derived, ISIN ambiguity surfaced, multi-date absences retained).*
+- [~] **1.5b** F&O exit early-warning from expiry-ladder truncation — `L0.05b` — ***VALIDATED on 349 real
+      exits over 25 years**: recall 77.1%, 22.9% missed, ~17% false positives, median lead 41 sessions.
+      Reclassified as a SCREEN, not a forecast. Norm measured 3 on 6,160 dates and **4 on 47** — a hardcoded
+      3 would have been wrong on 47 real days.*
+- [~] **1.6** Frozen tradable-universe snapshot per date — `L0.06` — *built with `1.5`; immutable +
+      bitemporal, reports its own unresolved count. `[~]` per R.08.*
+- [~] **1.7** Corporate-action adjustment — `L0.07` — *built + review-hardened. Feed acquired: **41,885 real
+      actions 2001-2026**. Review found 8 defects incl. a critical false positive (`DRREDDY` factor 1/7 on a
+      flat day); all fixed, mutation 10/10. Empirical end-to-end check: 65/66 sampled ex-dates within 20% of
+      1.0, median 1.016. `[~]` per R.08 + F&O factor acquisition unbuilt.*
 - [ ] **1.8** Symbol-rename / ISIN / merger record store — `L0.08`
 - [ ] **1.9** Delisted-securities master (BSE-sourced) — `L0.09`
 - [ ] **1.10** Gap detection + provenance-flagged backfill — `L0.10`
@@ -94,11 +106,25 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **1.27** ATM implied-volatility daily series — `L0.27`
 - [ ] **1.28** Circuit-band / ASM / GSM state per symbol — `L0.28`
 - [ ] **1.29** Index constituents + weights — `L0.29`
-- [ ] **1.30** Trading calendar — `L0.30`
+- [~] **1.30a** Calendar coverage self-check — per-year reliability, two derived conditions — `L0.30a`
+      *(new 2026-08-10; built with `1.30`, same review pending)*
+- [~] **1.30** Trading calendar — `L0.30` — ***PULLED FORWARD out of sequence, see `A.40`.*** Built as a
+      prerequisite of `1.5`/`1.6`: the universe engine cannot tell a holiday from a collection gap without
+      it. `src/nse_algo_trader/nse_trading_session_calendar.py`, 34 tests, gate green, R.05 pass against the
+      real retained window. Adversarial review done (9 defects, all fixed); mutation 11/11 killed. `[~]` not `[x]` per R.11: the primary consumer (`1.5`) is still being built. **Measured
+      limitation carried forward:** `pandas_market_calendars` recognises ZERO NSE holidays for 1990-1996
+      and 2027-2030, and only 4 for 1998 — the calendar reports its own per-year reliability rather than
+      trusting the library.
 - [ ] **1.31** Point-in-time market rules + calendar history — `L0.31`
 - [ ] **1.32** Clock sync + drift alert — `L0.32`
 - [ ] **1.33** Multi-broker consolidated feed with liquidity-weighted cross-check — `L0.33`
-- [ ] **1.34** Deep-history price + universe sourcing (~20yr) — `L0.34`
+- [~] **1.34** Deep-history price + universe sourcing (~20yr) — `L0.34` — ***STARTED out of sequence***,
+      because `1.5`'s acceptance criteria need real de-listing events and the retained window held only 36
+      trading days. **DAILY bhavcopy only, not intraday** — `nsearchives.nseindia.com` serves it free and
+      unauthenticated: cash from 1994-11, F&O from 2000-06-12 (launch day). Running via
+      `scripts/fetch_nse_bhavcopy_archive.py` into `/home/opc/nse_archive` with a provenance manifest.
+      **This does NOT close `B.04`** — that blocker is about deep *intraday* history, which remains unfree.
+      Narrow `B.04`'s wording once this completes; do not tick it.
 
 **— L1 —**
 
@@ -845,7 +871,7 @@ cannot be rediscovered as a fresh idea in six months.*
 - [ ] **X.B10** SECURITY — `B.10`
 - [ ] **X.B11** Open decisions deferred, not resolved: the todo sequencing question (what is built first) was deliberately… — `B.11`
 
-## X.R — The 13 standing rules, obligations on every task
+## X.R — The 26 standing rules, obligations on every task
 
 *Never 'done'. Checked at every sign-off.*
 
@@ -862,6 +888,22 @@ cannot be rediscovered as a fresh idea in six months.*
 - [ ] **X.R11** No silent skips — `R.11`
 - [ ] **X.R12** Correctness of execution is not evidence of correctness of allocation. The old market simulation passed its own… — `R.13`
 - [ ] **X.R13** "Example" and "etc" are direction pointers, never complete lists — `R.12`
+
+*Rules R.14–R.26 were added after this list was first generated; appended 2026-08-10 during a
+plan↔todo consistency audit.*
+
+- [ ] **X.R14** **Self-describing names.** Every file, module, function, class and variable reveals its role by name alone. — `R.14`
+- [ ] **X.R15** **Research, planning and decisions are saved to files, every time, without fail.** Never left in chat. — `R.15`
+- [ ] **X.R16** **Never compromise a feature down to what is on hand — acquire what it needs.** If a feature needs data, a tool, a source, a library or a capability t — `R.16`
+- [ ] **X.R17** **OSS rejection needs mechanical evidence, never README prose.** Triage on facts: does it install here, is it maintained, what do the actual signature — `R.17`
+- [ ] **X.R18** **One engine at a time; sign off out loud before advancing.** The unit of work is a complete engine-grade feature, not a thin slice. — `R.18`
+- [ ] **X.R19** **Ambiguity is interviewed, never assumed.** When something mid-build is genuinely ambiguous, stop and ask rather than picking and hoping. — `R.19`
+- [ ] **X.R20** **Recommendation honesty — the "(Recommended)" mark is earned, not reflexive.** When presenting options: give the **full set**, not a token two or thr — `R.20`
+- [ ] **X.R21** **Three strikes, then stop and report.** Try, try a different way, try a third — then stop. — `R.21`
+- [ ] **X.R22** **Two-key rule for live capital.** No instruction reaches real money without **both** keys: (1) it has **graduated** — demonstrated repeatable profit  — `R.22`
+- [ ] **X.R24** **SEARCH BY DELEGATION — breadth goes to a subagent, only the verdict comes back.** Standing method for every search, established 2026-08-10 and perma — `R.24`
+- [ ] **X.R25** **OPINIONS ARE RECORDED, NOT SPOKEN.** Every judgement, verdict or recommendation I give goes into `docs/CLAUDE_OPINIONS.md` at the moment it is forme — `R.25`
+- [ ] **X.R26** **SUBAGENT MODEL SELECTION — cheapest model that reliably does the job.** Match the model to the task's difficulty, not to habit, and prefer the cheap — `R.26`
 
 ## X.Q — The 12 open questions, all resolved
 
@@ -880,7 +922,7 @@ cannot be rediscovered as a fresh idea in six months.*
 - [x] **X.Q11** Bank Nifty (monthly-only) — `Q.11` → resolved in A.07–A.18
 - [x] **X.Q12** Which ultra-tier items are genuinely wanted rather than nice-to-have? — `Q.12` → resolved in A.07–A.18
 
-## X.D — The 30 governing decisions
+## X.D — The 40 governing decisions
 
 *The decisions this plan was built on, each with its reasoning in the plan so it can be overturned by
 evidence rather than mood.*
@@ -957,6 +999,27 @@ extra / orphaned                  0
 complete: six holons live, all trunks built, the organism designing itself.
 
 ---
+
+*Decisions A.31–A.39 were added after this list was first generated; appended 2026-08-10 during the
+same audit.*
+
+- [ ] **X.D31** The old governing docs are deleted; these two files govern alone.** `CLAUDE.md`, `docs/RULES.md` and `GLOBAL_CLAUDE.md` were deleted 2026-08-10 once ` — `A.31`
+- [ ] **X.D32** Enforcement hooks rewritten to match the new rules (2026-08-10).** The hooks embedded the old rule text inline and checked deleted paths, so retired r — `A.32`
+- [ ] **X.D33** Search-by-delegation adopted as permanent standing method (R.24).** Context is the scarce resource, not tokens: a subagent burns its own context and r — `A.33`
+- [ ] **X.D34** Instrument-master primary key corrected before implementation (2026-08-10).** The plan specified `(exchange, tradingsymbol)`; measurement against the  — `A.34`
+- [ ] **X.D35** Watch-everything moves to the five derivative segments; cash keeps a filter-based focus set.** Operator decision. — `A.35`
+- [ ] **X.D36** Measured: watch-everything is affordable in ONE Kite key (~6,100 instruments).** Before measuring, the 9,000-instrument ceiling looked like the bindin — `A.36`
+- [ ] **X.D37** Opinions get their own file (R.25) and subagents get a model-selection rule (R.26).** Operator instructions 2026-08-10. — `A.37`
+- [ ] **X.D38** 2026-08-10 · `L0.05` + `L0.06` build as one engine, and the universe exposes three questions, not one flag.** Point-in-time reconstruction and the fro — `A.38`
+- [ ] **X.D39** 2026-08-10 · Two SOTA analogs named in R.23a cannot be installed on this box — they stay analogs, never dependencies.** Mechanically confirmed: `qlib` — `A.39`
+
+- [ ] **X.D41** A collection report is a THREE-way partition — observed / uncollected / **unverifiable**; 'cannot tell' is a real state and must not be folded into either side. — `A.41`
+- [ ] **X.D40** `L0.30` trading calendar promoted to a PREREQUISITE of `L0.05`/`L0.06`; `pandas_market_calendars` is the source (`exchange_calendars` has no NSE). — `A.40`
+
+- [x] **X.R27** Standing order: work the todo continuously, terse sign-off per slice, stop only for genuine ambiguity / operator-only actions / live-capital arming — `R.27`
+- [x] **X.D42** Operator granted the standing order; paired with stop-and-interview on ambiguity — `A.42`
+
+- [x] **X.D43** R.03 money-literal guard wired into the execution gate over `src/` + `scripts/`; firing proven with a planted violation. — `A.43`
 
 ## Maintenance
 

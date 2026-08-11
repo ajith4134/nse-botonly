@@ -173,6 +173,242 @@ pass on a broken guard is a false signal, and I nearly signed off on it.
 **Would change my mind:** if review-first proves to waste effort on code that the real-data pass would
 have rejected outright anyway. Worth watching over the next few engines before changing R.23.
 
+## O.18 · 2026-08-10 · Sonnet matches opus on adversarial review — the rule should change
+
+**Opinion:** adversarial review should default to **sonnet**, not opus. R.26 said the opus choice was
+"reasoned, not measured"; it is now measured, and the reasoning was wrong.
+**Reasoning:** the sonnet review of the bar store found a **reproduced future-leak** — the exact class of
+defect this whole module exists to prevent — plus a reversed sort, four validation holes and a structural
+blindness in the test suite. It ran its own mutation set, restored the tree, verified with `diff`, checked
+the real 659,990-row database to establish the bug was latent rather than active, and explicitly said which
+categories were clean instead of padding. That is the same shape of work the two opus reviews produced, at
+roughly a third the cost.
+**Confidence:** measured, once. One trial is thin, which is why the revised rule keeps an escalation path
+rather than deleting opus from the option set.
+**Would change my mind:** a sonnet review that comes back thin — no reproductions, no mutation results, or
+findings that read as speculation — on code where opus then finds something real.
+
+## O.19 · 2026-08-10 · A correctness guarantee expressed in SQL is only as good as the column's collation
+
+**Opinion:** any invariant enforced by a SQL comparison must be checked against the *storage type's*
+ordering, not the ordering the values appear to have.
+**Reasoning:** `available_from <= ?` reads like the invariant it enforces, and it is wrong, because the
+column is TEXT and ISO strings with different offsets do not sort chronologically. Nothing about the code
+looked suspicious; the docstring correctly described the intent; 114 tests passed. The defect lived
+entirely in the gap between "these are timestamps" and "these are strings that look like timestamps".
+**Confidence:** measured.
+**Generalisation I am now applying:** wherever a comparison crosses a serialisation boundary, the
+normalised form is the stored form, and the human-readable form is derived — never the reverse.
+
+## O.20 · 2026-08-10 · A property test built from one constant is a unit test wearing a costume
+
+**Opinion:** a property test whose inputs all descend from a single fixture cannot state a property; it
+restates an example.
+**Reasoning:** the invariant test here varied delay and query time across thousands of Hypothesis cases and
+**could not have failed**, because every timestamp came from one IST constant and the bug was about
+disagreeing offsets. The generated dimensions were the ones that did not matter.
+**Confidence:** measured.
+**What I do differently now:** before writing a property test, name the dimension along which the property
+could plausibly break, and generate *that* — not whatever is easiest to parameterise.
+
+## O.21 · 2026-08-10 · A truncated NSE expiry ladder predicts an F&O exit, and the engine should emit it
+
+**Opinion:** the expiry-ladder depth is a leading indicator of derivatives de-listing, and belongs in the
+universe engine rather than being left as a curiosity.
+**Reasoning:** measured on 36 real trading days. NSE lists three monthly expiries per stock underlying; on
+2026-07-27, 207 of 210 held exactly 3, and the two holding 1 — `EXIDEIND` and `NUVAMA` — were gone by the
+next collected date. `SAMMAANCAP` had already left the same way. The exchange stops listing new expiries
+before an underlying exits, so the ladder shortens as contracts run off. Lead time was **at least 35
+trading days** and is left-censored, since the truncation was already visible in the earliest file I hold.
+**Confidence:** ~~measured, three events, one window~~ → **CORRECTED 2026-08-10, measured on 349 real exits
+across 25 years** (2001-07-02 → 2026-08-10, 6,207 trading days, 560 underlyings, whole F&O archive).
+
+**The correction — the signal is real but weaker than three events suggested:**
+
+| Measure | Value |
+|---|---|
+| Genuine F&O exits | **349** |
+| Exits preceded by a sustained truncation | **269 — recall 77.1%** |
+| Exits with **no** warning at all | **80 (22.9%)** |
+| Symbols ever warned | 343, of which **57 never exited** (~17% false positives) |
+| Lead time (sessions) | min **0**, median **41**, p90 43, max 44 |
+
+**The median lead is structurally explained, which is why I believe it.** A full ladder is three monthly
+expiries ≈ 63 sessions; dropping to two leaves ≈ 2 months ≈ 42 sessions of contracts to run off. The
+measured median of 41 is that mechanism, not a coincidence — and the tight 41-44 clustering is the same
+fact seen from the other side.
+
+**What I got wrong:** I called it a predictor. It is a *screen* — it misses nearly a quarter of exits and
+raises a false alarm about one time in six. `≥35 trading days` was right as a lower bound but the framing
+oversold it. It is good enough to stop opening new multi-expiry positions, not good enough to be treated as
+a forecast.
+**What would still change my mind:** a truncation-then-refill population large enough to characterise; 57
+such symbols now exist in the archive and have not yet been examined individually.
+
+## O.22 · 2026-08-10 · `UNKNOWN` must be a first-class classifier output, not an error path
+
+**Opinion:** the absence classifier should return `UNKNOWN` with evidence whenever nothing discriminates,
+and snapshots should carry their unknown count to the caller.
+**Reasoning:** absence from a daily exchange file is ambiguous between at least four causes — not traded,
+not collected, delisted, renamed — and the retained data contains all the ambiguity needed to prove it: 324
+of 3,419 cash symbols miss a day and are mostly government securities that simply do not trade daily, while
+five weekdays have no file at all. A classifier forced to pick would delist most of the G-Sec universe
+inside a week. This is `O.15` applied before the fact rather than after: a classifier that never says "I
+cannot tell" is guessing, and its cleanliness is the symptom.
+**Confidence:** reasoned, from measured ambiguity.
+**Would change my mind:** nothing likely. The cost of an explicit unknown is a caller decision; the cost of
+a silent guess is a backtest that cannot be trusted and gives no sign of it.
+
+## O.23 · 2026-08-10 · The calendar dependency is load-bearing, and I proved it by getting it wrong myself
+
+**Opinion:** a session calendar is not a convenience for this engine; without one it cannot make its central
+distinction at all, and `L0.30` must be built before `L0.05`.
+**Reasoning:** writing `docs/research/204` I counted five weekdays with no F&O file and called them a
+collection outage. Resolved against `pandas_market_calendars`' NSE sessions, one of the five
+(`2026-06-26`) is an **NSE holiday** — nothing was published and nothing is missing. The real outage is four
+days, not five. I made the precise error the absence classifier exists to prevent, in the document
+specifying the classifier, with the data in front of me.
+**Confidence:** measured.
+**Would change my mind:** nothing. An error I made while concentrating on not making it is the strongest
+evidence available that the check has to be mechanical.
+
+## O.24 · 2026-08-10 · A "200 OK" is not evidence of content, and an install is not evidence of function
+
+**Opinion:** acquisition code should verify the *payload*, and sourcing verdicts should require a real call
+returning real rows — status codes and successful installs are both routinely false positives.
+**Reasoning:** three independent instances in one session. A guessed historical-constituents URL returns
+**HTTP 200 with a 404 error page as the body**. The `bhavcopy` package installs, instantiates without
+error, and **downloads nothing at all**. `nselib`'s `bhav_copy_equities()` returns an empty frame while its
+sibling method works. Each would have passed a check based on the thing that is easy to check.
+**Confidence:** measured, three times.
+**How it is applied:** the archive fetcher opens and row-counts every ZIP before recording it as acquired,
+and R.17 verdicts in `204` §7 each cite a byte count and a row count rather than a status.
+
+## O.25 · 2026-08-10 · `isinstance(x, date)` is a trap, and type guards should be tested for what they let through
+
+**Opinion:** a type guard written as `isinstance` against a base class must be tested with its subclasses,
+because the guard's job is exclusion and `isinstance` is inclusive by design.
+**Reasoning:** `datetime` and `pandas.Timestamp` are both subclasses of `date`. My guard admitted them, and
+`day in set_of_dates` then returned `False` for the *same calendar day* — `is_trading_session` reported a
+real trading Tuesday as closed, silently. In a pandas-heavy codebase where the calendar library itself
+returns `Timestamp`, that input is routine, not exotic. The module's own docstring named "a confident wrong
+answer" as the one unacceptable outcome, and it shipped one.
+**Confidence:** measured.
+**How it is applied:** the moment-carrying types are refused *by name* with a message telling the caller to
+call `.date()` themselves — coercing silently would drop a time and a timezone without being asked, which
+is a different bug wearing the same clothes.
+
+## O.26 · 2026-08-10 · An inline boolean rule cannot be mutation-tested; extract it
+
+**Opinion:** when a decision rule combines conditions inline, its operators are effectively unfalsifiable
+and should be pulled into a named function taking its own inputs.
+**Reasoning:** `is_reliable = recognised > 0 and recognised >= fence` looked well covered — years either
+side were tested. But no real year's holiday count lands exactly on the float-valued fence (6.875), so both
+`>=` vs `>` and the `> 0` conjunct survived mutation: nothing in the suite could distinguish them. Extracted
+as `holiday_count_is_credible(count, fence)` the boundary is testable with values chosen to sit *on* it,
+and both mutants die. The same reasoning killed the Tukey-multiplier mutant — the original fixture years
+were all comfortably clear of the margin the multiplier moves.
+**Confidence:** measured, three mutants.
+**Would change my mind:** nothing. This generalises: a threshold that is only ever exercised by real data
+is tested wherever the data happens to fall, which is not where the bugs are.
+
+## O.27 · 2026-08-10 · I wrote the exact magic constant I had criticised, three engines after making it a rule
+
+**Opinion:** R.03 needs a mechanical check in scripts too, not only in engines — discipline did not survive
+contact with an exploratory scan.
+**Reasoning:** scanning 25 years of cash bhavcopy for corporate-action discontinuities I wrote
+`MATERIAL_RATIO_DEVIATION = Decimal("0.005")` with a tidy justification about tick sizes. It produced
+**89,597 "events" across 4,592 symbols** whose implied factors clustered entirely in 0.93-1.05 — noise,
+because `PREVCLOSE` does not always mean "yesterday's `CLOSE`" for illiquid names. This is precisely the
+`0.30` shrinkage-tolerance defect from `kite_instrument_master` (`O.16`), committed by me again, in a
+session where I had already written the rule twice. A plausible-sounding rationale is what makes these
+survive review — mine had one both times.
+**Confidence:** measured, twice now.
+**What changed:** the scan records the full factor distribution and derives the cut afterwards; real ratio
+actions live in the tail (2, 3, 5, 10 and their reciprocals), not near 1. The broader lesson is that "it is
+only a script" is how the rule gets bypassed — `rupee_literal_detector` (`L2.31a`) covers money literals in
+`src/`, and scripts are outside its reach.
+
+## O.28 · 2026-08-10 · F&O strike adjustments come in two shapes, and only one is a ratio
+
+**Opinion:** an adjustment engine must classify additive versus multiplicative before computing any factor,
+because the two leave different fingerprints in the strike ladder.
+**Reasoning:** measured over 37,334 real (underlying, expiry, strike) triples — only **4** underlyings carry
+non-half-integer strikes. `CANBK` (+0.80), `INDIANB` (+0.75) and `BANKINDIA` (+0.35) keep a **standard**
+ladder step and shift every strike by a constant: additive, a dividend adjustment. `TRENT` has steps of
+33.30 / 66.70 / 133.30 — that is 100/3, 200/3, 400/3, a **factor of 3**: multiplicative.
+**Confidence:** measured, one 36-day window, four events.
+**Correction I made mid-analysis, left visible:** I first classified `BANKINDIA` as multiplicative because
+it showed two fractional offsets (.35/.85). That was an artefact of a 2.5 step not being an integer, not
+evidence of a ratio. The reliable test is whether the **step** is a multiple of 0.5 — standard step means
+additive, non-standard step means a ratio divided it.
+**Would change my mind:** an underlying showing both shapes at once, or a ratio adjustment that happens to
+land on a standard step (a factor of 2 on a 5-point ladder would, and would be invisible to this test —
+which is a known hole, not a solved problem).
+
+## O.29 · 2026-08-10 · I built a detector on an unverified premise and only tested it at population scale
+
+**Opinion:** a detector's *premise* must be verified on one known-positive event before it is run over 25
+years of data, and I did this backwards.
+**Reasoning:** I hypothesised that `CLOSE(t-1) != PREVCLOSE(t)` marks a corporate action, wrote the scan,
+ran it over 7,857 files, and spent two rounds tuning thresholds against its output — before anyone checked
+whether the premise held. It does not: on `TATASTEEL`'s 1:10 split and `IOC`'s 1:2 bonus the two values are
+**exactly equal**. NSE's `PREVCLOSE` is a raw carry-forward. Every "event" the scan produced was noise or
+early-archive data corruption, and the tail I was about to derive a threshold from was meaningless.
+**What made it seductive:** the conclusion was convenient — it would have meant the whole adjustment engine
+could be built from data already on disk, with no external dependency. I wanted that to be true and tested
+it at scale instead of at a point.
+**Confidence:** measured. Recorded as `D.28`.
+**The rule I am applying from here:** one known-positive and one known-negative case *first*, by hand, then
+the population scan. A scan that runs cleanly over 25 years proves the code runs, not that the idea is
+right — and this is the second time in one session that a green large-scale pass masked a broken premise
+(`O.17` was the first).
+
+## O.30 · 2026-08-10 · A guard nobody invokes is a test fixture wearing a guard's name
+
+**Opinion:** every mechanical rule-enforcer must have a runnable entry point wired into the gate, and its
+firing must be *proven* with a planted violation — not inferred from a clean run.
+**Reasoning:** `rupee_literal_detector` (`L2.31a`) was built to enforce R.03 mechanically, and it was
+imported by **nothing but its own test**. It had never run over a single line of the codebase. Its tests all
+passed, so it looked healthy in every check I made. That is the complete explanation for `O.27`: the
+hardcoded `0.005` did not slip past the guard, it was never in front of it.
+**Confidence:** measured.
+**What changed:** `scripts/check_no_hardcoded_money.py` scans `src/` **and** `scripts/` and is now part of
+the Stop-hook execution gate beside ruff/mypy/pytest. Proven by planting a violation — two literals caught,
+exit 1 — then removing it and confirming exit 0. A clean first run proved nothing, which is `O.24`'s lesson
+applied to my own tooling.
+**The generalisation:** this is the same shape as `O.15` ("a guard that has never been seen to fire should
+be assumed broken"), one level up. There the guard ran and detected nothing; here it did not run at all. The
+check is the same either way — make it fire on purpose before believing it.
+
+## O.31 · 2026-08-10 · A parser that matches on a NUMBER without checking the NOUN will confidently corrupt blue chips
+
+**Opinion:** any text parser extracting a quantity must verify *what* the quantity describes, not merely
+that it is present in the right shape.
+**Reasoning:** my bonus regex required only the token `bonus` followed by `N:M`. It therefore quantified
+`"Bonus Debentures 6:1"` and `"Bonus Preference Shares 21:1"` as equity dilution. Measured on the real feed:
+**11 such actions, 7 wrongly quantified**, including `DRREDDY` at a factor of **1/7** on a day the stock
+moved 2.8%, and `ZEEL` at **1/22** on a flat day. Applied, those restate a blue chip's entire pre-2011
+history downward by 7x and 22x — the engine manufacturing exactly the fake crash it was built to prevent,
+on a different input shape.
+**Confidence:** measured, verified against real closes either side of the ex-dates.
+**Would change my mind:** nothing. The fix is a non-equity instrument check (`debenture`, `preference`,
+`ncrps`, `dvr`, `warrant`, `bond`, `unit`), and the general form is: match the noun, not just the number.
+
+## O.32 · 2026-08-10 · When part of a subject cannot be quantified, nothing in it can
+
+**Opinion:** an unquantifiable component must poison the whole record rather than letting a sibling
+component supply a plausible number.
+**Reasoning:** `MONNETISPA` 2018 reads `"Capital Reduction Rs 10 To Rs 3.30 / Consolidation Rs 3.30 To
+Rs.10"`. My component matcher found the consolidation leg and returned a factor of **3.03**, silently
+discarding the capital reduction — a number computed from half a compound sentence, carrying full
+confidence. The ordering that prevents this (unquantified markers checked before components) was also
+entirely unpinned: mutation showed swapping it flips five real demergers to "no adjustment", the failure the
+spec names as catastrophic, with nothing in the suite to catch it.
+**Confidence:** measured.
+**The generalisation:** this is `A.41`'s three-way lesson at sub-record granularity. A record is only as
+quantified as its least quantified part.
+
 ---
 
 ## Maintenance

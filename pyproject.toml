@@ -102,6 +102,15 @@ no_implicit_optional = true
 show_error_codes = true
 pretty = true
 
+# pandas_market_calendars ships no type stubs and none exist on typeshed. It is the
+# only NSE session source that works (exchange_calendars has no NSE at all), so the
+# untyped import is accepted at this one boundary rather than losing the calendar.
+# Everything the project does with it is wrapped in nse_trading_session_calendar.py,
+# which is fully typed.
+[[tool.mypy.overrides]]
+module = ["pandas_market_calendars.*", "staircase.*"]
+ignore_missing_imports = true
+
 [[tool.mypy.overrides]]
 module = [
   "kiteconnect.*", "pyotp.*", "talib.*", "pandas_ta_classic.*",

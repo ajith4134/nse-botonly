@@ -3179,3 +3179,92 @@ Pod-tick forces square-off whenever market CLOSED or in the 15:15-15:30 window (
 lingered past 15:30); close-only cycle (allow_opens=False) when forcing → no new opens past the session.
 Live: 48 lingering positions flattened → 0. Enforces intraday-only (no overnight carry).
 - 🔴 Rule-F LIVE gate: confirm the LIVE pod-tick flattens automatically at tomorrow's 15:15 (watch journalctl).
+
+## Point-in-time universe reconstruction (1.5/1.6) — 🟡 SPEC WRITTEN, SOURCING IN FLIGHT (2026-08-10)
+Spec: `docs/research/204_point_in_time_universe_reconstruction_spec.md`. Measured the retained per-date
+evidence (1.4M F&O bhavcopy rows / 36 trading days; cash bhavcopy with `series`; MWPL with clean 1:1 ISIN)
+and found the real exit signal: a **cross-sectionally truncated expiry ladder** (207/210 underlyings hold 3
+expiries; EXIDEIND + NUVAMA held 1 and left F&O ~35 trading days later). `DALBHARAT` is truncated on
+2026-08-03 — a live, testable prediction.
+- 🔴 **Spec §7 sourcing record is EMPTY pending two mechanical sweeps** (R.17 gate): NSE historical
+  bhavcopy/index-membership endpoints, and OSS interval / point-in-time candidates. **No implementation
+  starts until §7 is filled from measured results** — install + call + real output, never README prose.
+- 🔴 **Index membership as of a past date has NO local source.** NIFTY 50/500/BANKNIFTY constituent history
+  is required by `L0.05`. Blocker until a fetchable dated source is verified.
+- 🔴 **Listing status ≠ trading activity.** The `DELISTED` class is unreachable without a securities master
+  carrying listing dates; absence from bhavcopy only proves "did not trade" (324/3,419 cash symbols miss a
+  day, mostly G-Secs).
+- 🔴 **Collection gap: 5 weekdays with no F&O data** (2026-06-26, 2026-07-28..31). Must be backfilled or
+  permanently recorded as UNOBSERVED. Hard dependency on the trading calendar (`L0.30`) to even name which
+  dates are missing.
+- 🔴 **36 trading days is a left-censored window.** Exit lead-time estimates cannot be validated until
+  history extends; per R.04 this gates ACTIVATION only, never the algorithm's depth.
+- 🟢 **RESOLVED (2026-08-10): spec 204 §7 sourcing record is complete**, both sweeps landed and the two
+  load-bearing claims (NSE archive depth, NSE session calendar) were re-verified independently. Deep
+  history is FREE and unauthenticated on `nsearchives.nseindia.com`: cash 1994-11→, F&O 2000-06-12→.
+  Backfill running to `/home/opc/nse_archive` with a provenance manifest.
+- 🔴 **BSE delisted list needs browser automation** (JS-SPA shell; API 301s to an error page). Leaves
+  BSE-side survivorship coverage incomplete.
+- 🔴 **MWPL dated archive not found** — parallel path to `/archives/fo/sec_ban/` likely exists; needs a
+  link-discovery pass, not a guessed-URL pass.
+- 🔴 **`qlib` and `nautilus_trader` are UNINSTALLABLE on this aarch64 box** (no wheels/sdist; glibc 2.34 vs
+  manylinux_2_35 + a broken sdist). They remain valid SOTA *analogs* per R.23a but can never be
+  dependencies — see `A.39`. Any future spec naming them as a build dependency is wrong on arrival.
+- 🔴 **`piso` `closed="both"` union crashes in its own exception handler** — if piso is ever adopted,
+  half-open intervals only.
+
+## Deep-history archive (1.34) — 🟢 F&O COMPLETE, cash in flight (2026-08-10)
+`nsearchives.nseindia.com`, free + unauthenticated. **F&O: 6,457 files, 2.46 GB, 181,957,505 contract rows,
+2000-06-12 (launch day) → 2026-08-10, zero failures.** Cash running, at 2013-12. Provenance manifest at
+`/home/opc/nse_archive/manifest/bhavcopy_acquisition.sqlite3` (per-date URL, status, bytes, rows, outcome).
+- 🔴 **`L0.05b` lead-time is still left-censored in the SPEC** — measured on 3 events in a 36-day window.
+  With 26 years now on disk this can be validated across hundreds of real F&O exits. **Do this before
+  ticking `1.5b`**; until then the ≥35-trading-day figure stands as a lower bound from a tiny sample.
+- 🔴 **`R.08` dashboard surface NOT registered for `1.1`-`1.6`, `1.30`, `1.34`.** No dashboard exists after
+  the reset (`nse-dashboard` inactive, no module in `src/`). Every engine built so far owes a panel. Track
+  as one debt to clear when the dashboard task lands — do not tick those tasks `[x]` until it is.
+- 🔴 Cash backfill still running; re-check and record final counts.
+- 🔴 **`B.04` wording is now too broad** — daily bhavcopy IS free back to 1994/2000. Narrow it to *intraday*
+  history, which remains unfree. Do not tick `B.04`.
+- 🟡 **One archive date is genuinely empty upstream: `1995-09-06` cash.** HTTP 200, **0 bytes** — verified
+  three times. Not a transport failure and not fixable from here; the fetcher now settles it as `absent`
+  rather than retrying forever (R.21: stopped after the second attempt and characterised it instead of
+  grinding). Note the calendar cannot even confirm whether that date was a trading session — 1995 is a
+  zero-holiday-coverage year (`L0.30a`), so it is `unverifiable`, not a known gap.
+
+## Corporate-action adjustment (1.7 / L0.07) — 🟡 MEASURING (2026-08-10)
+- 🔴 **A factor of 2 on a 5-point strike ladder is INVISIBLE to the step test** — it divides to 2.5, still a
+  standard step. The additive/multiplicative discriminator (`O.28`) has a known blind spot and must be
+  cross-checked against a real corporate-action feed, not used alone.
+- 🔴 **`PREVCLOSE` != previous `CLOSE` for illiquid names** — 89,597 near-1 differences across 4,592 symbols
+  over 25 years. The self-contained detector works only in the tail; it cannot stand alone for small
+  adjustments (a 2% dividend adjustment is indistinguishable from this noise).
+- 🔴 Scripts are outside `rupee_literal_detector`'s reach (`L2.31a` covers `src/` only), which is how a
+  hardcoded threshold got written into a scan — see `O.27`. Consider extending the guard to `scripts/`.
+- 🔴 **Early cash archive `PREVCLOSE` is unreliable** — 1996-07-08 `EIMCOELECO` publishes `PREVCLOSE` 72.50
+  against a prior close of 118.50 and a same-day close of 120.00; many symbols affected on the same date.
+  Cause unknown (settlement-cycle semantics in the badla era is the leading guess). **Do not use `PREVCLOSE`
+  from the 1990s archive for anything.** Unrelated to corporate actions — see `D.28`.
+- 🔴 **Corporate actions are SINGLE-SOURCED on NSE.** BSE's `CorpactData` API 302s to an error page under
+  every variant tried (same block as the delisted-equity endpoint), so there is no independent cross-check
+  for equity CA ratios. Accepted risk, logged.
+- 🔴 **No bulk CA file with numeric ratios exists.** `nselib.capital_market.corporate_actions_for_equity`
+  returns 36,145 rows for 2001-2023 in one call, but the ratio lives in a **free-text `subject`** field
+  (`"Bonus 1:1250"`, `"Fv Split Rs.10 To Re.1"`) — a parser is required and its failure modes are the real
+  risk in `L0.07`.
+- 🔴 **F&O adjustment factors are published only as one PDF circular per underlying per event**, findable
+  via the circulars API. Verified: `CMPT55202.pdf` (TCS, Jan-2023) states the dividend adjustment "Rs.75.00"
+  with a worked example (strike 3340 → 3265). Needs a PDF-extraction step; no machine-readable bulk form.
+- 🔴 **Corporate-action amendments are not superseded, they accumulate.** PK is
+  `(symbol, ex_date, subject, known_as_of)`, so a re-worded amendment (`"...Purpose Revised"`) is a NEW row.
+  Reproduced: ingesting `Bonus 1:1` then `Bonus 1:1 (Purpose Revised)` gives factor 0.25 instead of 0.5.
+  Only 3 such pairs exist in the feed today and all are inert (AGM/dividend/buyback), so nothing is
+  corrupted — but the next feed refresh that revises a ratio will double it. **Cannot be fixed by
+  de-duplicating on ex_date**: 33 real ex-dates legitimately carry two rows (simultaneous split + bonus)
+  that MUST multiply. Needs a real amendment-supersession rule.
+- 🔴 **F&O strike/futures adjustment factors still unbuilt** — one PDF circular per underlying per event
+  (`CMPT55202.pdf` verified readable via pdfplumber: strike 3340 → 3265 for a Rs 75 dividend). The engine's
+  `adjust_strike` arithmetic exists and is tested; the *acquisition* of real factors does not.
+- 🔴 **274 unparsed actions (0.65%) remain**, incl. `Split Us 64 Into 2 Parts`, `Bonus 1 Dvr : 10 Eq Share`,
+  `Conv Into Bonds-Physical`. They taint any series spanning them rather than being dropped — correct
+  behaviour, but the count should come down as shapes are identified.

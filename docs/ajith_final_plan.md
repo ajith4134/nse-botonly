@@ -128,6 +128,23 @@ time, so backtests can only see what was actually knowable. Structural look-ahea
 ⟨II · XIII EPISTEMICS⟩ · adv · archived · r/167
 **L0.05**  Point-in-time universe reconstruction — listing/delisting, F&O eligibility, index membership as
 of a date. Survivorship-bias elimination. ⟨II⟩ · adv · archived · r/58, r/76
+**L0.05a**  **Absence classifier** — for every (symbol, date) missing from a file that exists, emit a class
+*with its evidence*: `UNOBSERVED` / `NOT_TRADED` / `EXITED_DERIVATIVES` / `RENAMED` / `DELISTED` /
+`UNKNOWN`. `UNKNOWN` is a first-class outcome, never an error path. Measured justification: 324 of 3,419
+cash symbols miss a day and are mostly G-Secs that simply do not trade daily, so a classifier forced to
+pick would delist most of that universe in a week. ⟨II⟩ · adv · **new 2026-08-10** · r/204 §3.2, `O.22`
+
+**L0.05b**  **F&O exit early-warning from expiry-ladder truncation** — NSE stops listing new expiries before
+an underlying leaves F&O, so ladder depth falling below that date's cross-sectional mode predicts the exit.
+**VALIDATED 2026-08-10 across the whole 25-year archive** (6,207 trading days, 560 underlyings, **349 real
+exits**): recall **77.1%** (269 of 349 warned), **22.9% missed**, ~**17% false positives** (57 of 343
+warned symbols never exited), lead time median **41 sessions** (min 0, max 44). The median matches the
+mechanism — a 3-expiry ladder dropping to 2 leaves ≈2 months of runoff. **It is a screen, not a forecast.**
+Behaviour-changing: an underlying with a non-advancing short ladder must not be given new multi-expiry
+positions; it must NOT be used to predict exits outright. The direction test (furthest expiry advancing =
+new listing ramping up) is what stops a launch being mistaken for an exit. ⟨II⟩ · adv · **new 2026-08-10** ·
+r/204 §2.3, `O.21`
+
 **L0.06**  Frozen tradable-universe snapshot per date — the universe a backtest is allowed to consider.
 ⟨II⟩ · adv · archived · r/58
 **L0.07**  Corporate-action adjustment — splits, bonus, dividends, rights; strike and lot adjustment on
@@ -173,7 +190,13 @@ archived · r/176
 **L0.29**  Index constituents + weights — NIFTY / BANKNIFTY / FINNIFTY / MIDCPNIFTY / sectoral.
 ⟨II⟩ · adv · spec · atlas L1
 **L0.30**  Trading calendar — holidays, Muhurat, expiry days, budget/RBI event dates. ⟨II⟩ · base ·
-archived · `nse_event_calendar`
+archived · `nse_event_calendar` · **promoted to a PREREQUISITE of `L0.05`/`L0.06` by `A.40`**
+
+**L0.30a**  **Calendar coverage self-check** — the calendar reports its own per-year reliability rather than
+being trusted blind. Measured on `pandas_market_calendars`: NSE recognises **zero** holidays for 1990-1996
+*and 2027-2030* (so it reports 2028-01-26, Republic Day, as a trading session) and only 4 for 1998. Two
+derived conditions, no written-down year: zero-recognition is categorical, and Tukey's lower fence over the
+covered years catches the implausibly-low case. ⟨II⟩ · base · **new 2026-08-10** · r/204 §7.2, `O.23`
 **L0.31**  Point-in-time market rules + calendar history — what the rules *were* on a past date, so old
 replays are legal-accurate. ⟨XIII⟩ · ultra · spec · r/61
 **L0.32**  Clock sync + drift alert — detects host clock drift against exchange time. ⟨IV BODY⟩ · base ·
@@ -285,6 +308,13 @@ Archived real result: +9.7% total = +0.8% luck + 9.0% skill. ⟨IX · XIII⟩ ·
 ⟨XIII⟩ · adv · archived · r/166
 **L2.31**  Verification cockpit — one script that renders the machine verdict on whether a feature is
 genuinely done. ⟨V SELF · XIII⟩ · adv · archived · `verification_cockpit.py`
+**L2.31a**  **Rupee-literal detector** — an AST walk that fails the build on a hardcoded money constant,
+enforcing `R.03` mechanically instead of by discipline. Walks Assign/AnnAssign/AugAssign/Dict/Compare/
+FunctionDef/Return, handles negation, constant folding, `decimal.Decimal(...)` and aliased `D(...)`,
+attribute and subscript targets, and checks policy-name markers (fraction/ratio/percent) before money
+markers. **Built and in the repo but previously unlisted** — recorded here so it stops being an orphan.
+⟨II⟩ · base · **new 2026-08-10 (retro-listed)** · `rupee_literal_detector`
+
 **L2.32**  Execution-grounded quality gates — ruff/mypy/tests as deterministic Stop-hook gates rather than
 prose rules. ⟨V⟩ · adv · archived · r/159
 
@@ -2078,6 +2108,18 @@ vendor the code.
 was in turn challenged by REDESIGN_v1's depth-first inversion. All three are catalogued.
 **D.26**  **"Engine #1 = flat premium-seller only"** was superseded on 2026-08-02 by "all regimes in
 scope from the start, armed one at a time."
+**D.28**  **"`CLOSE(t-1) != PREVCLOSE(t)` in the cash bhavcopy detects corporate actions"** — MY OWN
+hypothesis, disproved 2026-08-10 on two documented events. `TATASTEEL` 1:10 face-value split, ex-date
+28-Jul-2022: `CLOSE` on 27-Jul = **959.40**, `PREVCLOSE` on 28-Jul = **959.40**, exactly equal (that day's
+close was 100.35, post-split). `IOC` 1:2 bonus, ex-date 30-Jun-2022: **109.80** and **109.80**, exactly
+equal. **NSE's `PREVCLOSE` is a mechanical carry-forward of the raw prior close and is never
+corporate-action-adjusted**, so the condition can never fire for the event it was supposed to detect. The
+attractive consequence — "the whole adjustment engine can be built from data already on disk" — is false;
+`L0.07` requires an external corporate-action feed. Scan script deleted rather than left as an orphan
+(R.06). *Related and still true:* the scan did surface that the **early archive's `PREVCLOSE` is unreliable
+in its own right** — on 1996-07-08 `EIMCOELECO` shows `PREVCLOSE` 72.50 while the stock closed 118.50 the
+prior session and 120.00 that day. Logged as a data-quality blocker, not a corporate action.
+
 **D.27**  **Breadth-first atlas program** ("build all 197 branches, then resume depth") was superseded in
 scope by the redesign, though never formally cancelled.
 
@@ -2137,8 +2179,12 @@ until real sessions run: the LLM-risk entry gate, the news entry gate, debate-ri
 autopoiesis failure-rate posteriors, the shadow-arm live pass.
 **B.02**  **Order-book depth capture** needs an open market; OFI and queue-position fills depend on it.
 **B.03**  **Fyers and Groww** — credentials and a ₹499/mo subscription, both paused pending the operator.
-**B.04**  **Deep intraday NSE history** is largely not free; the realistic free ceiling was researched
-(r/74, r/77) and it is shallower than the replay engine wants.
+**B.04**  **Deep INTRADAY NSE history** is largely not free; the realistic free ceiling was researched
+(r/74, r/77) and it is shallower than the replay engine wants. **Narrowed 2026-08-10:** this blocker is now
+*intraday only*. **Daily** bhavcopy turned out to be free and unauthenticated on `nsearchives.nseindia.com`
+— 181,957,505 F&O contract rows back to the 2000-06-12 launch day are now on disk (`1.34`), so the
+universe, eligibility and survivorship work this blocker was thought to gate is unblocked. Intraday bars
+remain blocked.
 **B.05**  **India VIX history + per-name IV backfill** needed for the IV-rank shrinkage prior. The VRP path
 works without it.
 **B.06**  **SPAN margin mechanics** — the calculation page 403'd during research; margin logic is unverified.
@@ -2342,6 +2388,25 @@ plan Part IV `A.` entries · **my judgement → the opinion file**.
 mistaken judgement is more useful than a clean file, and O.11 already records one I reversed.
 *Operator instruction 2026-08-10: so opinions can be referred back to and checked against what happened.*
 
+**R.27**  **STANDING ORDER — CONTINUE WITHOUT BEING ASKED.** Operator instruction, 2026-08-10, permanent
+and surviving across sessions. Work the todo list continuously: sign off a slice and **start the next one
+immediately in the same turn**. Never end a turn to ask "shall I continue" — R.18's "sign off out loud"
+means stop-and-*report*, not stop-and-*wait*, and reading it as the latter was a misreading.
+- **THE FAILURE MODE, named because I committed it three times after adopting this rule (2026-08-10):**
+  ending a turn at a natural reporting point **is** asking for "continue". A turn ends only when I stop
+  issuing tool calls. Signing off and stopping is not compliance — the sign-off and the next slice's first
+  action belong in the SAME turn. If I have just written a summary, the next thing in that turn must be a
+  tool call, not a full stop.
+- **Sign-off format:** terse, 3-5 lines — what was built, what review found, gate + real-data result, what
+  is still open. Full detail goes to the files, not the chat (R.15).
+- **On genuine ambiguity: STOP AND INTERVIEW.** This is the one thing that still halts a run. R.19 stands
+  and is *strengthened* by this rule, not weakened by it: with nobody watching each slice, an assumed
+  answer can silently shape a whole subsystem. Ask, wait, then resume.
+- **Still hard-stops regardless:** operator-only actions (revoking the PAT, `B.10`), arming live capital
+  (R.22 — the two-key rule is untouched), and external blockers with no local resolution.
+- **Every slice ends with the plan↔todo consistency audit** (features, decisions, blockers, rules all
+  present in both). Drift is a defect, not bookkeeping.
+
 **R.26**  **SUBAGENT MODEL SELECTION — cheapest model that reliably does the job.** Match the model to the
 task's difficulty, not to habit, and prefer the cheaper one whenever output quality is equivalent.
 - **Location and mechanical work** — "where is X", "what calls Y", "map this directory", file:line tables,
@@ -2349,14 +2414,23 @@ task's difficulty, not to habit, and prefer the cheaper one whenever output qual
   nothing.
 - **Broad fan-out reading** — Explore-style sweeps where only the conclusion matters: **sonnet**.
 - **Judgement-heavy work** — adversarial review, audits, multi-file synthesis, anything requiring the
-  agent to *run* code and reason about what the output means: **opus**, on current evidence.
-*Evidence for the split, stated honestly: the two adversarial reviews in this session ran on opus and
-found 14 and 24 real defects with empirical reproductions, mutation testing and restored working trees.
-That is genuinely judgement-heavy work. **I have not A/B tested sonnet on the same task**, so the opus
-choice for review is reasoned, not measured.*
-**Standing obligation:** when a cheaper model is plausible for a task, try it and compare. If sonnet
-produces equivalent findings on a review, sonnet becomes the default for reviews and this rule is updated
-with the measurement. Never pay for a larger model out of habit.
+  agent to *run* code and reason about what the output means: **sonnet — MEASURED 2026-08-10**, see below.
+**The obligation is discharged. Sonnet is now the default for adversarial review.** The third review of
+this session (`bitemporal_bar_store`) ran on sonnet against code that had already passed ruff, mypy and
+114 tests. It found **two critical defects opus-grade work would have been judged by**: a reproduced
+future-leak where a bar available at `09:20+05:30` was returned when asked for `09:30+05:45` — an earlier
+instant — because ISO strings with differing offsets are compared as SQL TEXT; and the same defect
+reversing `ORDER BY`. It ran the 6 mutants it was asked for and reported them individually, restored the
+working tree and verified with `diff`, checked the real 659,990-row database to establish the bug was
+latent rather than active, and **declined to invent findings** in the category that was clean. It also
+correctly identified that the property test could not have caught the bug because every timestamp in the
+suite came from one IST constant.
+*Cost: ~85k subagent tokens. The findings were equivalent in kind and severity to the two opus reviews
+(14 and 24 defects), and the critical one was of the same class as opus's best find — a guard that looked
+correct and was verified against data that could not exercise it.*
+**Revised split:** sonnet for review by default; escalate to opus only when a sonnet review comes back
+thin (no reproductions, no mutation results, or findings that read as speculation) — and record the
+escalation so the rule keeps earning its evidence rather than drifting back to habit.
 
 ---
 
@@ -2502,6 +2576,57 @@ is learned by trading them rather than chosen** — each of 15 combinations is a
 record, gated by the effective-trials estimator because they are heavily correlated. Focus-set sizing was
 delegated to me: **derived from the cost floor, capped by executable capacity** — no fixed N (R.03).
 See L5.21–L5.21d, r/201.
+
+**A.39 · 2026-08-10 · Two SOTA analogs named in R.23a cannot be installed on this box — they stay analogs,
+never dependencies.** Mechanically confirmed: `qlib`/`pyqlib` publishes **zero aarch64 wheels and zero
+sdist**, so no pip path exists; `nautilus_trader` publishes `manylinux_2_35_aarch64` against this OS's
+**glibc 2.34** and its sdist fails to build twice (missing `clang`, then `cargo` exit 101 on a
+`Cargo.toml` its own workspace manifest references but the sdist omits). **R.23a is unchanged** — naming a
+SOTA analog is a depth *comparison*, not an import — but no spec may plan to depend on either. Where a
+runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
+downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
+
+**A.43 · 2026-08-10 · The R.03 money-literal guard is now part of the execution gate, over `src/` AND
+`scripts/`.** `L2.31a`'s detector existed but was invoked by nothing except its own test, so it had never
+run over the codebase — which is why a hardcoded `0.005` reached a scan and produced 89,597 false events
+(`O.27`, `O.30`). Entry point: `scripts/check_no_hardcoded_money.py`, wired into the Stop hook alongside
+ruff/mypy/pytest, and the hook's change-detection now watches `scripts/` too. **Proven by planting a
+violation and observing exit 1**, not by observing a clean run. *Supersedes the implicit assumption in
+`L2.31a` that building the detector was sufficient.*
+
+**A.42 · 2026-08-10 · Operator granted a standing order to work the todo continuously (`R.27`).** Chosen
+over `/loop`, cron and parallel-agent fan-out because it needs no machinery, survives sessions, and stays
+interruptible. Paired explicitly with **"stop and interview on ambiguity"** rather than auto-deciding —
+the operator chose the higher-fidelity option there, so an ambiguous slice halts and asks instead of
+recording a guess. Reporting is terse per slice. *Supersedes the working habit of ending a turn after each
+slice; supersedes nothing in the rule set — R.18, R.19 and R.22 all stand unchanged.*
+
+**A.41 · 2026-08-10 · A collection report is a THREE-way partition, not two.** Observed / uncollected /
+**unverifiable**, where the third holds dates in years the calendar's holiday rules do not cover. Forced by
+review: with a two-way split, an empty 1993 collection reported 261 "uncollected sessions" at 0.0
+completeness — Republic Day included — which reads as a total outage for a year that was merely unverified.
+`collection_completeness` returns `None` when nothing in the window is verifiable, because neither 1.0 nor
+0.0 is true there. **The generalisation, and it binds the universe engine's absence classifier too: a
+partition into "good" and "bad" is wrong wherever "cannot tell" is a real third state.**
+*Supersedes the two-way report shape implied by `L0.30a` as first written.*
+
+**A.40 · 2026-08-10 · `L0.30` (trading calendar) is promoted to a PREREQUISITE of `L0.05`/`L0.06`, and
+`pandas_market_calendars` is the source.** Measured: `exchange_calendars` has **no NSE at all** — only
+`XBOM` (BSE) — and zipline depends on it internally, so that path inherits the gap.
+`pandas_market_calendars` exposes `NSE`/`XNSE` and returned 22 correct Jan-2024 sessions excluding Republic
+Day. The promotion is not tidiness: without a session list the engine cannot distinguish a holiday from a
+collection gap, and I made exactly that error inside `docs/research/204` before the calendar corrected it.
+*Supersedes the ordering implied by `L0.30`'s position, not its content.*
+
+**A.38 · 2026-08-10 · `L0.05` + `L0.06` build as one engine, and the universe exposes three questions, not
+one flag.** Point-in-time reconstruction and the frozen snapshot are one slice — the snapshot is what the
+reconstruction emits. The engine exposes `traded_on` / `listed_on` / `eligible_on` separately and
+deliberately offers **no single `is_tradeable` boolean**, because the three rest on different evidence with
+different confidence and collapsing them is how ambiguity gets silently resolved inside the caller.
+*Supersedes nothing; refines `L0.05`/`L0.06` with what the retained per-date files turned out to contain.*
+Also decided: the F&O exit signal is the **cross-sectionally measured** expiry-ladder truncation, with the
+ladder norm computed from each date's own file rather than written down as `3` (R.03e). Evidence and
+measurements in `docs/research/204`; judgements as `O.21`/`O.22`.
 
 **A.37 · Opinions get their own file (R.25) and subagents get a model-selection rule (R.26).**
 Operator instructions 2026-08-10. `docs/CLAUDE_OPINIONS.md` holds every judgement I give with its
