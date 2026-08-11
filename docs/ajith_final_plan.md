@@ -1369,6 +1369,18 @@ to the trail-tension in L11.126. ⟨III⟩ · adv · idea · operator 2026-08-10
 attribute the failure between the two, or a sound entry gets retired for a bad exit policy. This makes the
 exit organ a first-class input to L11.116's graduation statistics. ⟨XIII⟩ · base · idea · operator 2026-08-10
 
+**L11.135**  **PER-SEGMENT INDICATOR AND PATTERN DISCOVERY — each segment bot EARNS its own feature
+set.** Every segment holon searches a shared indicator and chart-pattern library and *learns* which
+members pay **in its own segment**, from its own measured outcomes, re-earned on a schedule rather than
+fixed once. Cash-intraday and index-option holons should not be assumed to want the same features, and
+neither should be hand-assigned them — an unearned feature list is exactly the constant `R.03` forbids.
+**Chart patterns enter as GATED HYPOTHESES ONLY, per `D.03`** — computed cheaply, never assumed
+predictive, and required to clear the same statistical gate as any other candidate. `D.03`'s evidence
+(Marshall-Young-Rose 2006; Marshall-Young-Cahan 2008; Horton 2009; Sullivan-Timmermann-White's 7,846-rule
+study; Aronson 2006) stands unchallenged: no override was requested and none is recorded. Selection is
+per (segment × regime) where data allows, connecting this to `L11.03`'s soft regime weighting.
+⟨XI · III⟩ · adv · **operator 2026-08-11** · `A.57`
+
 **L11.134**  **Offline RL as the frontier form** — exit timing is a textbook optimal-stopping problem, and
 Decision Transformer (L11.92) trained on the system's own trade logs is the most defensible reinforcement
 learning application in this entire project: offline, on proprietary data, with a dense and unambiguous
@@ -1916,6 +1928,18 @@ path to capital that skips the deterministic gate. ⟨VII⟩ · base · idea · 
 **L13.39**  **Chat security** — a privileged reader of internal state: never exposes `.env` or
 credentials, tools are an explicit allowlist, operator input is trusted while everything the research
 organs ingested stays behind the dual-LLM quarantine (L11.36). ⟨VII⟩ · base · idea · design §4
+**L13.41**  **PER-SEGMENT LIVE-CAPITAL ARMING — one switch per segment, not one master switch.**
+Real-money trading is armed **per segment holon**, independently, from the dashboard. Arming index
+options alone puts that segment on real capital while every other segment keeps trading paper in
+parallel; the organism is fully live only when every segment switch is on. **The switch set is DERIVED
+from the segment registry, never a hardcoded six or nine** — which also resolves the count contradiction
+between this entry's neighbours (`L5.25` says nine holons, `D.01` says six): both work unchanged.
+`R.22`'s two-key rule is *unweakened and applies per segment* — a segment needs BOTH its own graduation
+AND its own explicit operator arm, so this makes live capital harder to reach, not easier, by removing
+the all-or-nothing switch that would have carried ungraduated segments live alongside a graduated one.
+An unarmed segment is not idle: it keeps paper-trading and keeps accruing the track record its own
+graduation depends on (`L11.122`). ⟨XIII · IV⟩ · adv · **operator 2026-08-11** · `A.56`
+
 **L13.40**  **Proactive assistant (ultra)** — surfaces without being asked ("the stock-futures bot's edge
 has decayed three sessions running — demote it?"), narrates the ledger into lessons, and lets the dashboard
 reorganise around what currently matters rather than a fixed layout. ⟨VI · XII⟩ · ultra · idea · design §5
@@ -2585,6 +2609,28 @@ sdist**, so no pip path exists; `nautilus_trader` publishes `manylinux_2_35_aarc
 SOTA analog is a depth *comparison*, not an import — but no spec may plan to depend on either. Where a
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
+
+**A.57 · 2026-08-11 · Each segment bot DISCOVERS its own indicators and patterns; chart patterns stay
+gated hypotheses.** Operator feature request, entered as `L11.135`. Chosen over a hand-assigned per-segment
+feature table because a hand-picked list is an unearned constant (`R.03`) and because "which features pay
+in this segment" is precisely a learning question — making this an `L11` capability rather than
+configuration. **`D.03` was surfaced to the operator before anything was written**, with its evidence
+(Marshall-Young-Rose 2006; Marshall-Young-Cahan 2008; Horton 2009; Sullivan-Timmermann-White 7,846 rules;
+Aronson 2006), and the operator chose the gated-hypothesis route that `D.03`'s own resolution prescribes.
+**No operator-override is recorded, because none was needed** — the feature and the disproved finding are
+compatible as scoped. *Supersedes nothing; `L5.25` gave holons their strategies and models but never their
+feature sets.*
+
+**A.56 · 2026-08-11 · Live capital is armed PER SEGMENT, not by one master switch.** Operator feature
+request, entered as `L13.41`. Each segment holon gets its own dashboard switch: arming index options puts
+that segment on real money while the rest keep trading paper, and the organism is fully live only when all
+are on. **The switch set is derived from the segment registry rather than hardcoded**, which sidesteps the
+live contradiction between `L5.25` (nine holons) and `D.01` (six segments) — both work with no redesign,
+and the count stops being a number anyone can get wrong. `R.22` is **strengthened, not weakened**: the
+two-key rule now applies per segment, so each needs its own graduation AND its own operator arm. The
+previous single switch would have carried ungraduated segments live the moment one segment earned it,
+which is the failure this removes. *Supersedes nothing; `R.22` governed the mechanism and was silent on
+granularity.*
 
 **A.55 · 2026-08-11 · Index weights EXIST, on a different host, and are SEVEN MONTHS STALE.**
 `research/207` §8 recorded per-symbol weights as "not located". They were found by reading

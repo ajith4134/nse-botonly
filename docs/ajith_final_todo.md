@@ -715,6 +715,13 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 
 **— L14 —**
 
+- [ ] **6.78a** PER-SEGMENT INDICATOR + CHART-PATTERN DISCOVERY — each holon EARNS its feature set — `L11.135`
+      *(operator 2026-08-11, `A.57`). Each segment bot searches a shared library and learns which
+      indicators and patterns pay IN ITS OWN SEGMENT, from measured outcomes, re-earned on a schedule —
+      never hand-assigned (`R.03`). Chart patterns enter as GATED HYPOTHESES ONLY per `D.03`, whose
+      evidence stands: computed cheaply, never assumed predictive, must clear the same gate as any
+      candidate. No operator-override recorded — none was needed, the two are compatible as scoped.
+      Selection per (segment × regime) where data allows, linking to `L11.03`.*
 - [ ] **6.79** Bot lifecycle manager — `L14.06`
 - [ ] **6.80** Global workspace as the inter-bot bus — `L14.07`
 - [ ] **6.81** Referee over bot actions — `L14.08`
@@ -825,6 +832,12 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 
 **— L14 —**
 
+- [ ] **7.77a** PER-SEGMENT LIVE-CAPITAL ARMING — one dashboard switch per segment holon — `L13.41`
+      *(operator 2026-08-11, `A.56`). Arming one segment puts ONLY that segment on real money; the rest
+      keep paper-trading in parallel. Fully live only when every switch is on. Switch set DERIVED from the
+      segment registry, never a hardcoded count — this also dissolves the `L5.25` nine vs `D.01` six
+      contradiction. `R.22` two-key applies PER SEGMENT (own graduation + own operator arm), so this makes
+      live capital harder to reach than the single master switch it replaces.*
 - [ ] **7.78** CONDUCTOR BOT — `L14.11`
 - [ ] **7.79** Bot residency states — `L14.11a`
 - [ ] **7.80** Model cache with LRU eviction — `L14.11b`
