@@ -198,6 +198,14 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       limitation carried forward:** `pandas_market_calendars` recognises ZERO NSE holidays for 1990-1996
       and 2027-2030, and only 4 for 1998 — the calendar reports its own per-year reliability rather than
       trusting the library.
+- [~] **1.30b** TWO-PHASE DISCOVER-THEN-FETCH in the ingest core — `L0.35` — *built 2026-08-11 at
+      operator instruction (`A.58`), closing the core gap `A.54` recorded. Order is memory → discovery →
+      the adapter's ladder, with the path taken RECORDED (asking and guessing yield identical outcomes but
+      differ ~140x in cost). Validity horizon DERIVED from the data — an expiry list is valid until its
+      nearest expiry passes, never a typed-in TTL. `ANSWERED_EMPTY` is a third outcome, distinct from
+      failure and from absence. **R.05 on the live chain: 19 requests vs ~2,700, 99.3% eliminated**; the
+      derived horizon correctly picked the nearest FUTURE expiry (2026-08-18), not today's. Wired into the
+      runner, so not an orphan. `[~]` per `R.08`: no dashboard surface yet.*
 - [ ] **1.31** Point-in-time market rules + calendar history — `L0.31`
 - [ ] **1.32** Clock sync + drift alert — `L0.32`
 - [ ] **1.33** Multi-broker consolidated feed with liquidity-weighted cross-check — `L0.33`

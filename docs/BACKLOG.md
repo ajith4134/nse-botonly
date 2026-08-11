@@ -13,12 +13,10 @@ Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) ·
 All three of `research/207`'s BLOCKED verdicts were overturned (`A.53`, `A.54`, `A.55`) — see `O.40`.
 Open items:
 
-- 🔴 **CORE GAP — two-phase discover-then-fetch.** `L0.27` needs an expiry it cannot discover inside the
-  adapter contract (no I/O in `fetch_targets`, no chaining between targets), so it uses a bounded
-  candidate ladder: **~2,700 requests/run at full universe** against `www.nseindia.com`, the one
-  inconsistently-gated host. The fix belongs in the core, not the adapter: either a discover-then-fetch
-  primitive, or memoising the previous run's confirmed expiry. **Do not run L0.27 at full universe until
-  this exists.**
+- 🟢 **CORE GAP CLOSED 2026-08-11 — two-phase discover-then-fetch built** (`L0.35`, `A.58`). Measured on
+  the live chain: **19 requests vs ~2,700, 99.3% eliminated**. The constraint forbidding `L0.27` at full
+  universe is **lifted**. Remaining nuance: the memo is per-parameter with a derived horizon, so a session
+  spanning an expiry rollover rediscovers once — correct, and worth knowing.
 - ⛔ **`L0.29` weight feed stale since 2026-01-08** (~7 months) while a sibling feed on the same host is
   current. The adapter correctly rejects it rather than ingesting stale weights. Needs either an alternate
   weight source or acceptance that weights are frozen at 2026-01-08.

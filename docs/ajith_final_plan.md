@@ -203,6 +203,17 @@ replays are legal-accurate. ⟨XIII⟩ · ultra · spec · r/61
 planned · atlas L10
 **L0.33**  Multi-broker consolidated feed with liquidity-weighted cross-check — one synthetic tape from
 several brokers. ⟨XVI⟩ · ultra · planned · atlas L1
+**L0.35**  **Two-phase discover-then-fetch primitive in the ingest core** — an adapter may ASK the
+source for a parameter it cannot know, instead of guessing its way through a candidate ladder. Order is
+memory → discovery → the adapter's own ladder, and which path was taken is RECORDED, because a run that
+guessed and a run that asked produce identical outcomes while differing in request cost by orders of
+magnitude. Discovered parameters are remembered with a validity horizon **derived from the data itself**
+(an option-expiry list is valid until its own nearest expiry passes) rather than a typed-in TTL, which
+would be wrong in both directions. A discovery that answers EMPTY is a third outcome, distinct from a
+failure and from an absence: the source said the thing does not exist, so guessing past it is waste.
+**Measured on the live chain: 19 requests versus ~2,700, 99.3% eliminated.** ⟨II⟩ · adv ·
+**built 2026-08-11** · `A.58` · `L0.27`'s ladder is its motivating case
+
 **L0.34**  Deep-history price + universe sourcing (~20yr) — the free-vs-paid ceiling was researched in
 detail; most deep NSE history is not free. ⟨XVI⟩ · ultra · blocked · r/59, r/74, r/77
 
@@ -2609,6 +2620,26 @@ sdist**, so no pip path exists; `nautilus_trader` publishes `manylinux_2_35_aarc
 SOTA analog is a depth *comparison*, not an import — but no spec may plan to depend on either. Where a
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
+
+**A.58 · 2026-08-11 · The ingest core gains a discover-then-fetch primitive; `L0.27`'s ladder becomes
+its fallback rather than its only path.** Built at the operator's instruction against the gap recorded in
+`A.54`. `L0.27` needed an `expiry` it could not learn inside the adapter contract, and a wrong guess
+returns **HTTP 200 with an empty `data: []`** rather than a 404 — so the ladder could not even be pruned
+by status code and cost ~2,700 requests per run against the one inconsistently-gated host.
+
+Three design choices carry the value. **Validity is derived, never a TTL:** a discovered expiry list stops
+being current when its NEAREST expiry passes, because the exchange adds a new far one by then — the
+furthest date would keep serving a list missing its front month for weeks, and a fixed TTL is wrong in
+both directions at once. **An empty answer is a third outcome:** `ANSWERED_EMPTY` means the source
+responded and the thing does not exist, which is neither a failure to retry nor an absence to record, and
+guessing past a clear answer is the ladder's worst case for no reason. **The path taken is recorded:**
+remembered, asked, or guessed produce identical target lists, so without `used_fallback` the entire cost
+difference would be invisible.
+
+**`R.05` measured on the live endpoint:** the real chain payload already carries `expiryDates` (18 of
+them), the derived horizon correctly selected the nearest FUTURE expiry rather than today's, and the cost
+fell to **19 requests from ~2,700 — 99.3% eliminated**. *Supersedes the BACKLOG entry that forbade running
+`L0.27` at full universe; that constraint is now lifted.*
 
 **A.57 · 2026-08-11 · Each segment bot DISCOVERS its own indicators and patterns; chart patterns stay
 gated hypotheses.** Operator feature request, entered as `L11.135`. Chosen over a hand-assigned per-segment

@@ -20,6 +20,12 @@ from nse_algo_trader.nse_ingest.bitemporal_ingest_store import (
     BitemporalIngestStore,
     IngestResult,
 )
+from nse_algo_trader.nse_ingest.discovering_ingest_source_adapter import (
+    DiscoveredParameterStore,
+    DiscoveringNseIngestSourceAdapter,
+    DiscoveryPlan,
+    plan_targets_with_discovery,
+)
 from nse_algo_trader.nse_ingest.ingest_source_adapter import (
     IngestAdapterError,
     NseIngestSourceAdapter,
@@ -55,6 +61,10 @@ class SourceIngestRun:
     source_name: str
     started_at: datetime
     outcomes: list[TargetIngestOutcome] = field(default_factory=list)
+    discovery_plan: object | None = None
+    """How the targets were arrived at, when discovery was used — remembered, asked, or
+    guessed. A run that guessed and a run that asked look identical in their outcomes
+    and differ in request cost by orders of magnitude, so the distinction is recorded."""
 
     @property
     def rows_inserted(self) -> int:
@@ -94,6 +104,17 @@ class SourceIngestRun:
     def parse_failures(self) -> list[TargetIngestOutcome]:
         return [outcome for outcome in self.outcomes if outcome.parse_error]
 
+    def _describe_target_source(self) -> str:
+        """How the targets were arrived at, when discovery was involved."""
+        if self.discovery_plan is None:
+            return ""
+        route = (
+            "fallback ladder"
+            if getattr(self.discovery_plan, "used_fallback", False)
+            else "discovery"
+        )
+        return f" | targets via {route}"
+
     def describe(self) -> str:
         return (
             f"{self.source_name}: {self.rows_inserted:,} rows inserted, "
@@ -101,6 +122,7 @@ class SourceIngestRun:
             f"{len(self.blocked_targets)} blocked, "
             f"{len(self.content_mismatches)} content mismatches, "
             f"{len(self.parse_failures)} parse failures"
+            + self._describe_target_source()
         )
 
 
@@ -121,12 +143,22 @@ class NseSourceIngestRunner:
         return self._clock.now(UTC)
 
     def ingest(
-        self, adapter: NseIngestSourceAdapter, for_dates: Sequence[date]
+        self,
+        adapter: NseIngestSourceAdapter,
+        for_dates: Sequence[date],
+        discovery_memo: DiscoveredParameterStore | None = None,
     ) -> SourceIngestRun:
-        """Fetch, classify, parse and store every target for the requested dates."""
-        run = SourceIngestRun(source_name=adapter.source_name, started_at=self._now())
+        """Fetch, classify, parse and store every target for the requested dates.
 
-        for target in adapter.fetch_targets(for_dates):
+        When the adapter can discover its own parameters and a memo is supplied, the
+        two-phase path runs first: remembered parameters cost nothing, one discovery
+        request beats a thousand guesses, and the adapter's own candidate ladder is the
+        last resort rather than the only one (`L0.35`).
+        """
+        run = SourceIngestRun(source_name=adapter.source_name, started_at=self._now())
+        targets = self._plan_targets(adapter, for_dates, discovery_memo, run)
+
+        for target in targets:
             outcome = self._fetcher.fetch(
                 target, content_check=adapter.content_mismatch_reason
             )
@@ -174,6 +206,34 @@ class NseSourceIngestRunner:
                 )
             )
         return run
+
+    def _plan_targets(
+        self,
+        adapter: NseIngestSourceAdapter,
+        for_dates: Sequence[date],
+        discovery_memo: DiscoveredParameterStore | None,
+        run: SourceIngestRun,
+    ) -> Sequence[FetchTarget]:
+        """Targets via discovery when the adapter supports it, else the plain contract."""
+        if discovery_memo is None or not isinstance(
+            adapter, DiscoveringNseIngestSourceAdapter
+        ):
+            return adapter.fetch_targets(for_dates)
+
+        discovered: dict[str, object] = {}
+        for discovery_target in adapter.discovery_targets(for_dates):
+            outcome = self._fetcher.fetch(discovery_target)
+            self._record(adapter, outcome)
+            if outcome.status.is_success and outcome.payload is not None:
+                discovered[discovery_target.url] = adapter.parse_discovery(
+                    outcome.payload, discovery_target
+                )
+
+        plan: DiscoveryPlan = plan_targets_with_discovery(
+            adapter, for_dates, discovery_memo, discovered or None  # type: ignore[arg-type]
+        )
+        run.discovery_plan = plan
+        return plan.targets
 
     def _record(
         self, adapter: NseIngestSourceAdapter, outcome: FetchOutcome
