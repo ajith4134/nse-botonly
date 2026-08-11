@@ -3374,3 +3374,13 @@ expiries; EXIDEIND + NUVAMA held 1 and left F&O ~35 trading days later). `DALBHA
 - 🔴 **274 unparsed actions (0.65%) remain**, incl. `Split Us 64 Into 2 Parts`, `Bonus 1 Dvr : 10 Eq Share`,
   `Conv Into Bonds-Physical`. They taint any series spanning them rather than being dropped — correct
   behaviour, but the count should come down as shapes are identified.
+
+- **CSS is parsed by nothing in the test path** (`A.64`, `O.49`). Five malformed rules passed ruff, mypy
+  and every test because the stylesheet lives inside a Python f-string and no tool in the chain parses
+  CSS. The two regression tests added catch stray semicolons and unconsumed series variables — the
+  mechanism met, not the category. Add `tinycss2` to the render tests and fail on ANY parse error in the
+  emitted stylesheet; that subsumes both hand-rolled tests and catches unclosed braces and invalid
+  property values, which neither currently would.
+- **Screenshot capture is not wired into any gate** (`A.63`). `scripts/capture_dashboard_screenshots.py`
+  exists and works but runs only when invoked by hand, so `R.08` visual confirmation still depends on me
+  remembering. Candidates: a step in the daily runner, or a git hook on `src/nse_algo_trader/dashboard/`.
