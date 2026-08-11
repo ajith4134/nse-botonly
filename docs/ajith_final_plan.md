@@ -2661,6 +2661,20 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.67 · 2026-08-11 · `scripts/` enters the type gate, and the four reported issues are closed.**
+Operator instruction to fix all four. The root cause under two of them: `scripts/` was outside mypy
+entirely and the package shipped no `py.typed`, so every import in the OPERATIONAL SPINE resolved to
+`Any` and no call was checked — exactly how `store.ingest(observed_on=...)` shipped against a method
+taking `ingested_on` and failed on every scheduled run. Gate now covers 93 files, was 54.
+
+Closed: **(1)** the nine `=0` adapter lines were correct, not a bug — the date was already held and
+re-ingest is a content-hash no-op — but `=0` was three states in one number, so it now distinguishes
+already-held from nothing-fetched. **(2)** the `ingested_on` fix verified real: 113,693 instruments in
+3.6s. **(3)** unset capital is REPORTED, not raised; this runner never sizes an order, and `R.03` is
+untouched because no default is invented and the sizing path still refuses to act. **(4)** the `R.08`
+screenshot capture moved into the package and runs as the last step of the daily run.
+*Supersedes the BACKLOG entry "screenshot capture is not wired into any gate".*
+
 **A.66 · 2026-08-11 · Prose recalibrated to the measured institutional norm; scope returned to the
 operator.** Operator decision, after asking why progress was slow. Measured rather than argued
 (`docs/research/213`): this repo runs **doc:src 4.28** against an institutional median of **0.29**, and

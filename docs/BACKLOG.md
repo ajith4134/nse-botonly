@@ -3381,6 +3381,5 @@ expiries; EXIDEIND + NUVAMA held 1 and left F&O ~35 trading days later). `DALBHA
   mechanism met, not the category. Add `tinycss2` to the render tests and fail on ANY parse error in the
   emitted stylesheet; that subsumes both hand-rolled tests and catches unclosed braces and invalid
   property values, which neither currently would.
-- **Screenshot capture is not wired into any gate** (`A.63`). `scripts/capture_dashboard_screenshots.py`
-  exists and works but runs only when invoked by hand, so `R.08` visual confirmation still depends on me
-  remembering. Candidates: a step in the daily runner, or a git hook on `src/nse_algo_trader/dashboard/`.
+- ~~**Screenshot capture is not wired into any gate**~~ — CLOSED 2026-08-11 (`A.67`): moved into
+  the package and wired as the last step of the daily run; verified 6 screenshots in 7.2s.
