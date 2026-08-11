@@ -16,7 +16,7 @@ is river's `Quantile`, a streaming P² implementation with O(1) memory per instr
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, time, timedelta
+from datetime import date, time
 from zoneinfo import ZoneInfo
 
 from river import stats
@@ -201,19 +201,3 @@ class DepthPacketIntegrityClassifier:
         ):
             return IntegrityFlag.OUTSIDE_SESSION_WINDOW
         return IntegrityFlag.NONE
-
-    def session_window_bounds_ist(self, session_date: date) -> tuple[int, int]:
-        """The quoting window on a date, as epoch microseconds — used by the session
-        report to compute coverage against the window that actually existed."""
-        from datetime import datetime
-
-        opens = datetime.combine(
-            session_date, NSE_QUOTING_WINDOW_OPENS_IST, INDIA_MARKET_TIMEZONE
-        )
-        closes = datetime.combine(
-            session_date, NSE_QUOTING_WINDOW_CLOSES_IST, INDIA_MARKET_TIMEZONE
-        )
-        return (
-            int(opens.timestamp() * 1_000_000),
-            int((closes + timedelta(microseconds=0)).timestamp() * 1_000_000),
-        )

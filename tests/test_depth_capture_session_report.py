@@ -33,6 +33,9 @@ EXPECTED_QUARTILE_FENCE = -0.5
 HEALTHY_INSTRUMENT_COUNT = 10
 NEGLIGIBLE_COVERAGE = 0.01
 MEASURED_ROW_COUNT = 400
+HALF = 0.5
+MINIMUM_INTERRUPTION_GAP_SECONDS = 2600
+NEARLY_THE_WHOLE_SESSION = 0.9
 
 
 def _packet(token: int, sequence: int, receipt: datetime, price: int = 100) -> DepthPacket:
@@ -228,3 +231,44 @@ def test_the_report_measures_the_tape_it_read(tmp_path: Path) -> None:
     assert report.total_rows == MEASURED_ROW_COUNT
     assert report.total_bytes > 0
     assert report.bytes_per_row > 0
+
+
+@pytest.mark.adversarial
+def test_the_gap_threshold_is_the_instruments_own_extreme_interval(tmp_path: Path) -> None:
+    """Coverage only means something if the p99 interval is really computed. With
+    uniform spacing any index gives the same answer, so this uses UNEVEN spacing where
+    picking the wrong quantile index changes the verdict."""
+    steady = [
+        _packet(STEADY_TOKEN, i + 1, SESSION_OPEN + timedelta(seconds=i * 10))
+        for i in range(200)
+    ]
+    # One genuine hour-long hole, after which normal quoting resumes.
+    interrupted = steady[:100] + [
+        _packet(STEADY_TOKEN, 100 + i, SESSION_OPEN + timedelta(seconds=3600 + i * 10))
+        for i in range(100)
+    ]
+    _write_tape(tmp_path, {STEADY_TOKEN: interrupted})
+    quality = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS).quality_for(
+        STEADY_TOKEN
+    )
+    assert quality is not None
+    # The hole is excluded from coverage, so covered time is far below the span.
+    span = (interrupted[-1].receipt_time - interrupted[0].receipt_time).total_seconds()
+    assert quality.covered_seconds < span * HALF
+    assert quality.largest_gap_seconds >= MINIMUM_INTERRUPTION_GAP_SECONDS
+
+
+@pytest.mark.adversarial
+def test_largest_gap_accounts_for_time_outside_the_observed_span(tmp_path: Path) -> None:
+    """An instrument quoting for one minute of a six-hour session has a gap of nearly
+    the whole session, even though every interval inside its span was tiny."""
+    brief = [
+        _packet(STEADY_TOKEN, i + 1, SESSION_OPEN + timedelta(seconds=i))
+        for i in range(60)
+    ]
+    _write_tape(tmp_path, {STEADY_TOKEN: brief})
+    quality = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS).quality_for(
+        STEADY_TOKEN
+    )
+    assert quality is not None
+    assert quality.largest_gap_seconds > SESSION_SECONDS * NEARLY_THE_WHOLE_SESSION

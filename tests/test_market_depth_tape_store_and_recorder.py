@@ -800,3 +800,62 @@ def test_two_concurrent_captures_cannot_share_a_shard_directory(tmp_path: Path) 
 def test_an_unsafe_capture_run_id_is_refused(tmp_path: Path, bad_run_id: str) -> None:
     with pytest.raises(DepthTapeStoreError, match="path-safe"):
         _store(tmp_path, capture_run_id=bad_run_id)
+
+
+@pytest.mark.adversarial
+def test_only_the_flags_actually_set_are_tallied(tmp_path: Path) -> None:
+    """Asserting the expected flag is present does not prove the others are absent —
+    an `and` -> `or` in the tally loop counts every flag on every packet and still
+    satisfies a test that only checks the one it expects."""
+    crossed = DepthPacket(
+        instrument_token=738561,
+        exchange="NSE",
+        exchange_time=BASE_TIME,
+        receipt_time=BASE_TIME,
+        receipt_sequence=1,
+        last_price_paise=100,
+        last_traded_quantity=1,
+        average_traded_price_paise=100,
+        volume_traded=1,
+        total_buy_quantity=1,
+        total_sell_quantity=1,
+        open_interest=0,
+        bids=tuple(DepthLevel(200, 1, 1) for _ in range(5)),
+        asks=tuple(DepthLevel(100, 1, 1) for _ in range(5)),
+    )
+    recorder, feed, shard = _recorder(tmp_path, [crossed])
+    recorder.start()
+    feed.emit_all()
+    recorder.stop()
+    assert shard.statistics.flag_counts == {IntegrityFlag.BOOK_CROSSED: 1}
+
+
+@pytest.mark.adversarial
+def test_a_zero_length_session_is_refused_by_admission(tmp_path: Path) -> None:
+    """Zero seconds makes every instrument free, so the budget would admit everything."""
+    with pytest.raises(AdmissionControlError, match="session_seconds"):
+        _controller(tmp_path).solve(_candidates(10), 0.0, 40.0)
+
+
+@pytest.mark.adversarial
+def test_a_row_exactly_at_the_window_start_is_included(tmp_path: Path) -> None:
+    """The read window is half-open [start, end) and consumers rely on that: adjacent
+    windows must partition the tape without dropping or double-counting a row."""
+    with _store(tmp_path) as store:
+        store.append(_packet(sequence=1), IntegrityFlag.NONE)
+    exact_start = BASE_TIME + timedelta(seconds=1, milliseconds=40)
+    table = MarketDepthTapeReader(tmp_path).read_instrument_window(
+        738561, exact_start, exact_start + timedelta(hours=1), SESSION_DATE
+    )
+    assert table.num_rows == 1
+
+
+@pytest.mark.adversarial
+def test_a_row_exactly_at_the_window_end_is_excluded(tmp_path: Path) -> None:
+    with _store(tmp_path) as store:
+        store.append(_packet(sequence=1), IntegrityFlag.NONE)
+    exact_receipt = BASE_TIME + timedelta(seconds=1, milliseconds=40)
+    table = MarketDepthTapeReader(tmp_path).read_instrument_window(
+        738561, BASE_TIME, exact_receipt, SESSION_DATE
+    )
+    assert table.num_rows == 0

@@ -45,6 +45,12 @@ EXPECTED_BEST_ASK_PAISE = 125_005
 EXPECTED_RECEIPT_SEQUENCE = 7
 EXPECTED_MATURITY_SAMPLES = 1000
 SLOW_TO_FAST_THRESHOLD_RATIO = 10
+EXPECTED_LAST_TRADED_QUANTITY = 37
+EXPECTED_VOLUME_TRADED = 987_654
+EXPECTED_TOTAL_BUY_QUANTITY = 5_000
+EXPECTED_TOTAL_SELL_QUANTITY = 4_000
+EXPECTED_OPEN_INTEREST = 123
+EXPECTED_AVERAGE_TRADED_PRICE_PAISE = 124_900
 
 
 def _levels(prices: list[int], quantity: int = 100) -> tuple[DepthLevel, ...]:
@@ -472,3 +478,108 @@ def test_host_timezone_is_not_assumed_by_the_test_suite_itself() -> None:
     """Guards the guard: if CI ever pins TZ, the timezone-hazard test above would
     silently stop exercising the case it exists for."""
     assert "TZ" not in os.environ or os.environ["TZ"] in ("", "UTC")
+
+
+# ------------------------------------------- gaps found by mutation testing
+
+
+@pytest.mark.adversarial
+def test_equal_exchange_timestamps_are_not_non_monotonic(
+    classifier: DepthPacketIntegrityClassifier,
+) -> None:
+    """`exchange_time` has one-second resolution and the measured p10 inter-packet gap
+    is 0.25s, so several packets per instrument per exchange-second are routine. A `<=`
+    watermark test would flag most of a liquid instrument's session."""
+    base = datetime(2026, 8, 11, 10, 0, tzinfo=IST).astimezone(UTC)
+    classifier.classify(_packet(exchange_time=base, sequence=1, volume=1))
+    flags = classifier.classify(_packet(exchange_time=base, sequence=2, volume=2))
+    assert not (IntegrityFlag.EXCHANGE_TIME_NOT_MONOTONIC & flags)
+
+
+@pytest.mark.adversarial
+def test_zero_priced_levels_are_not_malformed(
+    classifier: DepthPacketIntegrityClassifier,
+) -> None:
+    """A zero price is an ABSENT order, not a broken one — verified on a real locked
+    SME stock whose entire ask ladder was zeros. Treating `<= 0` as malformed would
+    flag every illiquid instrument and the whole pre-open."""
+    empty_ask = _packet(asks=_levels([0, 0, 0, 0, 0]))
+    assert not (IntegrityFlag.MALFORMED_LEVEL_VALUE & classifier.classify(empty_ask))
+
+
+@pytest.mark.adversarial
+def test_a_packet_exactly_at_the_window_open_is_inside_it(
+    classifier: DepthPacketIntegrityClassifier,
+) -> None:
+    at_open = datetime(2026, 8, 11, 9, 0, 0, tzinfo=IST).astimezone(UTC)
+    assert not (
+        IntegrityFlag.OUTSIDE_SESSION_WINDOW & classifier.classify(_packet(receipt_time=at_open))
+    )
+
+
+@pytest.mark.adversarial
+def test_a_packet_exactly_at_the_window_close_is_inside_it(
+    classifier: DepthPacketIntegrityClassifier,
+) -> None:
+    at_close = datetime(2026, 8, 11, 15, 30, 0, tzinfo=IST).astimezone(UTC)
+    assert not (
+        IntegrityFlag.OUTSIDE_SESSION_WINDOW & classifier.classify(_packet(receipt_time=at_close))
+    )
+
+
+@pytest.mark.adversarial
+def test_staleness_exactly_at_the_threshold_is_not_flagged(
+    classifier: DepthPacketIntegrityClassifier,
+) -> None:
+    """The threshold is the instrument's own extreme quantile, so a value equal to it
+    is the boundary of normal, not past it."""
+    receipt = datetime(2026, 8, 11, 10, 0, tzinfo=IST).astimezone(UTC)
+    for sequence in range(MINIMUM_SAMPLES_FOR_STALENESS_MATURITY + 50):
+        classifier.classify(
+            _packet(
+                exchange_time=receipt - timedelta(milliseconds=100),
+                receipt_time=receipt,
+                sequence=sequence,
+                volume=sequence,
+            )
+        )
+    threshold = classifier.state_for(738561).derived_staleness_threshold_micros()
+    assert threshold is not None
+    at_threshold = _packet(
+        exchange_time=receipt - timedelta(microseconds=int(threshold)),
+        receipt_time=receipt,
+        sequence=99_998,
+        volume=99_998,
+    )
+    assert not (
+        IntegrityFlag.STALE_BEYOND_DERIVED_THRESHOLD & classifier.classify(at_threshold)
+    )
+
+
+@pytest.mark.unit
+def test_every_quote_field_survives_normalization() -> None:
+    """`or 0` guards on optional fields must not zero a value that IS present."""
+    kite_tick = {
+        "instrument_token": 738561,
+        "last_price": 1250.0,
+        "last_traded_quantity": 37,
+        "average_traded_price": 1249.0,
+        "volume_traded": 987_654,
+        "total_buy_quantity": 5_000,
+        "total_sell_quantity": 4_000,
+        "oi": 123,
+        "exchange_timestamp": None,
+        "depth": {
+            "buy": [{"price": 1249.95, "quantity": 1, "orders": 1} for _ in range(5)],
+            "sell": [{"price": 1250.05, "quantity": 1, "orders": 1} for _ in range(5)],
+        },
+    }
+    packet = depth_packet_from_kite_tick(
+        kite_tick, "NSE", datetime(2026, 8, 11, tzinfo=UTC), 1
+    )
+    assert packet.last_traded_quantity == EXPECTED_LAST_TRADED_QUANTITY
+    assert packet.volume_traded == EXPECTED_VOLUME_TRADED
+    assert packet.total_buy_quantity == EXPECTED_TOTAL_BUY_QUANTITY
+    assert packet.total_sell_quantity == EXPECTED_TOTAL_SELL_QUANTITY
+    assert packet.open_interest == EXPECTED_OPEN_INTEREST
+    assert packet.average_traded_price_paise == EXPECTED_AVERAGE_TRADED_PRICE_PAISE
