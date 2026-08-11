@@ -86,7 +86,16 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       1.0, median 1.016. `[~]` per R.08 + F&O factor acquisition unbuilt.*
 - [ ] **1.8** Symbol-rename / ISIN / merger record store — `L0.08`
 - [ ] **1.9** Delisted-securities master (BSE-sourced) — `L0.09`
-- [ ] **1.10** Gap detection + provenance-flagged backfill — `L0.10`
+- [~] **1.10** Gap detection + provenance-flagged backfill — `L0.10` — *built on the ingest core.
+      The content is the CLASSIFICATION, not the list: a missing date is never-attempted (work
+      outstanding), established-absent (asked, archive said 404 — stop retrying) or recoverable-failure
+      (bot-blocked/timeout/wrong-date — keep retrying, escalate at three strikes per `R.21`).
+      Collapsing those produces a backfill that hammers holidays nightly and quietly gives up on real
+      outages. Backfill provenance is MEASURED from the store's two clocks rather than set as a flag
+      somebody must remember — a row learned 40 days after its effective date was not knowable then,
+      and a point-in-time reader excludes it automatically. Backfills are bounded so a source years
+      behind cannot turn one run into an unbounded crawl of a host that bot-blocks. `[~]` per `R.11`:
+      nothing schedules it yet.*
 - [ ] **1.11** Causal leakage firewall — `L0.11`
 - [ ] **1.12** Replay experience provenance — `L0.12`
 - [ ] **1.13** Honest clock / day-walker + firewall — `L0.13`
