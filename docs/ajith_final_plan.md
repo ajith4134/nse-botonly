@@ -2661,6 +2661,31 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.69 · 2026-08-11 · `L0.11` rebuilt bitemporally: the archived firewall guarded the wrong axis.**
+The pre-reset version guarded a single `timestamp`. The project's own data refutes that model —
+across 533,920 real ingested rows, **90.6% were first observed more than a day after the event they
+describe** (F&O bhavcopy median 22 days, max 2,413), so an event-date guard admits nearly the whole
+corpus as though it had been available on the day it describes.
+
+**The obvious fix was also rejected, and that is the substance of the entry.** `observed_at` is when WE
+fetched a row, not when it became public; guarding on it would block all legitimate backfill, since a
+2020 bhavcopy fetched in 2026 remains a faithful record of what NSE published in 2020. The firewall
+therefore guards `knowable_from = effective_date + publication lag`, and the lag is DERIVED (`R.03`) as
+the minimum ever observed per source — the fastest a row was ever seen is the only honest lower bound,
+because backfill inflates every other statistic. Derived from the real corpus: bhavcopy 1d, ATM IV and
+circuit bands 0d, bulk/block and MWPL 1d.
+
+**Where the derivation breaks it says so.** `delisted_securities_master` yields a 2,101-day minimum
+because it is a static historical master never observed fresh. That is an absence of knowledge, not a
+slow publisher, so its schedule reads UNKNOWN and its rows are BLOCKED by default rather than admitted
+under a fabricated schedule. Verified on real data: replaying 2026-08-10 across 720,240 rows blocks
+**44,526** — 37,523 not-yet-published (that day's own bhavcopy, published the next day), 6,675
+future-dated, 328 unknown-schedule. Every one is a row a naive backtest would have consumed.
+
+Also fixed the archived version's silent skip: it `continue`d past out-of-window data, so a replay that
+saw nothing because everything was blocked was indistinguishable from one that legitimately had nothing
+to see. Blocks are now counted by reason (`R.11`).
+
 **A.68 · 2026-08-11 · `L0.08` built: ISIN is the key, and the store refuses to guess when a symbol
 is not one.** Measured on the project's own 43,209 real bhavcopy observations: **166 ISINs have traded
 under more than one symbol** (`CADILAHC`->`ZYDUSLIFE`, `ADANIGAS`->`ATGL`, `SASTASUNDR`->`HEALTHX`) and

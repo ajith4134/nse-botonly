@@ -54,6 +54,7 @@ from nse_algo_trader.capital_configuration import (
     CapitalConfigurationError,
     load_trading_capital_from_environment,
 )
+from nse_algo_trader.causal_leakage_firewall import derive_publication_lags
 from nse_algo_trader.corporate_action_adjustment_engine import (
     CorporateActionAdjustmentEngine,
 )
@@ -291,6 +292,30 @@ def _refresh_security_identity() -> str:
         return f"{recorded:,} new · {identities.describe()}"
 
 
+def _report_publication_schedules() -> str:
+    """`L0.11` — re-derive every source's publication lag and surface anything unknowable.
+
+    Run daily because a publication schedule is a fact about NSE that can CHANGE, and the
+    firewall's guarantee is only as good as the lag it was derived from. A source that
+    starts publishing a day later would silently begin admitting rows a trader could not
+    have held, and nothing else in the system would notice.
+    """
+    with BitemporalIngestStore(INGEST_DATABASE) as store:
+        triples = store.publication_observations()
+    lags = derive_publication_lags(triples)
+    unknown = sorted(name for name, lag in lags.items() if not lag.is_derivable)
+    known = ", ".join(
+        f"{name}={lag.days}d" for name, lag in sorted(lags.items()) if lag.is_derivable
+    )
+    detail = f"{len(lags)} sources · {known}"
+    if unknown:
+        # Not a failure: a static historical master legitimately has no schedule. It is
+        # surfaced because the firewall BLOCKS these by default, so a silent one would
+        # look like a source that simply had no data.
+        detail += f" · UNKNOWN (blocked in replay): {', '.join(unknown)}"
+    return detail
+
+
 def _report_capital() -> str:
     """Capital is a parameter, not a constant (`R.03`), and the run states what it is.
 
@@ -474,6 +499,7 @@ def main() -> int:
     )
     _run_step(report, "ingest coverage", _report_ingest_coverage)
     _run_step(report, "security identity", _refresh_security_identity)
+    _run_step(report, "publication schedules", _report_publication_schedules)
     _run_step(report, "universe", _report_universe)
     _run_step(report, "corporate actions", _report_corporate_actions)
     _run_step(report, "bar store", _report_bar_store)

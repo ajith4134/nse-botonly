@@ -100,7 +100,7 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       and a point-in-time reader excludes it automatically. Backfills are bounded so a source years
       behind cannot turn one run into an unbounded crawl of a host that bot-blocks. `[~]` per `R.11`:
       nothing schedules it yet.*
-- [ ] **1.11** Causal leakage firewall — `L0.11`
+- [x] **1.11** Causal leakage firewall — `L0.11` · bitemporal rebuild; blocks 44,526 of 720,240 real rows when replaying 2026-08-10 (`A.69`)
 - [ ] **1.12** Replay experience provenance — `L0.12`
 - [ ] **1.13** Honest clock / day-walker + firewall — `L0.13`
 - [ ] **1.14** Multi-broker historical bar source — `L0.14`

@@ -361,6 +361,20 @@ class BitemporalIngestStore:
         ).fetchall()
         return [date.fromisoformat(record[0]) for record in records]
 
+    def publication_observations(self) -> list[tuple[str, date, datetime]]:
+        """Every row's `(source, effective_date, observed_at)`, for lag derivation.
+
+        A projection rather than a row fetch: `L0.11` needs three columns from every row
+        in the store, and materialising 720,000 full observations to read them would cost
+        minutes to answer what SQL answers directly.
+        """
+        return [
+            (source_name, date.fromisoformat(effective), datetime.fromisoformat(observed))
+            for source_name, effective, observed in self._connection.execute(
+                "SELECT source_name, effective_date, observed_at FROM ingested_row"
+            )
+        ]
+
     def row_count(self, source_name: str) -> int:
         record = self._connection.execute(
             "SELECT COUNT(*) FROM ingested_row WHERE source_name = ?", (source_name,)
