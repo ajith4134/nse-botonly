@@ -541,6 +541,41 @@ response is an error. A fetcher that trusts a 200 will ingest stale data as fres
 the content-aware failure classifier is the one part of the ingest core that must be built rather than
 adopted.
 
+## O.40 · 2026-08-11 · A single-page app is not a wall — it is a client whose API calls are readable
+
+**Opinion:** "the page is JavaScript-rendered, so the data is unreachable" is almost never true, and
+treating it as true is a research failure rather than a platform limitation.
+**Reasoning:** `research/207` recorded NSE's ASM surveillance list as **BLOCKED**, having guessed
+`/api/reports/asm` from the page path and received 404. The correct method is to read what the page's own
+JavaScript fetches: `/dist/js/sections/reports/asm.js` contains `B.get('/api/reportASM')` in plain text —
+capital `ASM`, a URL nobody had tried. It returns **HTTP 200, 50,270 bytes of JSON, with zero cookies**,
+reproduced byte-identically on a fresh connection. The data was never behind a wall; the endpoint name was
+simply never read off the client that calls it every time the page loads.
+**Confidence:** measured — fetched, reproduced, and now parsed into 189 real surveillance entries.
+**Would change my mind:** nothing about the method. Some endpoints genuinely do require a session; the
+point is that guessing a URL and recording BLOCKED is not evidence of one.
+**The consequence, which is the important part:** two other BLOCKED verdicts in the same document (ATM IV,
+historical bulk deals) were reached the same way — by guessing rather than by reading the client. They are
+now suspect, and I have marked them as needing re-test by this method. A blocker established by a weak
+method is worse than no blocker, because it stops anyone looking again.
+
+## O.41 · 2026-08-11 · I twice broke my own parallel-work discipline, in the same way
+
+**Opinion:** the rule I wrote for the fan-out — disjoint ownership, serial integration — is correct, and I
+violated it twice while supervising it.
+**Reasoning:** (a) I ran `git add -A` while agents were mid-flight and swept an in-flight adapter into an
+unrelated commit; (b) I edited `tests/nse_ingest_conformance.py` — a **shared** file the whole fan-out
+depends on — while five agents were running against it, and one reported the contract changing underneath
+it mid-task and had to reorder its samples to cope. Both are the same error: I treated my own writes as
+outside the concurrency rules I imposed on the agents.
+**Confidence:** measured — one agent reported the disruption explicitly and the git history shows the
+sweep.
+**Would change my mind:** nothing. The fix is mechanical: shared files are frozen for the duration of a
+fan-out, and integration commits name their files explicitly instead of `-A`.
+**The generalisation, and its third instance today:** this is the same shape as `O.36` — I verified a PID
+had exited and concluded the *work* had stopped. All three are me trusting a convenient proxy over the
+property I actually cared about. The pattern is worth more attention than any of the individual defects.
+
 ---
 
 ## Maintenance

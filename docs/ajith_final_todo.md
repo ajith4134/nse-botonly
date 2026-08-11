@@ -163,7 +163,16 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       alternate paths tried, all 404/403; the one HTTP-200 alternative returns the same rolling
       today-only data as JSON, not history. So this source accrues forward only.*
 - [ ] **1.27** ATM implied-volatility daily series — `L0.27`
-- [ ] **1.28** Circuit-band / ASM / GSM state per symbol — `L0.28`
+- [~] **1.28** Circuit-band / ASM / GSM state per symbol — `L0.28` — *ALL THREE states built and
+      certified. **ASM was NOT blocked** — `research/207`'s verdict was wrong and is corrected in place
+      (`A.53`): the endpoint is `/api/reportASM`, found by reading the page's own JavaScript rather than
+      guessing a URL. Real fetches: `sec_list.csv` 3,335 rows (bands 20/5/10/2 + 208 `No Band`, GSM
+      stages 0/I/II), `reportASM` 189 entries (128 long-term, 61 short-term). Circuit bands stored RAW
+      including the literal `No Band`, plus a derived nullable percent — nothing normalised away. Found a
+      real NSE data-quality anomaly: `DCI`/`INE0A1101019` appears twice in short-term ASM differing only
+      in company-name casing; disambiguated by occurrence rather than dropped. 35 tests.
+      ⚠️ **Documented blind spot:** `sec_list.csv` carries no date anywhere in its body, so its half of
+      `content_mismatch_reason` can validate structure but never recency. `[~]` per `R.08`.*
 - [ ] **1.29** Index constituents + weights — `L0.29`
 - [~] **1.30a** Calendar coverage self-check — per-year reliability, two derived conditions — `L0.30a`
       *(new 2026-08-10; built with `1.30`, same review pending)*

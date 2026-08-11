@@ -279,6 +279,21 @@ from this machine."
     inline data table (confirmed by grepping the HTML for `csv`/`Download`/`__NEXT_DATA__` — a `Download` link
     exists in the markup but the actual CSV endpoint it calls is populated via client-side JS I cannot execute).
   - `https://www.nseindia.com/api/reports/asm` (guessed) → **VERIFIED HTTP 404** "Resource not found".
+  - > **CORRECTION 2026-08-11 — this BLOCKED verdict was WRONG. ASM is fully reachable.**
+    > The endpoint is `https://www.nseindia.com/api/reportASM` (capital `ASM`), which returns
+    > **HTTP 200, `application/json`, 50,270 bytes, with ZERO cookies**, reproduced on a fresh
+    > connection with byte-identical content: `{"longterm": {"data": [...128]}, "shortterm":
+    > {"data": [...61]}}` — 189 entries in total.
+    > **How it was found, which is the transferable part:** this document guessed `/api/reports/asm`
+    > from the page path and recorded 404. The correct method is to read what the page's own
+    > JavaScript calls — fetching `/dist/js/sections/reports/asm.js` shows `B.get('/api/reportASM')`
+    > outright. A single-page app is not a wall; it is a client whose API calls are readable.
+    > The original text is left below unaltered, per the correct-in-place rule.
+    >
+    > **This casts doubt on the other BLOCKED verdicts in this document** (§6 ATM IV, §5 historical
+    > bulk deals), each of which was also reached by guessing an endpoint rather than reading the
+    > client. They should be re-tested by the same method before being trusted.
+
   - **Conclusion: ASM stage is BLOCKED/NOT LOCATED from this environment.** Only circuit band + GSM stage were
     obtained; ASM needs either browser automation against `/reports/asm` or the correct (unknown to me) API
     path.
@@ -400,6 +415,6 @@ and repositories evaluated:
 | 4 | fo_ban_list | VERIFIED (today-only, no history) | `nsearchives.nseindia.com/content/fo/fo_secban.csv` | quasi-CSV |
 | 5 | bulk_block_deals | VERIFIED (today-only static file; historical API BLOCKED 503) | `archives.nseindia.com/content/equities/bulk.csv` | CSV |
 | 6 | atm_implied_volatility | BLOCKED (404 from www.nseindia.com option-chain API, no static alternative found) | none working | n/a |
-| 7 | circuit_band_asm_gsm | PARTIALLY VERIFIED (Band + GSM via sec_list.csv; ASM BLOCKED) | `nsearchives.nseindia.com/content/equities/sec_list.csv` | CSV |
+| 7 | circuit_band_asm_gsm | **VERIFIED — all three** (Band + GSM via sec_list.csv; ASM via `/api/reportASM`, see the 2026-08-11 correction in §7) | `sec_list.csv` + `www.nseindia.com/api/reportASM` | CSV + JSON |
 | 8 | index_constituents_weights | PARTIALLY VERIFIED (constituents yes; weights NOT LOCATED) | `niftyindices.com/IndexConstituent/ind_nifty50list.csv` | CSV |
 | 9 | corporate_announcements | VERIFIED (live, unparameterized only) | `www.nseindia.com/api/corporate-announcements?index=equities` | JSON |

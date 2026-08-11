@@ -2586,6 +2586,18 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.53 · 2026-08-11 · ASM is NOT blocked, and `research/207`'s BLOCKED verdicts are now suspect as a
+class.** The surveillance list is served by `https://www.nseindia.com/api/reportASM` — HTTP 200, 50,270
+bytes of JSON, zero cookies, reproduced byte-identically. `research/207` had guessed `/api/reports/asm`
+from the page path, received 404, and recorded BLOCKED. The endpoint was found by reading the page's own
+JavaScript (`/dist/js/sections/reports/asm.js` contains `B.get('/api/reportASM')`). All three surveillance
+states — circuit band, GSM, ASM — are therefore reachable and `L0.28` is complete rather than partial.
+**The doc is corrected in place, dated, original left visible**, per `R.25`. The consequence that matters
+beyond this source: §6 (ATM IV) and §5 (historical bulk deals) were declared blocked by the same weak
+method, so both are flagged for re-test by reading the client rather than guessing the URL. A blocker
+established badly is worse than none, because it stops anyone looking again (`O.40`). *Supersedes
+`research/207` §7's BLOCKED verdict.*
+
 **A.52 · 2026-08-11 · Verification effort is REBALANCED — the checks stay, the ceremony goes.** The
 operator challenged the share of effort going into test files rather than feature code. Measured before
 answering: 4,602 source lines against 4,237 test lines across today's work, so feature code exceeds test
