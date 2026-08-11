@@ -1,0 +1,159 @@
+"""The wall's catalogue — derived facts, and the tests that prove they are derived.
+
+The whole value of this module is that nothing in it is typed. So the tests are written
+to fail if a derived fact were ever replaced with a declared one.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from nse_algo_trader.dashboard.module_surface_catalogue import (
+    ModuleTier,
+    SurfaceHealth,
+    build_module_catalogue,
+    worst_first,
+)
+from nse_algo_trader.dashboard.operations_wall_renderer import render_operations_wall
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(scope="module")
+def catalogue():  # noqa: ANN201 — CatalogueSummary
+    return build_module_catalogue(REPOSITORY_ROOT)
+
+
+@pytest.mark.real_data
+def test_the_catalogue_measures_the_real_tree(catalogue) -> None:  # noqa: ANN001
+    """`R.05` for an audit engine: its real data IS the repository."""
+    names = {surface.module_name for surface in catalogue.surfaces}
+    assert "nse_algo_trader.regime.soft_regime_weighting_brain" in names
+    assert "nse_algo_trader.nse_ingest.bitemporal_ingest_store" in names
+    assert catalogue.total > 40
+
+
+@pytest.mark.unit
+def test_tier_is_read_from_the_modules_own_vocabulary(catalogue) -> None:  # noqa: ANN001
+    """`R.23(b)`: a module calling itself an engine has claimed the full loop."""
+    by_name = {surface.module_name: surface for surface in catalogue.surfaces}
+    assert by_name[
+        "nse_algo_trader.strategy.intraday_mean_reversion_engine"
+    ].tier is ModuleTier.DECISION_PATH
+    assert by_name[
+        "nse_algo_trader.market_depth.market_depth_tape_store"
+    ].tier is ModuleTier.STORE_OR_PIPELINE
+
+
+@pytest.mark.unit
+def test_reachability_comes_from_a_real_import_graph(tmp_path: Path) -> None:
+    """Built as a miniature repository so the graph is unambiguous: `reached` is imported
+    by a script, `stranded` is imported by nobody."""
+    package = tmp_path / "src" / "nse_algo_trader"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    (package / "reached_engine.py").write_text("VALUE = 1\n")
+    (package / "stranded_engine.py").write_text("VALUE = 2\n")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "run.py").write_text(
+        "from nse_algo_trader.reached_engine import VALUE\n"
+    )
+    (tmp_path / "tests").mkdir()
+
+    catalogue = build_module_catalogue(tmp_path)
+    states = {surface.short_name: surface for surface in catalogue.surfaces}
+    assert states["reached_engine"].is_reachable
+    assert not states["stranded_engine"].is_reachable
+    assert states["stranded_engine"].health is SurfaceHealth.ORPHAN
+
+
+@pytest.mark.unit
+def test_an_asgi_app_counts_as_an_entry_point(tmp_path: Path) -> None:
+    """A served application is reachable. A narrower rule reported the dashboard itself
+    as an orphan, which was wrong about the code rather than a finding about it."""
+    package = tmp_path / "src" / "nse_algo_trader"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    (package / "served_engine.py").write_text("VALUE = 1\n")
+    (package / "web_server.py").write_text(
+        "from nse_algo_trader.served_engine import VALUE\napp = object()\n"
+    )
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "tests").mkdir()
+
+    states = {
+        surface.short_name: surface
+        for surface in build_module_catalogue(tmp_path).surfaces
+    }
+    assert states["web_server"].is_reachable
+    assert states["served_engine"].is_reachable
+
+
+@pytest.mark.unit
+def test_test_pairing_and_real_data_coverage_are_measured(tmp_path: Path) -> None:
+    package = tmp_path / "src" / "nse_algo_trader"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    (package / "covered_engine.py").write_text("VALUE = 1\n")
+    (package / "bare_engine.py").write_text("VALUE = 2\n")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "run.py").write_text(
+        "from nse_algo_trader.covered_engine import VALUE\n"
+        "from nse_algo_trader.bare_engine import VALUE as OTHER\n"
+    )
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_covered.py").write_text(
+        "import pytest\nfrom nse_algo_trader.covered_engine import VALUE\n"
+        "@pytest.mark.real_data\ndef test_x(): assert VALUE\n"
+    )
+
+    states = {
+        surface.short_name: surface
+        for surface in build_module_catalogue(tmp_path).surfaces
+    }
+    assert states["covered_engine"].test_count == 1
+    assert states["covered_engine"].has_real_data_test
+    assert states["covered_engine"].health is SurfaceHealth.HEALTHY
+    assert states["bare_engine"].test_count == 0
+    assert states["bare_engine"].health is SurfaceHealth.UNTESTED
+
+
+@pytest.mark.unit
+def test_worst_findings_sort_to_the_top(catalogue) -> None:  # noqa: ANN001
+    """A wall sorted alphabetically hides its own findings."""
+    ordered = worst_first(catalogue.surfaces)
+    healths = [surface.health for surface in ordered]
+    ranking = {
+        SurfaceHealth.ORPHAN: 0,
+        SurfaceHealth.UNTESTED: 1,
+        SurfaceHealth.NO_REAL_DATA: 2,
+        SurfaceHealth.HEALTHY: 3,
+    }
+    assert healths == sorted(healths, key=lambda health: ranking[health])
+
+
+@pytest.mark.unit
+def test_the_wall_renders_every_module_with_its_state(catalogue) -> None:  # noqa: ANN001
+    page = render_operations_wall(catalogue)
+    assert "<table" in page
+    for health in SurfaceHealth:
+        if catalogue.count_of(health):
+            assert health.value in page
+    assert page.count("<tr>") >= catalogue.total
+
+
+@pytest.mark.unit
+def test_the_wall_states_counts_that_match_the_catalogue(catalogue) -> None:  # noqa: ANN001
+    page = render_operations_wall(catalogue)
+    assert f"{catalogue.total} modules" in page
+    assert f"<b>{catalogue.count_of(SurfaceHealth.ORPHAN)}</b> orphaned" in page
+
+
+@pytest.mark.adversarial
+def test_a_missing_package_raises_rather_than_reporting_zero(tmp_path: Path) -> None:
+    """Reporting an empty catalogue would read as a perfectly healthy repository."""
+    with pytest.raises(FileNotFoundError):
+        build_module_catalogue(tmp_path)

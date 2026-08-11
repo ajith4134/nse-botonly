@@ -21,9 +21,11 @@ import pkgutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
+from nse_algo_trader.dashboard.module_surface_catalogue import build_module_catalogue
+from nse_algo_trader.dashboard.operations_wall_renderer import render_operations_wall
 from nse_algo_trader.dashboard.regime_brain_read_model import (
     RegimeReadModelError,
     measure_regime_brain,
@@ -31,6 +33,34 @@ from nse_algo_trader.dashboard.regime_brain_read_model import (
 from nse_algo_trader.dashboard.regime_brain_surface_renderer import (
     render_regime_brain_page,
 )
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+
+ACCESS_TOKEN_PATH = Path("~/.nse_algo_trader/dashboard_access_token.txt").expanduser()
+"""The dashboard binds to a PUBLIC interface, so it is token-gated. The token lives in a
+gitignored file outside the repo and is never committed (`R.02`). This is a read-only
+surface over non-secret state, so the token is a gate against casual discovery rather
+than a security boundary — it is stated plainly so nobody mistakes it for one."""
+
+
+def read_access_token() -> str | None:
+    """The configured token, or None when no file exists (then the gate is open)."""
+    if not ACCESS_TOKEN_PATH.exists():
+        return None
+    token = ACCESS_TOKEN_PATH.read_text().strip()
+    return token or None
+
+
+def _is_authorised(request: Request) -> bool:
+    expected = read_access_token()
+    if expected is None:
+        return True
+    supplied = request.query_params.get("key", "")
+    # Constant-time comparison: a length-or-prefix leak on a token is free to avoid.
+    import hmac
+
+    return hmac.compare_digest(supplied, expected)
+
 
 SURFACED_MODULES: frozenset[str] = frozenset(
     {
@@ -76,8 +106,34 @@ def build_dashboard_app() -> FastAPI:
     """The app. Constructed by a function so tests get a fresh instance."""
     app = FastAPI(title="nse-algo-trader dashboard", docs_url=None, redoc_url=None)
 
+    @app.get("/", response_class=HTMLResponse)
+    def index(request: Request) -> HTMLResponse:
+        if not _is_authorised(request):
+            return HTMLResponse("<h1>401</h1><p>access key required</p>", status_code=401)
+        query = f"?key={request.query_params.get('key')}" if request.query_params.get("key") else ""
+        return HTMLResponse(
+            f'<meta http-equiv="refresh" content="0;url=/wall{query}">'
+            f'<a href="/wall{query}">operations wall</a>'
+        )
+
+    @app.get("/wall", response_class=HTMLResponse)
+    def operations_wall(request: Request) -> HTMLResponse:
+        """`L13.06` — every module, measured. New engines appear here with no edit."""
+        if not _is_authorised(request):
+            return HTMLResponse("<h1>401</h1><p>access key required</p>", status_code=401)
+        summary = build_module_catalogue(REPOSITORY_ROOT, SURFACED_MODULES)
+        key = request.query_params.get("key")
+        return HTMLResponse(render_operations_wall(summary, f"?key={key}" if key else ""))
+
+    @app.get("/healthz", response_class=PlainTextResponse)
+    def healthz() -> PlainTextResponse:
+        """Unauthenticated liveness only — reports nothing about the system."""
+        return PlainTextResponse("ok")
+
     @app.get("/regime", response_class=HTMLResponse)
-    def regime_surface(instrument_token: int | None = None) -> HTMLResponse:
+    def regime_surface(request: Request, instrument_token: int | None = None) -> HTMLResponse:
+        if not _is_authorised(request):
+            return HTMLResponse("<h1>401</h1><p>access key required</p>", status_code=401)
         try:
             snapshot = measure_regime_brain(instrument_token=instrument_token)
         except RegimeReadModelError as failure:
@@ -89,7 +145,9 @@ def build_dashboard_app() -> FastAPI:
         return HTMLResponse(render_regime_brain_page(snapshot))
 
     @app.get("/manifest")
-    def manifest() -> JSONResponse:
+    def manifest(request: Request) -> JSONResponse:
+        if not _is_authorised(request):
+            return JSONResponse({"error": "access key required"}, status_code=401)
         entries = discover_engine_modules()
         unsurfaced = [entry.module_name for entry in entries if not entry.is_surfaced]
         return JSONResponse(

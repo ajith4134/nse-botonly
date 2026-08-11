@@ -619,7 +619,15 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       `[~]`: only the regime brain has a panel — 37 of 44 modules read UNSURFACED.*
 - [ ] **5.14** Feature-surface registry — `L13.02`
 - [ ] **5.15** Feature-coverage audit — `L13.03`
-- [ ] **5.16** Project-wide feature-catalogue dashboard — `L13.04`
+- [~] **5.16** Project-wide feature-catalogue dashboard — `L13.04` — *built 2026-08-11. ALL 53 modules
+      now surfaced on `/wall`, and none of it hand-typed — which is the point, since 53 hand-written
+      panels would be 53 claims that rot invisibly. Every fact DERIVED: reachability from a real `ast`
+      import graph walked breadth-first from `scripts/` **and served ASGI apps**, orphan = nothing
+      runnable reaches it (`R.06`); test pairing from modules actually imported in the test tree;
+      real-data coverage from the `real_data` marker (`R.05`); tier from the module's own vocabulary
+      (`R.23b`). Sorted WORST FIRST — alphabetical would hide its own findings. **Measured now: 53
+      modules, 21% healthy, 26 orphans, 8 untested, 8 owing a real-data pass.** Token-gated because it
+      binds a public interface. 9 tests.*
 - [ ] **5.17** Feature-catalogue AST resolver + live freshness — `L13.05`
 - [ ] **5.18** Operations wall (`/wall`) — `L13.06`
 - [ ] **5.19** Segment-bot surface prober — `L13.07`
