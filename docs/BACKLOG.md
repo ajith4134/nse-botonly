@@ -29,10 +29,10 @@ Open items:
   list is frozen since 2020-11-11 (328 rows); BSE is live with 4,612. A proven prior implementation
   exists in git history at `63aa3a1` (`market_data/delisted_securities_source.py`, research/79), built
   precisely because NSE's list was inadequate. Port it as a second adapter, `delisted_securities_bse`.
-- 🔴 **Nothing schedules any ingest run.** Four adapters exist and three of the sources are rolling
-  files that accrue forward only (`fo_ban_list`, bulk/block deals, and any undated source). Without a
-  daily scheduled run the history they exist to build does not build. This is the single highest-value
-  next action for the ingest layer.
+- 🟢 **CLOSED 2026-08-11 — `scripts/run_daily_operations.py`** (`A.60`) runs all nine adapters through
+  the core, plus gap backfill and coverage reporting. **Still needs a cron/systemd timer to fire it
+  daily** — the runner exists; nothing yet schedules the scheduler. That is now the highest-value
+  remaining action for the ingest layer, and until it lands the rolling sources still accrue nothing.
 - 🔴 **No dashboard surface** for ingest coverage, blocked sources, or gap classification (`R.08`).
 
 ## Shared NSE ingest core (`A.46`, spec `research/209`) — 🟢 CORE BUILT, adapters queued

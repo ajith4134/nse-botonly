@@ -158,3 +158,50 @@ def test_a_missing_package_raises_rather_than_reporting_zero(tmp_path: Path) -> 
     """Reporting an empty catalogue would read as a perfectly healthy repository."""
     with pytest.raises(FileNotFoundError):
         build_module_catalogue(tmp_path)
+
+
+@pytest.mark.unit
+def test_a_package_is_reachable_when_any_submodule_is(tmp_path: Path) -> None:
+    """Importing a submodule executes its package, so the package is used too.
+
+    Without this every `__init__` read as an ORPHAN — the catalogue being wrong about
+    Python rather than a finding about the code, and it inflated the orphan count by 2.
+    """
+    package = tmp_path / "src" / "nse_algo_trader"
+    nested = package / "regime"
+    nested.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    (nested / "__init__.py").write_text("")
+    (nested / "deep_engine.py").write_text("VALUE = 1\n")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "run.py").write_text(
+        "from nse_algo_trader.regime.deep_engine import VALUE\n"
+    )
+    (tmp_path / "tests").mkdir()
+
+    states = {
+        surface.short_name: surface
+        for surface in build_module_catalogue(tmp_path).surfaces
+    }
+    assert states["regime.deep_engine"].is_reachable
+    assert states["regime"].is_reachable, "the package holding a used module is used"
+
+
+@pytest.mark.unit
+def test_an_unused_package_is_still_an_orphan(tmp_path: Path) -> None:
+    """The parent rule must not excuse a package nothing reaches at all."""
+    package = tmp_path / "src" / "nse_algo_trader"
+    unused = package / "abandoned"
+    unused.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    (unused / "__init__.py").write_text("")
+    (unused / "stranded.py").write_text("VALUE = 1\n")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "tests").mkdir()
+
+    states = {
+        surface.short_name: surface
+        for surface in build_module_catalogue(tmp_path).surfaces
+    }
+    assert not states["abandoned"].is_reachable
+    assert not states["abandoned.stranded"].is_reachable

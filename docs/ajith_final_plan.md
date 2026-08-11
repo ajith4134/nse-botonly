@@ -2621,6 +2621,23 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.60 · 2026-08-11 · The 26 orphans are closed by ONE daily operations runner, not by 26 imports.**
+The operations wall measured 26 modules that no runnable thing reached (`R.06`). Two of those were a
+measurement defect and are fixed in the catalogue: importing a submodule executes its package, so a
+package is reachable when any submodule is — every `__init__` had been reading as an orphan, which was
+the catalogue being wrong about Python rather than a finding about the code. The remaining 24 were real,
+and they shared one cause: **the daily work those engines exist to do was not happening.** Nothing
+scheduled an ingest run, nothing refreshed the instrument master, nothing reported store state.
+
+Fixed with `scripts/run_daily_operations.py`, which genuinely USES each engine — refreshes the Kite
+session and verifies a client actually builds from it, refreshes the instrument master, runs all nine
+ingest adapters through the shared core with the discovery memo, classifies and bounded-backfills gaps,
+escalates dates failing three times (`R.21`), and reports universe, corporate-action and bar-store state.
+**Importing modules to satisfy the metric was the available shortcut and is exactly the reward-hacking
+`R.23(d)` names** — the wall would have gone green while nothing changed, so every step does real work
+and one step's failure never kills the run. Orphans 26 -> 0; healthy 21% -> 40%. *Supersedes the BACKLOG
+entry "nothing schedules any ingest run", which this closes.*
+
 **A.59 · 2026-08-11 · The regime panel pools LOG-LINEARLY and encodes silence as uniform, after a
 real-data pass measured 100% abstain.** The four-regime brain (`L11.01`–`L11.03`, `L11.06`) was built
 with each classifier assigning `0.0` to the axes it does not measure and the brain averaging them

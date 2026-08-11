@@ -218,6 +218,12 @@ def build_module_catalogue(
         if current in reachable:
             continue
         reachable.add(current)
+        # Importing a submodule executes its package, so the package is reachable too.
+        # Without this, every `__init__` read as an ORPHAN — which was the catalogue
+        # being wrong about Python rather than a finding about the code.
+        parts = current.split(".")
+        for depth in range(len(parts) - 1, 0, -1):
+            reachable.add(".".join(parts[:depth]))
         # An import may name a symbol rather than a module; fall back to its parent.
         for candidate in (current, current.rsplit(".", 1)[0]):
             for imported in import_graph.get(candidate, set()):

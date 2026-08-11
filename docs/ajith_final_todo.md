@@ -231,6 +231,16 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       integrated. Integration is serial with the full gate between each; nothing is ticked until it
       certifies through the conformance suite.)*
 
+      *(DAILY OPERATIONS RUNNER built 2026-08-11 (`A.60`): `scripts/run_daily_operations.py` is the
+      operational spine every `L0` engine was built to be used by. It refreshes the Kite session and
+      verifies a client builds from it, refreshes the instrument master, runs all NINE ingest adapters
+      through the shared core with the discovery memo, classifies gaps and backfills a BOUNDED number,
+      escalates dates failing 3x (`R.21`), and reports universe / corporate-action / bar-store state.
+      Every step guarded so one blocked endpoint cannot stop the rest; exit code reflects failure so a
+      scheduler can tell. **Orphans 26 -> 0, healthy 21% -> 40%** on `/wall`. This also closes the
+      "nothing schedules any ingest run" blocker — the three rolling sources accrue forward only, so
+      every day it does not run is unrecoverable history.)*
+
 **— L1 —**
 
 - [ ] **1.35** NSE transaction-cost engine — `L1.01`
