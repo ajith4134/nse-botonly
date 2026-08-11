@@ -2348,6 +2348,24 @@ unwinnable problem. *Operator decision 2026-08-10.*
 live.** Repeatable paper profit is the *clearance to be considered*, not the authority to trade.
 *Operator decision 2026-08-10.*
 
+**R.27**  **PROSE IS CALIBRATED TO THE INSTITUTIONAL NORM, NOT TO COMPLETENESS.** *Set 2026-08-11
+(`A.66`) from measurement, `docs/research/213`.* Targets, checked when they drift: **doc:src ≈ 0.3-0.5**
+(was 4.28; institutional median 0.29) · **test:src ≥ 0.7** (currently 0.81 — already institutional,
+never cut this) · **commit bodies 3-5 lines** (was 18; institutional 3.7).
+
+- **Ledgers batch to the SLICE, not the commit.** `ajith_final_plan` / `ajith_final_todo` / `BACKLOG` /
+  `SYSTEM_MAP` are updated once when a slice signs off. 36% of commits previously contained no code.
+- **A decision entry is written only when it SUPERSEDES something** — reverses an earlier decision,
+  corrects a wrong sign-off, or changes a standing rule. Doing the planned thing is not a decision.
+- **Docstrings are NOT the target.** Measured 24% of source, inside the normal band. Leave them.
+- **What is never cut**, because it has a measured defect record: tests-first, adversarial review in a
+  fresh subagent, the R.05 real-data pass, run-it/screenshot verification, and the ruff+mypy gate.
+
+**R.28**  **SCOPE IS THE OPERATOR'S, NOT MINE.** *Set 2026-08-11 (`A.66`), operator decision.* A defect
+found outside the current ask is REPORTED with what fixing it would cost, and then I wait. I finish
+exactly what was asked first. Applies even when the defect is real and I am already in context on it —
+one config-file request became six commits on 2026-08-11, which is the behaviour this forbids.
+
 **R.23**  **THE CODE-GENERATION PROCEDURE — how ordinary output becomes institutional code.**
 R.07 states the bar; this states the method. *Grounded in `docs/research/155` (measured SOTA depth) and
 `docs/research/llm_production_grade_code_prompting_techniques_2026` (what actually changes LLM output).*
@@ -2376,8 +2394,13 @@ trade) gets the full loop regardless of naming. Genuine glue is named glue and g
 engine, which is precisely what research/155 caught.*
 
 **③ THE LOOP — mandatory, in order:**
-1. **Spec** — a design doc under `docs/research/` before any code (R.15), naming the mechanism, the SOTA
-   analog, the inputs, and what output changes behaviour.
+1. **Spec — ONLY for a genuinely novel algorithm.** *Amended 2026-08-11 (`A.66`), operator decision,
+   on measured evidence: `docs/research/213` found that 0 of 5 institutional projects (qlib, zipline,
+   freqtrade, vnpy, nautilus_trader) keep per-feature design docs, and nothing in this project's record
+   shows a spec doc catching a defect. Every defect found on 2026-08-11 was found by RUNNING something.*
+   A spec is written when the mechanism is one I cannot hold in my head — a solver, an inference
+   procedure, a model — and states the SOTA analog, the inputs, and what output changes behaviour.
+   Adapters, stores, renderers, config, deploy units and glue go **straight to step 2**.
 2. **Signatures** — explicit interfaces, types and error behaviour written before bodies. The evidenced
    "define the structure, then fill it" pattern.
 3. **Tests first** — unit + property-based + adversarial, written against the signatures. TDD is the
@@ -2426,8 +2449,12 @@ anything a context-constrained read would have produced.
 - **Ask for `file:line` tables, not content**, unless the content is the answer.
 - A subagent's report is not shown to the operator — **relay what matters**, never assume they saw it.
 
-**R.25**  **OPINIONS ARE RECORDED, NOT SPOKEN.** Every judgement, verdict or recommendation I give goes
-into `docs/CLAUDE_OPINIONS.md` at the moment it is formed, as a numbered `O.` entry carrying: the opinion ·
+**R.25**  **OPINIONS ARE RECORDED WHEN THEY ARE CONTESTED AND LOAD-BEARING** — not every judgement.
+*Amended 2026-08-11 (`A.66`), operator decision: "every judgement" produced 786 lines with no defect
+attributable to it. An opinion is recorded when it could be WRONG in a way that costs something and a
+future session would otherwise repeat the error — a verification standard, a rejected approach, a
+correction of an earlier opinion. Routine judgements are made and not written down.* When recorded, the
+numbered `O.` entry in `docs/CLAUDE_OPINIONS.md` carries: the opinion ·
 the reasoning · **the confidence, stated honestly** (`measured` = data I ran · `reasoned` = argued from
 evidence I did not gather · `judgement` = pattern, no direct evidence) · and **what would change my mind**.
 Three kinds of claim, three homes, never mixed: measured facts → `docs/research/` · operator decisions →
@@ -2633,6 +2660,21 @@ sdist**, so no pip path exists; `nautilus_trader` publishes `manylinux_2_35_aarc
 SOTA analog is a depth *comparison*, not an import — but no spec may plan to depend on either. Where a
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
+
+**A.66 · 2026-08-11 · Prose recalibrated to the measured institutional norm; scope returned to the
+operator.** Operator decision, after asking why progress was slow. Measured rather than argued
+(`docs/research/213`): this repo runs **doc:src 4.28** against an institutional median of **0.29**, and
+**test:src 0.81**, which is already inside the institutional band. The quality came from the tests; the
+prose was overhead. **0 of 5** institutional projects keep per-feature design docs, and no defect in this
+project's record is attributable to a spec doc — while every defect found on 2026-08-11 was found by
+running something.
+
+Kept in full, because each has a measured defect record: tests-first, adversarial review in a fresh
+subagent, the `R.05` real-data pass, run-it/screenshot verification, the ruff+mypy gate. Cut: spec doc
+per feature (`R.23③.1`, now novel algorithms only), opinion per judgement (`R.25`, now contested and
+load-bearing only), decision entry per action (now supersessions only), 18-line commit bodies (now 3-5),
+per-commit ledger updates (now per slice). New `R.27` sets the numeric targets and `R.28` returns scope
+control to the operator. *Supersedes the blanket readings of `R.15`, `R.23③.1` and `R.25`.*
 
 **A.65 · 2026-08-11 · The scheduled runner had NEVER executed once, and `A.61`'s sign-off was wrong.**
 The unit carried `User=opc` / `Group=opc`. In a USER unit those are not merely redundant — the per-user
