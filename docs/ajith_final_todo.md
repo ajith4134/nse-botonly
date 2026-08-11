@@ -444,6 +444,20 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **3.65** Overnight event guard — `L7.25`
 - [ ] **3.66** Corporate-action exposure on held positions — `L7.26`
 
+      *(FOUR-REGIME BRAIN + FIRST CONSUMER built 2026-08-11 — the first decision-path slice since the
+      reset, per `research/211`'s finding that a whole day had gone into L0 plumbing while L11 sat
+      untouched. `src/nse_algo_trader/regime/` (`L11.01` trend strength with carried Wilder state ·
+      `L11.02` Markov-switching with FILTERED beliefs and parameters frozen on a training prefix ·
+      volatility against the instrument's own quantiles · `L11.06` session phase · `L11.03` soft
+      log-linear pooling with measured Brier reliability and arm/disarm flags per `A.08`) plus
+      `src/nse_algo_trader/strategy/intraday_mean_reversion_engine.py` (`L5.05`, per `A.07`) as its
+      consumer so the brain is not an orphan. 28 tests. **R.05 on 659,990 REAL bars found a genuine
+      design flaw — 100% abstain — fixed and re-verified at 9.1% actionable (`A.59`, `O.42`).** The
+      brain CHANGES the decision: identical -3.82σ deviation gives ENTER_LONG in a ranging regime and
+      ABSTAIN in a trending one. `[~]`: `L1` costs/sizing unbuilt so output is a decision + conviction,
+      never an order (`R.13`); no dashboard surface (`R.08`); reliability weighting starts uniform and
+      only becomes meaningful as outcomes accrue (`R.11`).)*
+
 **— L11 —**
 
 - [ ] **3.67** Regime classifier — `L11.01`

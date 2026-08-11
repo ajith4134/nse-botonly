@@ -585,6 +585,31 @@ fan-out, and integration commits name their files explicitly instead of `-A`.
 had exited and concluded the *work* had stopped. All three are me trusting a convenient proxy over the
 property I actually cared about. The pattern is worth more attention than any of the individual defects.
 
+## O.42 · 2026-08-11 · Zero probability is a CLAIM, not silence — and it cost a whole engine
+
+**Opinion:** when combining experts that measure different things, an expert's silence must
+be encoded as uniform mass, never as zero, and the pooling rule must be multiplicative rather
+than linear.
+**Reasoning:** I built four regime classifiers, each measuring a different axis — path geometry,
+latent-state dispersion, realised volatility, session structure. Each assigned `0.0` to the regimes it
+did not measure, which reads as "definitely not volatile" rather than "I have no view on volatility".
+Linearly averaging four such distributions can only ever move the result TOWARD uniform, so the brain
+could never be confident **by construction**. Measured on 659,990 real bars across 12 instruments:
+**100% abstain, 538 of 538 decisions vetoed.** Every unit test passed throughout — the engine was
+internally consistent and collectively useless.
+**The fix is two changes, both principled rather than tuned:** silence spreads as uniform mass over the
+unmeasured axis, and the panel pools **log-linearly** (a weighted product of experts), which sharpens
+where independent experts agree instead of blurring. Re-measured on the same bars: **9.1% actionable,
+concentration median 0.28 against a max of 0.92**, and the panel now separates 491 ranging from 35
+volatile, 7 quiet and 5 trending sessions.
+**Confidence:** measured, before and after, on the same real data.
+**Would change my mind:** nothing about the encoding. The 50/50 measured-versus-silent mass split is a
+neutral default I would revisit if a classifier ever spoke to three axes rather than one.
+**The generalisation:** this is the strongest argument for `R.05` I have produced. A full unit, property
+and adversarial suite was green while the engine was incapable of ever acting. **No test I would have
+thought to write would have caught it** — only running the thing on real data did, because the defect
+was in what the composition MEANT, not in what any component computed.
+
 ---
 
 ## Maintenance

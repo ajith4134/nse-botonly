@@ -2621,6 +2621,18 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.59 · 2026-08-11 · The regime panel pools LOG-LINEARLY and encodes silence as uniform, after a
+real-data pass measured 100% abstain.** The four-regime brain (`L11.01`–`L11.03`, `L11.06`) was built
+with each classifier assigning `0.0` to the axes it does not measure and the brain averaging them
+linearly. Both were wrong together: zero is a claim of impossibility rather than an absence of opinion,
+and linear averaging of axis-specialised experts moves monotonically toward uniform. On 659,990 real bars
+the brain therefore vetoed **every one of 538 decisions** while every unit test passed. Silence is now
+uniform mass over the unmeasured axis, and pooling is a weighted product of experts, which sharpens on
+agreement. Re-measured on the same bars: **9.1% actionable, concentration median 0.28 / max 0.92**, and
+the panel separates 491 ranging from 35 volatile, 7 quiet and 5 trending. *Supersedes the linear-mixture
+design in `research/212` §3; the spec's reasoning about WHY soft weighting beats hard switching stands
+unchanged.*
+
 **A.58 · 2026-08-11 · The ingest core gains a discover-then-fetch primitive; `L0.27`'s ladder becomes
 its fallback rather than its only path.** Built at the operator's instruction against the gap recorded in
 `A.54`. `L0.27` needed an `expiry` it could not learn inside the adapter contract, and a wrong guess
