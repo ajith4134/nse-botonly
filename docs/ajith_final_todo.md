@@ -96,8 +96,24 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **1.17** ICICI stock-code resolver — `L0.17`
 - [ ] **1.18** Fyers deep-history adapter — `L0.18`
 - [ ] **1.19** Groww historical adapter — `L0.19`
-- [ ] **1.20** Live order-book depth recorder (P4b) — `L0.20`
-- [ ] **1.21** Market-depth store — `L0.21`
+- [~] **1.20** Live order-book depth recorder (P4b) — `L0.20` — ***PULLED FORWARD out of sequence, see
+      `A.44`***: the depth tape is the only `L0` artifact that cannot be reconstructed after the fact, so
+      every session without a recorder is permanently lost data. `src/nse_algo_trader/market_depth/`
+      (feed seam · integrity classifier · admission controller · recorder · session report), 60 tests,
+      gate green. **R.05 passed on the live socket 2026-08-11** — first capture 51,134 real packets in
+      4 minutes across 300 instruments, then widened to **4,861 instruments across 2 shards**.
+      Measurements that became design inputs rather than assumptions: `exchange_timestamp` is a true
+      epoch parsed NAIVE by the SDK (correct on this UTC host **by accident** — `A.45`), epoch 0 in ~1 in
+      6 packets, one subscribe snapshot **11 minutes stale**, depth shape `(5,5)` on 4,084 of 4,084.
+      `[~]` not `[x]` per `R.11`: the primary consumer (`1.22` reconstruction, microstructure features)
+      is queued, and per `R.08` there is no dashboard surface yet.
+- [~] **1.21** Market-depth store — `L0.21` — built with `1.20`. Append-only Parquet + zstd, atomic
+      part files via temp-then-`replace` **proven by an actual `kill -9` mid-session test**, bitemporal
+      (`exchange_time` vs `receipt_time`) consistent with `1.4`, integer paise never floats, plus
+      `book_at()` — the reconstruction primitive `1.22` builds on. **Measured on real data: 62.02
+      compressed bytes/row**, which beat every synthetic benchmark in the sourcing run (`research/208`)
+      and is the admission controller's key input. ArcticDB and `nautilus_trader` were both rejected on
+      MECHANICAL evidence (`R.17`): neither is pip-installable on this ARM64 / glibc-2.34 host.
 - [ ] **1.22** Tick-level order-book reconstruction — `L0.22`
 - [ ] **1.23** NSE bhavcopy ingest — `L0.23`
 - [ ] **1.24** MWPL position-limit ingest — `L0.24`

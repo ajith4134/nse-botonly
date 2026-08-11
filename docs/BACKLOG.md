@@ -8,6 +8,43 @@ Reconcile with the live task list at each session start.
 
 Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) · ⛔ blocked
 
+## Live depth capture `L0.20`/`L0.21` (2026-08-11) — 🟡 capturing, consumers queued
+
+Built and R.05-verified on the live socket during the 2026-08-11 session (see `A.44`, `A.45`,
+`research/206`). Open items, none silently skipped:
+
+- ⛔ **R.11 — the primary consumer is queued.** `1.22` tick-level order-book reconstruction and the
+  microstructure feature set are the first real callers of the tape and of `build_session_report`'s
+  usability verdict. Until one consumes it this is an accrual engine, which is precisely why it was worth
+  building on an open-market day rather than on the day its consumer arrives.
+- ⛔ **R.08 — no dashboard surface yet.** The recorder reports per-shard rows, per-instrument drops and
+  integrity-flag tallies, and the session report produces a per-instrument usability verdict; none of it
+  is on `/wall` yet. Needs a depth-capture panel: instruments admitted vs candidates, budget utilization,
+  live rows/s, flag shares, and the usable/caveats/unusable split.
+- 🔴 **Mid-session widening without a restart.** Today's universe was widened from 649 to 4,861
+  instruments by stopping and relaunching, which cost a ~5 minute gap in the tape. The recorder can shed
+  mid-session but cannot grow: new shards cannot be added to a running recorder. The operator explicitly
+  preferred building this outside a live capture rather than during one.
+- 🔴 **Historical session windows.** `NSE_QUOTING_WINDOW_OPENS_IST`/`CLOSES_IST` encode *today's* exchange
+  hours. NSE has moved them (continuous trading began at 09:55 before 2010), so replaying a pre-2010
+  session would mis-flag `OUTSIDE_SESSION_WINDOW`. Needs `L0.31` (point-in-time market rules) to resolve;
+  harmless for live capture, wrong for historical replay.
+- 🔴 **F&O depth is not captured.** Today's capture is NSE cash equities only. The option chain and futures
+  (`NFO`) carry the microstructure that matters most for the option engines, and the price scale for them
+  is already in the schema. Deferred only because the liquidity ranking used the cash bhavcopy; the F&O
+  bhavcopy is in the archive and can rank them the same way. **This is a real R.09 gap, stated rather
+  than quietly narrowed.**
+- 🔴 **Retention pruning is not automated.** The admission controller sizes each session against a
+  7-session horizon, but nothing deletes old sessions yet, so the budget silently tightens as the tape
+  grows. Needs a prune step keyed on the same retention policy.
+- 🟡 **Throughput above ~5,000 instruments is unmeasured.** The `kiteconnect` packet parser is pure
+  Python; today runs 4,861 instruments across 2 shards comfortably, but the 9,000-instrument ceiling
+  (3 sockets x 3,000) has not been exercised and may need the parse moved off the socket thread.
+- 🟢 **ArcticDB / `nautilus_trader` rejected on mechanical evidence** (`R.17`, `research/208`): no
+  `linux_aarch64` wheel and no sdist for ArcticDB; `nautilus_trader`'s aarch64 wheel requires glibc ≥ 2.35
+  against this host's 2.34. Surfaced for operator double-check — ArcticDB reportedly exists on
+  conda-forge and could be vendored if wanted.
+
 ## Feature Catalogue dashboard (Rule R, 2026-08-03) — 🟢 live + AST-hardened
 Live at `/catalogue` (783 features + 197 atlas branches, measured from the real AST import graph). Items closed:
 - 🟢 **Full AST import-graph resolver** — `feature_catalogue_ast_resolver.py`: real `ast` import graph + BFS

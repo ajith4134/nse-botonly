@@ -409,6 +409,81 @@ spec names as catastrophic, with nothing in the suite to catch it.
 **The generalisation:** this is `A.41`'s three-way lesson at sub-record granularity. A record is only as
 quantified as its least quantified part.
 
+## O.33 · 2026-08-11 · A broker SDK's convenience type is a defect surface, not a convenience
+
+**Opinion:** when an SDK hands back a parsed, "friendly" value, the raw wire value is the one to store,
+and the parse should be inverted rather than trusted.
+**Reasoning:** `kiteconnect` returns `exchange_timestamp` as a **naive** datetime produced by
+`datetime.fromtimestamp(seconds)` — the instant expressed in the *host's* local zone, with the zone then
+thrown away. On this UTC host the value is correct, which is the dangerous part: it is correct **by
+accident of deployment**, and the identical code on an IST host is 5h30m wrong while raising nothing and
+looking entirely plausible. Measured directly against wall clock during an open session: parsed
+`04:06:51` against wall UTC `04:06:52`. The fix inverts the SDK's own construction with
+`naive.astimezone()`, correct under any host zone, and the test runs it under UTC, IST and New York.
+**Confidence:** measured, against the live socket.
+**Would change my mind:** nothing about the hazard. If Kite ever returns tz-aware values the inversion
+becomes a no-op, which the implementation already handles.
+**The generalisation:** the same shape as `O.31` — the parse looked right on the data in front of me. A
+value that is correct because of where it runs is not correct.
+
+## O.34 · 2026-08-11 · Two defects the tests caught that review would not have
+
+**Opinion:** the two defects found while building the depth recorder are both invisible to reading and
+both fatal, which is the argument for tests-before-implementation stated concretely rather than as a
+principle.
+**Reasoning:** (a) `MINIMUM_SAMPLES_FOR_STALENESS_MATURITY = int(1 / (1 - 0.999))` evaluates to **999**,
+not 1000, because `1 - 0.999` is `0.0010000000000000009` in binary floating point and `int()` truncates.
+The arithmetic is right, the value is wrong, and nothing about the line looks wrong. (b)
+`threading.Thread(target=self._writer_loop, ...)` was constructed **without `args=(shard,)`**, so every
+tape-writer thread would have died at bootstrap with a `TypeError` raised in a thread nobody was
+watching — a capture that connects, subscribes, reports itself healthy, and writes nothing. The session
+would have looked fine in the log and produced an empty tape.
+**Confidence:** measured — both were failing tests, not inspection findings.
+**The generalisation:** defect (b) is the more instructive one. A thread that dies during bootstrap
+raises where nobody is looking, so the failure presents as *silence*, and silence is what a healthy
+capture also looks like. Anything that runs unattended needs its liveness asserted from the outside, which
+is why the recorder now records the writer exception and re-raises it at `stop`.
+
+## O.35 · 2026-08-11 · Disk, not the API, is what bounds a depth capture — and the bound must be solved
+
+**Opinion:** the capture universe is the answer to a budget problem and must never be a number chosen by
+me.
+**Reasoning:** Kite permits 9,000 instruments across three sockets, which sounds like the constraint and
+is not. Measured on the live feed: median **0.120 packets/s/instrument**, aggregate 54.4/s for 120
+instruments, with a **130x spread** across instruments (0.013 to 1.72). Multiply by a 22,500-second
+session and a compressed row width and the disk runs out long before the API does. Every input to that
+product is measurable — free space, realized bytes/row from the tape's own parts, each instrument's own
+rate — so the only genuine policy input is how many sessions of history are worth keeping.
+**Confidence:** measured for the rates; the byte width was still being calibrated when this was written.
+**Would change my mind:** a materially cheaper row than calibration reports would widen the universe
+without changing the method. The method is the opinion, not the number.
+**The generalisation:** the tempting failure was to write `CAPTURE_UNIVERSE_SIZE = 1000` and move on. It
+would have been wrong by an order of magnitude in either direction depending on the day's disk, and
+nothing would have said so.
+
+## O.36 · 2026-08-11 · Resuming a counter protects against restart, not against concurrency
+
+**Opinion:** when two writers can address the same file, the fix is to make the address unique, never to
+make the counter smarter.
+**Reasoning:** I widened a live capture by launching a second recorder, and the first kept running because
+my kill targeted the wrapper PID rather than the Python process. I had *already* fixed part-file numbering
+to resume from whatever a shard directory held, which fully solves a **sequential** restart — and does
+nothing at all for a **concurrent** one. Both recorders scanned the directory, both computed the same
+"next free" index, and from then on each could overwrite the other's parts. Measured aftermath: `shard=01`
+held interleaved output from two processes, and 20,000 rows I quarantined as duplicates turned out to
+belong to the *newer* capture, spanning `10:07:43..10:08:20` — after the older process had already
+stopped. I nearly deleted live data while cleaning up.
+**The fix:** the tape path now carries a `capture_run=<id>` level, so two recorders cannot share a
+directory whatever the operator does. Impossible beats unlikely.
+**Confidence:** measured — the interleaving is visible in the part timestamps and the recovered rows.
+**Would change my mind:** nothing. A read-modify-write on a shared directory from two processes is a race
+whatever the arithmetic in the middle.
+**The generalisation, and the harder lesson:** the *code* defect was mine, but so was the operational one —
+I verified `ps -p 131046` was gone and concluded the capture had stopped, when 131046 was the shell and
+131049 was the process doing the work. Confirming that a PID exited is not confirming that the work
+stopped. The check should have been on the thing itself (`pgrep -f` on the script), which is the same
+principle as `O.15`: verify the property you care about, not a proxy that usually coincides with it.
+
 ---
 
 ## Maintenance

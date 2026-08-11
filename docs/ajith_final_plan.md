@@ -2586,6 +2586,56 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.47 · 2026-08-11 · The depth tape is partitioned by CAPTURE RUN, not only by session and shard.**
+Forced by a real fault: widening the live capture meant launching a second recorder, the first survived a
+kill aimed at the wrong PID, and both wrote into `shard=01` with independent part counters — so each could
+overwrite the other's parts. Resuming the part index (added earlier the same day) solves a sequential
+restart and is powerless against a concurrent one. The path is now
+`session_date=… / capture_run=… / shard=…`, which makes a shared directory impossible rather than
+unlikely, and an unsafe run id is refused. The morning's data is preserved under
+`capture_run=pre_run_scoping`, with the caveat recorded in `BACKLOG.md` that its `shard=01` holds
+interleaved output from two recorders between 10:05:57 and 10:09:58 and may have lost rows to index
+collision. *Supersedes the assumption behind the part-index fix that one process owns a shard.*
+
+**A.46 · 2026-08-11 · Build speed is raised by a shared ingest core plus a contract-bounded agent
+fan-out, not by loosening the loop.** The operator judged slice-by-slice building too slow and asked for
+speed *without* quality loss. Adopted, in three parts: (a) the nine remaining `L0` ingest items
+(`L0.09`, `L0.10`, `L0.23`–`L0.29`) are one engine wearing nine hats — fetch-with-retry, strict parse,
+bitemporal store, coverage self-check, provenance manifest — so a **single hardened core** is built once
+and each source becomes an adapter against a typed `Protocol`; (b) adapters, being disjoint files behind a
+fixed contract, are built by **concurrent agents in worktrees**; (c) adversarial review and mutation runs
+move to **background agents** instead of blocking the next build. The integration risk this creates is
+answered structurally rather than by care: a **conformance suite living in the core that adapter agents
+cannot edit** is the done-rule, file ownership is disjoint, merges are serial with the full gate between
+each, and the fan-out is staged two-then-seven so a wrong contract cannot be built against nine times.
+`R.23`'s loop, the fresh-subagent adversarial review and the `R.05` real-data pass are unchanged and stay
+mine. *Supersedes nothing; `R.18` (one engine at a time) still governs the CORE, which is why the core is
+built alone before any adapter exists.*
+
+**A.45 · 2026-08-11 · The live depth feed's timestamp is a true epoch, and the SDK's parsed value must
+never be used.** Measured on the live socket: `kiteconnect` yields `exchange_timestamp` as a **naive**
+datetime built by `datetime.fromtimestamp(seconds)`, so it lands in the *host's* local zone with the zone
+then discarded. This host runs UTC, so the naive value is correct **by accident**; the same code on an IST
+host is 5h30m wrong and raises nothing. The recorder therefore inverts the SDK's construction with
+`naive.astimezone()`, which is correct under any host zone, and a parametrized test runs it under UTC, IST
+and New York. Two further measured facts are now design inputs rather than assumptions: **epoch 0 appears
+in roughly one in six packets** and is stored as *absent* rather than 1970, and **a subscribe-time
+snapshot arrived 11 minutes stale**, so exchange time and receipt time are separate columns and every row
+carries its own staleness. *Supersedes the implicit assumption that a broker SDK's parsed datetime can be
+trusted.*
+
+**A.44 · 2026-08-11 · `L0.20`/`L0.21` (live depth recorder + tape store) are PULLED FORWARD, twelve items
+ahead of the cursor at `L0.08`.** The operator flagged an open market and chose this over continuing in
+sequence. The reason is asymmetric and does not apply to any other `L0` item: bhavcopy, ISIN records,
+corporate actions and delisting histories are all retrievable at any hour, so building them late costs
+delay — **a 09:15–15:30 depth tape exists only while the session is open, so building it late costs the
+data itself.** Every session that passes without a recorder is permanently unrecoverable. Same shape as
+`A.40`'s pull-forward and recorded for the same reason. The capture universe is **solved, never typed**:
+`R.03` forbids a hardcoded instrument count, so an admission controller sizes it from measured free disk,
+the tape's own realized compressed bytes/row, and each instrument's own measured packet rate, with a
+calibration cohort first because on a fresh tape none of those exist yet. *Supersedes the todo's ordering
+for these two entries only; `L0.08` resumes immediately after.*
+
 **A.43 · 2026-08-10 · The R.03 money-literal guard is now part of the execution gate, over `src/` AND
 `scripts/`.** `L2.31a`'s detector existed but was invoked by nothing except its own test, so it had never
 run over the codebase — which is why a hardcoded `0.005` reached a scan and produced 89,597 false events

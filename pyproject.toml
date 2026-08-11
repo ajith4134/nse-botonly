@@ -116,6 +116,7 @@ module = [
   "kiteconnect.*", "pyotp.*", "talib.*", "pandas_ta_classic.*",
   "lightgbm.*", "hmmlearn.*", "river.*", "shap.*", "arch.*",
   "cvxpy.*", "statsmodels.*", "duckdb.*", "sklearn.*",
+  "pyarrow.*",
 ]
 ignore_missing_imports = true
 
