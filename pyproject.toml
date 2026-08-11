@@ -115,7 +115,12 @@ pretty = true
 # Everything the project does with it is wrapped in nse_trading_session_calendar.py,
 # which is fully typed.
 [[tool.mypy.overrides]]
-module = ["pandas_market_calendars.*", "staircase.*", "nselib.*"]
+module = [
+  "pandas_market_calendars.*", "staircase.*", "nselib.*",
+  # Broker SDKs ship no type information. Wrapped at a single adapter each
+  # (historical_bars/), so the untyped surface is one file per broker.
+  "SmartApi.*", "breeze_connect.*", "upstox_client.*", "growwapi.*", "fyers_apiv3.*",
+]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

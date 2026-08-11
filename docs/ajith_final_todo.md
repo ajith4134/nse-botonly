@@ -104,7 +104,7 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **1.12** Replay experience provenance — `L0.12` ⛔ BLOCKED: no experience-memory store exists to tag (`A.70`)
 - [x] **1.13** Honest clock / day-walker + firewall — `L0.13` · wall-clock reads now a GATE test; replays real sessions blocking 44,526 rows (`A.70`)
 - [x] **1.14** Multi-broker historical bar source — `L0.14` · Kite + Angel One live-verified behind one Protocol; 3 brokers blocked with measured reasons (`A.71`)
-- [ ] **1.15** Multi-broker failover + gap-fill aggregation — `L0.15`
+- [x] **1.15** Multi-broker failover + gap-fill aggregation — `L0.15` · union+disagreement grading, derived source preference; fills the bar store nightly (`A.72`)
 - [ ] **1.16** Breeze 1-second historical bars — `L0.16`
 - [ ] **1.17** ICICI stock-code resolver — `L0.17`
 - [ ] **1.18** Fyers deep-history adapter — `L0.18`

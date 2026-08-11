@@ -3419,3 +3419,12 @@ expiries; EXIDEIND + NUVAMA held 1 and left F&O ~35 trading days later). `DALBHA
   Angel One does not. Closes agreed exactly on shared dates (1327.3, 1320.6) while VOLUME differed on
   08-11 (kite 8,508,600 vs angel 8,701,285) — so reconciliation cannot assume fields agree just because
   prices do.
+- **Full-universe bar coverage is paced, not complete** (`L0.15`, `A.72`). 25 instruments/night at
+  Kite's documented 3 req/sec; measured 9.9s for 25, so ~2,000 equities would be ~13 minutes of wall
+  clock. The budget is therefore conservative and could likely rise a lot — but Kite may also enforce a
+  DAILY quota this has not yet met, so raising it should follow a measured run rather than optimism.
+  Rotation is least-recently-stored-first, so coverage grows nightly and nothing is permanently skipped.
+- **Angel One contributes nothing to reconciliation until `L0.17`** (`A.72`). It authenticates and is
+  passed to the reconciler, but every instrument carries only a Kite token, so Angel is asked for
+  symbols it cannot name. Cross-source reconciliation is therefore SINGLE-source in practice today; the
+  disagreement machinery is verified against RELIANCE, where both identifiers are known by hand.

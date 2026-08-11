@@ -22,6 +22,7 @@ so a scheduler can tell.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 import traceback
@@ -69,6 +70,23 @@ from nse_algo_trader.dashboard.dashboard_surface_screenshot_capture import (
     capture_failed,
     read_access_token,
     summarise_capture,
+)
+from nse_algo_trader.historical_bars.angel_one_historical_bar_source import (
+    AngelOneHistoricalBarSource,
+)
+from nse_algo_trader.historical_bars.cross_source_bar_reconciler import (
+    ReconciliationReport,
+    fetch_and_reconcile,
+)
+from nse_algo_trader.historical_bars.historical_bar_source import (
+    BarInstrument,
+    BarInterval,
+    BarRequest,
+    HistoricalBarSource,
+    HistoricalBarSourceError,
+)
+from nse_algo_trader.historical_bars.kite_historical_bar_source import (
+    KiteHistoricalBarSource,
 )
 from nse_algo_trader.kite_instrument_master import (
     InstrumentMasterStore,
@@ -353,6 +371,190 @@ def _verify_replay_leakage_guard(target_session: date) -> str:
     return f"replayed {target_session} over {len(rows):,} rows · {ledger.describe()}"
 
 
+KITE_HISTORICAL_REQUESTS_PER_SECOND = 3
+"""Kite's documented historical-data rate limit. A published API fact, sourced rather than
+tuned — and confirmed the hard way: an unpaced run of 25 instruments was refused with
+"Too many requests" after the first few."""
+
+THROTTLE_BACKOFF_SECONDS = 2.0
+"""Waited once on a throttle before giving that instrument up for the night. Rotation
+means a deferred instrument is first in line tomorrow, so grinding against a rate limit
+buys nothing and risks the credentials the rest of the run depends on."""
+
+DAILY_BAR_INSTRUMENT_BUDGET = 25
+"""Instruments reconciled per run. A RATE budget, not a sample (`R.09`).
+
+Both live brokers throttle, and the universe is thousands of instruments: fetching all of
+them nightly would be blocked within minutes and would poison the credentials the rest of
+the run depends on. The universe is covered by ROTATION — least-recently-updated first —
+so coverage grows every night and no instrument is permanently skipped. What was deferred
+is reported, never silently dropped (`R.11`).
+"""
+
+
+def _build_angel_one_client() -> object | None:
+    """An authenticated SmartAPI client, or None when Angel will not talk to us.
+
+    None rather than raising: Angel is a SECOND source, and a failure to reach it must
+    degrade the run to single-source reconciliation rather than stop it. The reconciler
+    records the absence, so a permanently broken broker cannot look like a broker that
+    simply had no data.
+    """
+    try:
+        import pyotp
+        from SmartApi import SmartConnect
+    except ImportError:
+        return None
+    required = (
+        "ANGEL_ONE_API_KEY",
+        "ANGEL_ONE_CLIENT_CODE",
+        "ANGEL_ONE_PIN",
+        "ANGEL_ONE_TOTP_SECRET",
+    )
+    if any(name not in os.environ for name in required):
+        return None
+    try:
+        client = SmartConnect(api_key=os.environ["ANGEL_ONE_API_KEY"])
+        session = client.generateSession(
+            os.environ["ANGEL_ONE_CLIENT_CODE"],
+            os.environ["ANGEL_ONE_PIN"],
+            pyotp.TOTP(os.environ["ANGEL_ONE_TOTP_SECRET"]).now(),
+        )
+    except Exception:  # noqa: BLE001 — SmartAPI raises assorted transport types
+        return None
+    return client if session.get("status") else None
+
+
+def _fetch_with_throttle_backoff(
+    sources: list[HistoricalBarSource], request: BarRequest
+) -> ReconciliationReport:
+    """Reconcile, retrying ONCE if the brokers throttled us.
+
+    One retry, not a loop: a throttle means the budget for this second is spent, and
+    hammering it is how an API key gets suspended. Rotation puts a deferred instrument
+    first in line tomorrow, so the cost of giving up is one night of staleness.
+    """
+    try:
+        return fetch_and_reconcile(sources, request)
+    except HistoricalBarSourceError as failure:
+        if "too many requests" not in str(failure).lower():
+            raise
+        time.sleep(THROTTLE_BACKOFF_SECONDS)
+        return fetch_and_reconcile(sources, request)
+
+
+def _reconcile_daily_bars(target_session: date) -> str:
+    """`L0.14`/`L0.15` — fetch bars from every live broker, reconcile, and store.
+
+    This is the step that fills a store every previous run reported as empty. Bars are
+    written with the reconciled value and the disagreements are surfaced, so a price
+    disagreement between brokers reaches a human instead of being resolved into silence.
+    """
+    sources: list[HistoricalBarSource] = []
+    failures: list[str] = []
+    kite_client = build_authenticated_kite_client_if_valid()
+    if kite_client is None:
+        failures.append("kite has no valid token")
+    else:
+        sources.append(KiteHistoricalBarSource(kite_client))
+    angel_client = _build_angel_one_client()
+    if angel_client is None:
+        failures.append("angel one session could not be generated")
+    else:
+        sources.append(AngelOneHistoricalBarSource(angel_client))
+    if not sources:
+        raise RuntimeError("no broker could be authenticated: " + "; ".join(failures))
+
+    instruments = _bar_instruments_due(DAILY_BAR_INSTRUMENT_BUDGET)
+    if not instruments:
+        return "no instruments mapped to broker identifiers yet (L0.17 supplies them)"
+
+    written = 0
+    price_disagreements: list[str] = []
+    volume_disagreements = 0
+    for instrument in instruments:
+        request = BarRequest(instrument, BarInterval.ONE_DAY, target_session, target_session)
+        try:
+            report = _fetch_with_throttle_backoff(sources, request)
+        except HistoricalBarSourceError as failure:
+            failures.append(f"{instrument.tradingsymbol}: {str(failure)[:90]}")
+            continue
+        # Pace deliberately rather than sprinting into a refusal.
+        time.sleep(1.0 / KITE_HISTORICAL_REQUESTS_PER_SECOND)
+        volume_disagreements += len(report.volume_disagreements)
+        price_disagreements.extend(
+            f"{instrument.tradingsymbol}@{bar.bar.bar_timestamp:%Y-%m-%d}"
+            for bar in report.price_disagreements
+        )
+        with BitemporalBarStore(MARKET_DATA_DATABASE) as store:
+            written += store.write([bar.bar for bar in report.bars])
+
+    detail = (
+        f"{written:,} bars written from {len(instruments)} instruments "
+        f"via {len(sources)} broker(s)"
+    )
+    if volume_disagreements:
+        detail += f" · {volume_disagreements} volume-only disagreements"
+    if price_disagreements:
+        detail += f" · PRICE DISAGREEMENTS: {', '.join(price_disagreements[:5])}"
+    if failures:
+        detail += f" · {len(failures)} source issue(s): {failures[0]}"
+    return detail
+
+
+def _bar_instruments_due(budget: int) -> list[BarInstrument]:
+    """Instruments to refresh, least-recently-stored first.
+
+    **Which instruments count as tradeable is decided by DATA, not by a name pattern.**
+    Kite's `instrument_type` says `EQ` for listed bonds as well as equities, so filtering
+    on it selected `0ABCL31-N0` and friends — debt series that return zero bars from every
+    broker. The honest discriminator is the cash bhavcopy: a symbol NSE published a cash
+    trade for is, by construction, a security that trades. That also keeps this aligned
+    with `R.09` — the pool is the whole traded universe, and the budget only paces how
+    fast it is walked.
+
+    **Rotation uses STORED bars, not visible ones.** An earlier version compared against
+    `bars_as_of(now)`, which is always empty for same-day daily bars, so the same 25
+    instruments were re-fetched every night and the universe never advanced — a sample
+    wearing a budget's clothes, which is precisely what the budget exists not to be.
+    """
+    with BitemporalIngestStore(INGEST_DATABASE) as ingest:
+        traded_symbols: set[str] = set()
+        for effective_date in ingest.effective_dates_present("nse_bhavcopy_cash")[-3:]:
+            for row in ingest.rows_for("nse_bhavcopy_cash", effective_date):
+                symbol = row.values.get("SYMBOL") or row.values.get("TckrSymb")
+                if isinstance(symbol, str) and symbol:
+                    traded_symbols.add(symbol.strip())
+
+    with InstrumentMasterStore(MARKET_DATA_DATABASE) as master:
+        universe = master.instruments_as_of(datetime.now(IST).date(), exchange="NSE")
+    tradeable = [
+        record
+        for record in universe
+        if record.segment == "NSE" and record.tradingsymbol in traded_symbols
+    ]
+    if not tradeable:
+        return []
+
+    # Far-future as_of: what has been STORED, regardless of when it becomes actionable.
+    with BitemporalBarStore(MARKET_DATA_DATABASE) as store:
+        already_stored = {
+            bar.tradingsymbol
+            for bar in store.bars_as_of(datetime.now(UTC) + timedelta(days=365))
+        }
+    never_stored = [r for r in tradeable if r.tradingsymbol not in already_stored]
+    chosen = sorted(never_stored or tradeable, key=lambda r: r.tradingsymbol)[:budget]
+    return [
+        BarInstrument(
+            exchange=record.exchange,
+            segment="CASH",
+            tradingsymbol=record.tradingsymbol,
+            broker_identifiers={BrokerName.ZERODHA_KITE: str(record.instrument_token)},
+        )
+        for record in chosen
+    ]
+
+
 def _report_capital() -> str:
     """Capital is a parameter, not a constant (`R.03`), and the run states what it is.
 
@@ -496,9 +698,22 @@ def _report_corporate_actions() -> str:
 
 
 def _report_bar_store() -> str:
+    """Visible-now AND stored-total, because they are different facts.
+
+    A daily bar for today becomes actionable tomorrow, so a store holding today's bars
+    correctly shows zero visible. Reporting only the visible count made a working store
+    indistinguishable from an empty one — measured, after the first reconciliation wrote
+    3 bars and this line still read "0 bars visible".
+    """
     with BitemporalBarStore(MARKET_DATA_DATABASE) as store:
-        bars = store.bars_as_of(datetime.now(UTC))
-        return f"{len(bars):,} bars visible as of now"
+        visible = store.bars_as_of(datetime.now(UTC))
+        stored = store.bars_as_of(datetime.now(UTC) + timedelta(days=365))
+    if not stored:
+        return "empty"
+    return (
+        f"{len(visible):,} bars visible as of now · {len(stored):,} stored "
+        f"({len(stored) - len(visible):,} not yet actionable)"
+    )
 
 
 def main() -> int:
@@ -542,6 +757,7 @@ def main() -> int:
     )
     _run_step(report, "universe", _report_universe)
     _run_step(report, "corporate actions", _report_corporate_actions)
+    _run_step(report, "bar reconciliation", lambda: _reconcile_daily_bars(target))
     _run_step(report, "bar store", _report_bar_store)
     # Last: the surface should be photographed AFTER the run has changed the state
     # it displays, so the capture shows the day that just happened.

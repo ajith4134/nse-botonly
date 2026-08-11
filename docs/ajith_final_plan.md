@@ -2661,6 +2661,33 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.72 · 2026-08-11 · `L0.15` built, and it grades disagreement by CONSEQUENCE rather than treating
+any difference as one thing.** Built against two cases measured live on 2026-08-11, not hypotheticals.
+Kite held RELIANCE 2026-08-07 and Angel One did not, so the union is taken — intersecting would discard
+exactly the bar failover exists to recover. And on 08-11 both agreed on every PRICE while differing on
+volume by 192,685 (8,508,600 vs 8,701,285), so anything checking `close` alone would conclude the sources
+matched and import a volume it never verified. `PRICE` disagreement is an integrity alarm; `VOLUME_ONLY`
+is expected and recorded; rejected alternatives are KEPT, because when a disagreement is investigated
+later the rejected value is the investigation.
+
+Source preference is DERIVED (`R.03`) from coverage x agreement, so Kite wins on evidence rather than on
+being named first, and reconciliation is order-stable so the same input cannot reconcile differently
+between runs.
+
+**Wiring it exposed four defects that only running could find.** (1) 25 unpaced instruments hit Kite's
+"Too many requests" immediately — now paced at its documented 3/sec with a single backoff, because
+grinding a rate limit risks the credentials the whole run depends on. (2) `instrument_type == "EQ"`
+does NOT mean equity: Kite types listed BONDS as EQ, so the selector was fetching debt series like
+`0ABCL31-N0` that return zero bars from every broker. Tradeability is now decided by DATA — a symbol the
+cash bhavcopy published a trade for. (3) Rotation compared against `bars_as_of(now)`, which is always
+empty for same-day daily bars, so the same 25 instruments were re-fetched every night and the universe
+never advanced — a sample wearing a budget's clothes. It now compares against what is STORED. (4)
+`_report_bar_store` showed "0 bars visible" while 3 bars sat in the store, because a daily bar for today
+becomes actionable tomorrow; visible and stored are now reported as the different facts they are.
+
+After the fixes: 25 bars from 25 instruments, up from 3 of 25, and the next batch is genuinely different
+instruments.
+
 **A.71 · 2026-08-11 · `L0.14` built on the two brokers that actually answer, and the other three are
 blocked with MEASURED reasons rather than assumed ones.** All five SDKs were installed and probed live
 (`R.17` wants mechanical evidence, not README prose). Result: **Kite OK**, **Angel One OK** via TOTP,
