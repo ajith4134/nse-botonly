@@ -8,6 +8,26 @@ Reconcile with the live task list at each session start.
 
 Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) · ⛔ blocked
 
+## `L0.33` consolidated multi-broker feed (2026-08-12, `A.84`/`A.85`) — 🟡 built + reviewed, four open
+
+- ⛔ **Only two brokers are reachable, so per-source noise is UNIDENTIFIABLE.** `var(a-b)` is one number
+  shared by both; the three-cornered hat needs three independent feeds. Upstox's stored token returns
+  `UDAPI100050 Invalid token` (a TOTP secret and PIN are in `.env`, so an unattended login may be
+  buildable), ICICI Breeze needs a browser login, and `L0.18` Fyers / `L0.19` Groww remain blocked from
+  `A.78`. A third feed turns the fusion from liquidity-weighted into precision-weighted — the single
+  highest-value unblock in this slice.
+- 🔴 **The capture is bounded by Angel One's rate limit, not by the universe (`R.09`).** 50 instruments
+  per request at ~1/second caps a 2-second sweep at ~67 instruments; the full universe needs the
+  websocket feeds both brokers offer, which is a separate slice. The ENGINE is universe-agnostic.
+- 🔴 **Routing consumer queued.** `rank_brokers` produces the per-instrument best source (Kite 54/67,
+  Angel One 13/67 on 2026-08-12); its consumer is the live execution path, which does not exist. `R.06`
+  is met today by the admissibility gate the microstructure replay actually reads.
+- 🔴 **With two sources, divergence is a property of the PAIR.** Both brokers are marked inadmissible for
+  a diverging instrument because nothing in the data says which one is wrong. A third feed fixes this too.
+- ℹ️ **Mean freshness reads ~6.5 s for both brokers**, which is the same illiquidity artefact `L0.32`
+  found: `exchange_time` is the instrument's last TRADE, so a quiet name reports its own inactivity as
+  feed lag. Worth splitting by traded-in-the-last-minute before the number is used for anything.
+
 ## `L0.32` clock integrity (2026-08-12, `A.82`/`A.83`) — 🟡 built + adversarially reviewed, three open
 
 - 🔴 **No NTP majority is reachable from this host today.** Of the three configured servers, the OCI

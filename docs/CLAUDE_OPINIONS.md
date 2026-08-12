@@ -1026,3 +1026,72 @@ where they had disagreed by 23.
 **What would change my mind.** A review pass that returns only style opinions or unreproduced
 speculation. The value here came from the instruction to RUN the attack and report only what reproduced;
 a review that cannot do that is worth much less, and I would rather spend the tokens on more tests.
+
+## O.62 · 2026-08-12 · When the data is perishable, acquisition outranks design
+
+**Opinion.** `L0.33` needed cross-broker quotes, which exist only while two brokers are quoting. I built
+and started the capture at 14:32 IST — before the spec, before the engine, before the operator interview
+had even been answered — and wrote everything else against what it was collecting. I think that ordering
+was right and I expect to repeat it: for a perishable measurement, the capture is the irreversible
+decision and the engine is not.
+
+**Reasoning.** The engine can be rebuilt a hundred times from a tape; a tape cannot be rebuilt at any
+price after 15:30. By the close the capture held ~100,000 rows across 67 instruments, which is the only
+reason the same day could also produce a measured identifiability finding, a measured 92.5% exact-
+agreement rate, and 603 observed crossed books. Had I specced first in the usual order, the spec would
+have been finished around 15:20 and the engine would have been built against nothing.
+
+**Confidence: measured** for the value of the data, **reasoned** for the general rule. The cost is real
+and I am not pretending otherwise: the capture script was written fast, and its first version stored
+Kite's naive-IST timestamps as UTC — a defect that a spec-first order might have caught on paper.
+
+**What would change my mind.** A capture whose schema turns out wrong in a way that makes the data
+useless — then the rush would have bought nothing and cost a session. The mitigation is to store RAW
+per-source rows and never a merged product, which is what this one does: a wrong interpretation can be
+recomputed, a discarded observation cannot.
+
+## O.63 · 2026-08-12 · Property tests find design errors; unit tests find code errors
+
+**Opinion.** The `L0.33` fusion was wrong in a way no unit test would have caught, because every unit
+test I would have written asserted behaviour I believed followed from the design. The property test —
+"generate brokers whose noise is known, and check the consensus beats them" — failed, and the failure was
+not a bug in the implementation of inverse-variance weighting. It was that with two sources the variances
+are not identifiable at all. That is a statement about the mathematics, and only a test that measured an
+OUTCOME rather than a behaviour could have said it.
+
+**Reasoning.** Unit tests encode the author's model of the problem; a property test encodes the problem's
+own criterion of success. Where the model is wrong, only the second can disagree with you. The same shape
+recurred twice more the same day: the three-cornered-hat replacement then revealed that pooling paise
+across a universe spanning three orders of magnitude made the estimate unusable, and that quiet sources
+sit below the estimator's resolution — both found by measuring, neither by asserting.
+
+**Confidence: measured.** Three design-level findings from one property test and its successors, against
+a suite of unit tests that all passed throughout.
+
+**What would change my mind.** Nothing about the value; the open question is cost. These property tests
+run for minutes because each observation writes to SQLite, and a suite nobody waits for is a suite nobody
+runs. If they get slower I would keep the property and shrink the data, not drop the property.
+
+## O.64 · 2026-08-12 · A rounding call is a measurement decision, and I keep treating it as formatting
+
+**Opinion.** The critical defect in `L0.33` was `round(price)` stored against an unrounded comparison —
+one call, written to keep a dict tidy, which silently destroyed the single most load-bearing measurement
+in the engine (29,030 of 86,306 unchanged quotes reported as movement). This is the second time in one
+day that a numeric-representation choice produced a wrong measurement rather than an ugly one: the
+depth-tape work already established integer paise precisely because float rupees make equal prices
+compare unequal. I think the rule is that any rounding on a value that will later be COMPARED is a
+measurement decision and needs the same justification as a threshold.
+
+**Reasoning.** Rounding is invisible in review because it looks like presentation. It is not: it changes
+the equivalence classes of the data, and every downstream equality test inherits that. The tell in both
+cases was the same — a comparison between a stored value and a fresh one that had been through a
+different number of transformations. Neither the unit tests nor mypy can see it, because both sides are
+floats and both answers are plausible.
+
+**Confidence: measured.** Two independent occurrences, both quantified on real data, both changing a
+reported rate by a factor rather than a margin.
+
+**What would change my mind.** Nothing about the diagnosis; the open question is the remedy. A lint rule
+banning `round()` near a comparison would be mostly noise. The cheaper discipline is the one that caught
+it here: measure the rate on real data and ask whether the number is plausible — a 0% frozen rate on a
+feed known to freeze should have been as loud as an exception.

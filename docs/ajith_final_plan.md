@@ -2664,6 +2664,100 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.85 · 2026-08-12 · `L0.33` built, and the adversarial pass found a defect that had been
+silently corrupting a third of the measurements.** Spec `docs/research/217`; decisions `A.84`. The
+engine aligns each broker's quotes into windows that can describe the same market state, fuses them by
+liquidity and measured precision, refuses rather than averages when they disagree beyond what the books
+explain, and learns which broker to trust from every comparison.
+
+*What the first real session measured* (Kite + Angel One, 67 instruments addressable by both, ~2 s
+sweeps from 14:32 IST, 128,640 rows): **80,180 aligned groups**, 98.10% resolved to one price, 955
+crossed books, 270 single-source, 26 instrument-sessions ruled inadmissible. The brokers agree exactly
+92.5% of the time on the midpoint; the median absolute difference is **0 paise**, p95 is 5 paise, and the
+maximum is 27.50 rupees. Kite scores best on 54 of 67 instruments, Angel One on 13, and the separator is
+staleness: **Angel One freezes on 13.20% of the occasions the other source moved, Kite on 10.08%**.
+
+*The mathematics forced a redesign before the review even started.* The first fusion weighted each broker
+by the variance of its deviation from the others — and with TWO brokers that is `var(a - b)`, one number
+shared by both. The property test measured the consequence: the "consensus" had a larger RMS error than
+the better broker. Replaced with the **three-cornered hat** (Gray & Allan 1974): with three independent
+sources the pairwise difference variances determine each source's own. With two, the engine reports
+`unidentifiable` and weights by liquidity alone rather than claiming a precision it cannot have.
+
+*The adversarial review then found eleven defects, one critical, all reproduced.*
+
+**Critical — a rounding call was destroying the frozen-feed measurement.** The previous price was stored
+rounded and compared against the unrounded one, so any instrument whose bid and ask sum to an odd number
+of paise had a midpoint ending in .5 and every UNCHANGED quote read as movement. Measured on the real
+tape: 30% of rows have an odd bid+ask, and **29,030 of 86,306 consecutive identical observations were
+being reported as moves**. The frozen rate — the one measurement that separates "late but right" from
+"wrong" — was wrong for a third of the session, and the ranking that reads it with it.
+
+**Major — the refusal branch had never fired.** The dispersion tolerance was two times the WIDEST book,
+and an uncrossed pair of quotes cannot differ by more than the widest spread, so `dispersion > tolerance`
+implied `crossed` and the crossed test answered first: **797 of 797 refusals on the real session came
+from crossing, none from dispersion.** The same choice let a stale broker license its own error — a
+7.5% disagreement was published as consensus because one source quoted a 2,000-paise-wide book. The
+tolerance now comes from the NARROWEST book, which is the market's own statement of the uncertainty it
+will tolerate.
+
+**Major — the admissibility gate was condemning a quarter of every session by construction.** A quantile
+cut has no notion of effect size, so it always finds a worst quarter: the cut landed at 0.46% divergence
+while the worst instrument in the entire day diverged on 1.15% of comparisons, and 33 instrument-sessions
+were ruled inadmissible on a day when nothing was wrong. Replaced with a one-sided binomial test against
+the session's OWN base rate. Re-measured: base rate 1.21%, and the 26 instrument-sessions now condemned
+diverge at 3.4-5.0% — genuinely outside the band. With two sources, divergence is a property of the PAIR,
+so both brokers are marked for the same instrument; that is honest rather than a bug.
+
+**Major — alignment was losing quotes.** A repeat from one broker inside a window was deleted rather than
+starting the next sweep, orphaning its partner: **118 observations lost on the real session, which
+manufactured every single-source group it reported.** A failed poll could also evict the same broker's
+later good quote. **Major — a single source crossing its own book** returned before the crossed test and
+published the midpoint of an impossible book as a price. **Major — one naive timestamp killed a whole
+session walk** and, because the run holds an uncommitted transaction across tens of thousands of groups,
+discarded everything it had learned; the observation boundary now refuses naive instants and the runner
+survives and counts a bad group.
+
+**Minor, all fixed:** "did the others move" counted the broker's own move; the ledger's divergence test
+was twice as loose as the refusal the engine actually makes; unsorted pair keys returned all-`None`
+indistinguishably from no data; a zero price passed as usable; and a source below the estimator's
+resolution was reported as a floored NUMBER rather than as unidentifiable — which inverted an ordering
+when maturity masking left different triplets available to different sources.
+
+**Clean bills, genuinely attacked:** 20,000 randomised groups never produced a consensus outside its
+inputs, a non-positive weight, or a division by zero; 200,000 random 3-, 4- and 5-source trials produced
+zero resolution-floor inversions; the pairwise sign convention could not be corrupted without the caller
+lying about its own arithmetic; alignment is order-independent under shuffling; and with two or more
+sources a crossed book cannot be hidden.
+
+**A.84 · 2026-08-12 · `L0.33`'s three design axes, decided by the operator before any code.** Asked
+under `R.19` rather than assumed, because each answer changes what gets built.
+
+*Fusion rule — ALL FOUR views, because they are not alternatives.* The operator's answer was "all above
+only if you think that is the best choice", and having built the state the four options need, I do: a
+liquidity-weighted consensus, a synthetic NBBO union touch, a robust median with refusal, and a per-broker
+ranking are four VIEWS over one fused state, not four competing engines. They cost one extra function
+each once the per-broker reliability model exists, and they serve genuinely different consumers — the
+admissibility gate wants refusal semantics, a router wants the NBBO, analytics want the consensus. Picking
+one would have forced every other consumer to reconstruct the rest from worse inputs.
+
+*Source count — build for N, run on the two that answer.* Measured today at 14:27 IST: Kite quoted
+RELIANCE at Rs 1,313.90 and Angel One at Rs 1,314.10, both live. Upstox's stored token returns
+`UDAPI100050 Invalid token`, ICICI Breeze needs a browser login, and `L0.18` Fyers / `L0.19` Groww remain
+blocked from `A.78`. The engine is source-agnostic and correct for any N; today's capture runs on two, and
+unblocking the rest is future work rather than a precondition. Recorded in BACKLOG, not deferred silently.
+
+*Decision-grade output — BOTH, the gate wired now and the routing recorded.* The feed-quality verdict
+gates whether a broker's recorded quotes are admissible evidence for an instrument-session (a real
+behaviour change against data that exists), and the per-instrument broker ranking is built in full with
+the execution path named as its queued consumer (`R.11`).
+
+*Acquisition ran first, and deliberately.* Cross-broker disagreement exists only while both brokers are
+quoting — after 15:30 IST there is no price at which 14:31's disagreement can be bought back. So the
+capture (`scripts/record_cross_broker_quotes.py`) was built and started BEFORE the engine's spec was
+written, and the engine is built against what it captures. Smoke run: 30 sweeps, 2,640 rows, both brokers
+balanced; the session run covers 67 instruments addressable by both.
+
 **A.83 · 2026-08-12 · The adversarial review of `L0.32` found seven real defects, two of them
 critical, and fixing one of them made the engine AGREE WITH CHRONY to 0.85 ppm.** `R.23(c)` puts a
 fresh-subagent adversarial pass between "implemented" and "done". It was not a formality: every finding

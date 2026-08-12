@@ -73,6 +73,10 @@ from nse_algo_trader.causal_leakage_firewall import (
 from nse_algo_trader.clock_integrity.clock_integrity_session_runner import (
     ClockIntegritySessionRunner,
 )
+from nse_algo_trader.consolidated_feed.consolidated_feed_session_runner import (
+    ConsolidatedFeedSessionRunner,
+)
+from nse_algo_trader.consolidated_feed.cross_broker_quote_tape import CrossBrokerQuoteTape
 from nse_algo_trader.corporate_action_adjustment_engine import (
     CorporateActionAdjustmentEngine,
 )
@@ -813,6 +817,30 @@ def _assess_clock_integrity() -> str:
     )
 
 
+def _consolidate_broker_feeds() -> str:
+    """`L0.33`: fuse the day's cross-broker quotes, learn from them, store the summary.
+
+    Runs on the newest session the quote tape holds rather than on `target`, for the same
+    reason the clock step does: the tape is written by a live capture, so its newest session
+    is the newest measurement, and asking for a day it never captured would report a feed
+    failure where there was only a capture that did not run.
+    """
+    runner = ConsolidatedFeedSessionRunner()
+    sessions = CrossBrokerQuoteTape().session_dates()
+    if not sessions:
+        return "no cross-broker capture yet — nothing to consolidate"
+    report = runner.run(sessions[-1])
+    if not report.quotes_consolidated:
+        return f"{report.session_date}: capture present but no alignable groups"
+    return (
+        f"{report.session_date}: {report.quotes_consolidated:,} groups from "
+        f"{', '.join(report.brokers)} · {report.resolved_fraction:.1%} resolved · "
+        f"{report.crossed:,} crossed · {report.single_source:,} single-source · "
+        f"{report.inadmissible_instrument_sessions} inadmissible instrument-session(s) · "
+        f"worst {report.worst_instrument}"
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -858,6 +886,7 @@ def main() -> int:
     _run_step(report, "bar reconciliation", lambda: _reconcile_daily_bars(target))
     _run_step(report, "bar store", _report_bar_store)
     _run_step(report, "clock integrity", _assess_clock_integrity)
+    _run_step(report, "consolidated feed", _consolidate_broker_feeds)
     # Last: the surface should be photographed AFTER the run has changed the state
     # it displays, so the capture shows the day that just happened.
     _run_step(report, "dashboard surfaces", _capture_dashboard_surfaces)

@@ -559,6 +559,7 @@ class OrderBookSnapshotReplayEngine:
         *,
         session_date: date,
         staleness_quantile: float,
+        inadmissible_instruments: frozenset[int] = frozenset(),
     ) -> None:
         """`staleness_quantile` is a POLICY input and deliberately has no default.
 
@@ -574,6 +575,13 @@ class OrderBookSnapshotReplayEngine:
         self._tape_reader = tape_reader
         self._session_date = session_date
         self._staleness_quantile = staleness_quantile
+        # `L0.33`'s admissibility gate, applied here. The tape is recorded from ONE broker,
+        # and where the consolidated feed measured that broker as divergent or frozen for an
+        # instrument-session, its rows are not microstructure evidence: features built from
+        # a book that disagreed with every other source describe the broker, not the market.
+        # Refused loudly rather than filtered silently — a caller asking for an inadmissible
+        # instrument has asked a question the data cannot answer.
+        self._inadmissible_instruments = inadmissible_instruments
 
     # -- reading ----------------------------------------------------------------
 
@@ -582,6 +590,13 @@ class OrderBookSnapshotReplayEngine:
         return start, start + timedelta(days=1)
 
     def _snapshots_for(self, instrument_token: int) -> list[BookSnapshot]:
+        if instrument_token in self._inadmissible_instruments:
+            raise OrderBookReplayError(
+                f"instrument {instrument_token} is inadmissible for "
+                f"{self._session_date.isoformat()}: the consolidated feed (`L0.33`) measured "
+                f"this broker as divergent or frozen on it, so its recorded book is evidence "
+                f"about the feed rather than about the market"
+            )
         window_start, window_end = self._session_window()
         table = self._tape_reader.read_instrument_window(
             instrument_token, window_start, window_end, self._session_date

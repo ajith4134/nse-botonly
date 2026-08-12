@@ -18,8 +18,9 @@ from __future__ import annotations
 
 import importlib
 import pkgutil
+import sqlite3
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -35,9 +36,19 @@ from nse_algo_trader.clock_integrity.clock_offset_observation_store import (
 )
 from nse_algo_trader.clock_integrity.reference_clock_ntp_sampler import read_chrony_tracking
 from nse_algo_trader.clock_integrity.timestamp_trust_budget import TimestampTrustBudget
+from nse_algo_trader.consolidated_feed.broker_reliability_store import (
+    BrokerReliabilityStore,
+)
+from nse_algo_trader.consolidated_feed.consolidated_feed_session_runner import (
+    ConsolidatedFeedSessionRunner,
+)
 from nse_algo_trader.dashboard.clock_integrity_surface_renderer import (
     ClockIntegritySurfaceState,
     render_clock_integrity_page,
+)
+from nse_algo_trader.dashboard.consolidated_feed_surface_renderer import (
+    ConsolidatedFeedSurfaceState,
+    render_consolidated_feed_page,
 )
 from nse_algo_trader.dashboard.market_rule_coverage_surface_renderer import (
     render_market_rule_coverage_page,
@@ -68,6 +79,12 @@ from nse_algo_trader.market_rules.nse_market_rule_history import (
 )
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+
+MARKET_DATA_DATABASE = Path("~/.nse_algo_trader/market_data.sqlite3").expanduser()
+
+DEPTH_TAPE_BROKER = "kite"
+"""Which broker's quotes the depth tape is recorded from — a deployment fact, and the one
+that decides whose `L0.33` verdict gates the microstructure replay."""
 
 DEPTH_TAPE_ROOT = Path("~/nse_archive/depth_tape").expanduser()
 """Where the recorder writes. Outside the repository, like every other data root here —
@@ -160,6 +177,12 @@ SURFACED_MODULES: frozenset[str] = frozenset(
         "nse_algo_trader.clock_integrity.timestamp_trust_budget",
         "nse_algo_trader.clock_integrity.clock_integrity_session_runner",
         "nse_algo_trader.dashboard.clock_integrity_surface_renderer",
+        "nse_algo_trader.consolidated_feed.cross_broker_quote_tape",
+        "nse_algo_trader.consolidated_feed.broker_quote_pollers",
+        "nse_algo_trader.consolidated_feed.broker_reliability_store",
+        "nse_algo_trader.consolidated_feed.consolidated_feed_engine",
+        "nse_algo_trader.consolidated_feed.consolidated_feed_session_runner",
+        "nse_algo_trader.dashboard.consolidated_feed_surface_renderer",
     }
 )
 """Modules that genuinely have a panel today. Declaring this is safe precisely BECAUSE
@@ -204,10 +227,43 @@ def _measure_latest_depth_session(
     sessions = reader.session_dates()
     if not sessions:
         raise OrderBookReplayError(f"no depth tape sessions under {DEPTH_TAPE_ROOT}")
+    session_date = max(sessions)
     engine = OrderBookSnapshotReplayEngine(
-        reader, session_date=max(sessions), staleness_quantile=staleness_quantile
+        reader,
+        session_date=session_date,
+        staleness_quantile=staleness_quantile,
+        inadmissible_instruments=inadmissible_depth_instruments(session_date),
     )
     return engine.coverage_report(instrument_limit=instrument_limit)
+
+
+def inadmissible_depth_instruments(session_date: date) -> frozenset[int]:
+    """Instrument tokens `L0.33` measured the DEPTH BROKER as unreliable on, that session.
+
+    This is where the consolidated feed's verdict becomes a behaviour change: the depth tape
+    is recorded from Kite, so Kite's own admissibility decides which instruments the
+    microstructure replay may build features from. The mapping from the feed's trading
+    symbols to the tape's instrument tokens comes from the stored instrument master — the
+    same table the recorder subscribed by — so a symbol the master does not know is simply
+    not gated rather than silently dropped.
+    """
+    admissibility = ConsolidatedFeedSessionRunner().engine.admissibility(session_date)
+    unreliable_symbols = {
+        symbol
+        for (broker, symbol), admissible in admissibility.items()
+        if broker == DEPTH_TAPE_BROKER and not admissible
+    }
+    if not unreliable_symbols:
+        return frozenset()
+    with sqlite3.connect(f"file:{MARKET_DATA_DATABASE}?mode=ro", uri=True) as connection:
+        placeholders = ",".join("?" for _ in unreliable_symbols)
+        rows = connection.execute(
+            f"SELECT DISTINCT instrument_token FROM instrument_master "  # noqa: S608 - the
+            # placeholders are generated from the set's LENGTH; every value is bound
+            f"WHERE tradingsymbol IN ({placeholders}) AND segment = 'NSE'",
+            tuple(unreliable_symbols),
+        ).fetchall()
+    return frozenset(int(row[0]) for row in rows)
 
 
 def build_dashboard_app() -> FastAPI:
@@ -324,6 +380,35 @@ def build_dashboard_app() -> FastAPI:
                     alerts=store.alerts(),
                     consensus=consensus,
                     chrony=read_chrony_tracking(),
+                )
+            )
+        )
+        _remember_key(response, request)
+        return response
+
+    @app.get("/feed", response_class=HTMLResponse)
+    def consolidated_feed_surface(request: Request) -> HTMLResponse:
+        """`L0.33`'s surface, rendered from stored summaries rather than a live walk.
+
+        Consolidating a session takes ~10 seconds over 70,000 captured quotes; doing that
+        per page load is the mistake `/microstructure` is still carrying. The daily runner
+        writes the summary and this reads it.
+        """
+        if not _is_authorised(request):
+            return _unauthorised_html()
+        runner = ConsolidatedFeedSessionRunner()
+        reports = runner.stored_reports()
+        latest = reports[-1] if reports else None
+        engine = runner.engine
+        rankings = engine.rank_brokers(latest.session_date) if latest else ()
+        response = HTMLResponse(
+            render_consolidated_feed_page(
+                ConsolidatedFeedSurfaceState(
+                    latest=latest,
+                    reports=reports,
+                    rankings=rankings,
+                    reliabilities=BrokerReliabilityStore().all_reliabilities(),
+                    noise_variances=engine.broker_noise_variances(),
                 )
             )
         )
