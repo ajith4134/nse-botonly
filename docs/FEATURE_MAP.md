@@ -208,8 +208,14 @@ feature does not close until every row is resolved and the four completion crite
 
 **All 14 entries are resolved in code.** What remains is the feature's own completion criteria:
 
-- [ ] **`R.08` surface** — `/costs` shows gate verdicts, precondition failures by name, and the
-      derived per-segment floors, measured from real state rather than hand-authored.
+- [x] **`R.08` surface** — DONE. `/costs` now shows the hurdle DECOMPOSED (statutory vs
+      execution, with the uncertainty component held apart — the design's central property made
+      visible, since the margin IS the uncertainty and there is no multiplier), the derived floors
+      with the distribution behind them and an evidence badge that makes a thinly-supported floor
+      LOOK thin, gate verdict counts, and precondition failures by name. `UNPRICEABLE` renders
+      `badge-absent` — no fill, dashed edge — and is deliberately excluded from `judged_count`, so
+      a broken feed cannot inflate a rejections figure. 8 tests assert the CLAIMS the page makes,
+      including that exclusion and that a hostile reason string cannot inject markup.
 - [x] **`R.06` loop wiring** — DONE. `_derive_per_segment_edge_floors` is a daily-runner step,
       run for real: 170 instruments, `NSE-MIS` floor 8.9 bps (median 23.0), `NSE-CNC` 26.2 bps
       (median 36.8). Bounded per run like the backfill is, with the examined count reported so a

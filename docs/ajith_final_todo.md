@@ -323,9 +323,11 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       than the bars it was designed for, so this tests the plumbing on the wrong timescale and is
       NOT evidence that mean reversion lacks edge.*
 
-      *Still open in this feature: `L1.04` floor derived from this hurdle, the `/costs` surface,
-      the adversarial review, and the `R.05` real-data pass over the bar store at the strategy's
-      own horizon.*
+      *`L1.04` floor DONE and derived on the real universe; `/costs` surface DONE (`R.08`); floor
+      derivation wired as a daily-runner step (`R.06`). Still open: the adversarial review — now
+      RUNNING, deliberately before the execution gate rather than after, which is the specific
+      mistake `L1.01` made — and the `R.05` real-data pass over the bar store at the strategy's
+      own horizon per `O.74`.*
 - [ ] **1.38** Per-segment minimum-edge floor — `L1.04` · built in
       `cost_gate/per_segment_edge_floor.py`, DERIVED from the real hurdle distribution rather than
       typed: the plan's ~6-8 / ~10-11 / ~25-30 bps figures appear nowhere in the code, and the floor

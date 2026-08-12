@@ -37,6 +37,47 @@ before the flat-rate era began, nor stamp duty before it was federalised, and a 
 showed only what it *can* price would read as full coverage. An absence that is invisible
 reads as coverage.
 
+**`F01` added a second question — what the cost DECIDES — and it needs four more forms.**
+`L1.02`'s gate, `L1.04`'s per-segment floors and `L11.99/106/107/108`'s ticket preconditions
+turn a cost into a verdict, and each of them asks the reader something the forms above cannot
+answer:
+
+- **A stacked bar per size, grouped into ladders.** The required hurdle is a SUM — statutory
+  charges, plus the expected execution cost, plus a margin — and the question is what share each
+  part contributes, which is part-to-whole. The margin is the one that matters: the gate carries
+  no safety multiplier, so the gap between the expected cost and the hurdle IS the measured
+  uncertainty of the execution estimate, and a reader has to be able to see it widen. That is a
+  question about SHAPE across sizes, so the sizes of one instrument are drawn ascending as a
+  ladder on ONE axis shared by every ladder on the page — a per-card axis would let two cards
+  with different scales look alike. Between ladders the worst-first rule still holds; inside one
+  it cannot, because rank ordering would destroy the very trend the ladder exists to show.
+- **A range strip per segment for the `L1.04` floors**, on a LOG axis, because hurdles measured
+  across the real universe run from single-digit basis points to several hundred and a linear
+  axis crushes the cheap end — which is precisely the end a floor lives at. The floor carries a
+  ±1 standard-error band derived from how many instruments actually stand behind the quantile,
+  so a thinly-measured floor LOOKS less certain by its geometry. That is `R.04` made visible,
+  and it is deliberately geometry rather than colour: on this page colour means status, and the
+  width of the band is the finding itself.
+- **Four verdict counts as tiles, and the fourth one is kept out of the row.** PASS, RESIZE and
+  VETO are judgements and wear the status palette. UNPRICEABLE is the ABSENCE of a judgement, so
+  it wears no status colour at all, sits outside the row of judgements in its own panel, and is
+  never counted into a rejection total. A veto says "not worth taking"; unpriceable says "I do
+  not know", and a page that painted them the same red would teach the reader to read an outage
+  as a decision.
+- **One bar chart of precondition failures by name.** Four named checks ranked by how often each
+  killed a ticket is a magnitude comparison over few classes, which bars answer at a glance and
+  a table answers only by making the reader scan a column. Checks that never fired are drawn at
+  zero rather than dropped, because a missing bar reads as "not a problem" and an absent check
+  is a different statement from a satisfied one.
+
+**The one place categorical colour appears.** The hurdle stack is identity, not status — its
+three parts are components of a sum — so it uses categorical slots 1-3 (blue, orange, aqua),
+which pass every all-pairs gate in both modes (`scripts/validate_palette.js`, worst CVD ΔE 9.2
+light / 9.4 dark, worst normal-vision ΔE 24.0 light / 20.9 dark). Light-mode aqua sits at 2.74:1
+against the light surface, below 3:1, so the relief rule applies and is honoured: every stack
+ships a legend, a direct label at the bar tip and a `<details>` table of the same numbers. Every
+other colour on the page is still status, still paired with a word.
+
 Pure renderer: `render_transaction_cost_page` takes a frozen state and returns HTML. It opens
 no database, constructs no engine and prices nothing. `build_transaction_cost_surface_state`
 does all of that, once, so the page cannot accidentally become a trading-cost calculator that
@@ -48,10 +89,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
+from enum import StrEnum
 from html import escape
 from itertools import pairwise
 
+from nse_algo_trader.cost_gate.per_segment_edge_floor import SegmentEdgeFloor
+from nse_algo_trader.cost_gate.pre_trade_cost_gate import GateDecision, GateVerdict
+from nse_algo_trader.cost_gate.tradeable_ticket_preconditions import PreconditionName
 from nse_algo_trader.market_rules.point_in_time_market_rule_store import (
     EvidenceGrade,
     MarketRuleRecord,
@@ -92,10 +137,23 @@ _STATUS_GOOD = "#0ca30c"
 
 _SERIES_LIGHT = "#2a78d6"
 _SERIES_DARK = "#3987e5"
-"""Categorical slot 1, the only series colour on the page — one line per chart, so no legend.
+"""Categorical slot 1 — the staircase line, the precondition bars, the floor strips.
 
 Both steps clear the validator's lightness band, chroma floor and 3:1 contrast against their
 own surface (`scripts/validate_palette.js`, light `#fcfcfb` / dark `#1a1a19`).
+"""
+
+_SERIES_TWO_LIGHT = "#eb6834"
+_SERIES_TWO_DARK = "#d95926"
+_SERIES_THREE_LIGHT = "#1baf7a"
+_SERIES_THREE_DARK = "#199e70"
+"""Categorical slots 2 and 3 — used ONLY for the two other parts of the hurdle stack.
+
+Slots 1-3 are the set the validator clears on the all-pairs list in both modes, which is the
+list that applies here because the three parts of a stack are compared against each other rather
+than only against their neighbours. Light-mode slot 3 is 2.74:1 against the light surface, below
+the 3:1 bar, so the stack carries the relief the validator demands: a legend, a direct label at
+each bar tip, and the whole thing again as a table.
 """
 
 _TRANSACTION_TAX_COMPONENTS = frozenset(
@@ -124,23 +182,57 @@ _VERDICT_BADGES: dict[ReconciliationVerdict, tuple[str, str]] = {
     ReconciliationVerdict.DRIFTS: ("badge-critical", "DRIFTS"),
 }
 
+_GATE_VERDICT_BADGES: dict[GateVerdict, tuple[str, str]] = {
+    GateVerdict.PASS: ("badge-good", "PASS"),
+    GateVerdict.RESIZE: ("badge-warning", "RESIZE"),
+    GateVerdict.VETO: ("badge-critical", "VETO"),
+    GateVerdict.UNPRICEABLE: ("badge-absent", "UNPRICEABLE"),
+}
+"""Three judgements in the status palette, and one deliberate hole in it.
+
+`UNPRICEABLE` gets `badge-absent` — no fill, a dashed outline, muted ink — because it is not a
+rejection and must never be read as one. The absence of colour is doing the same work the colours
+are: there is no judgement here to paint.
+"""
+
+_LEGS_PER_ROUND_TRIP = Decimal(2)
+"""Entering and leaving. The gate charges execution cost on both legs, so the page shows both.
+
+Restated here rather than imported for the same reason `_TRANSACTION_TAX_COMPONENTS` is: a figure
+printed beside a hurdle has to stand on the hurdle's own footing. A one-leg spread shown next to
+a round-trip hurdle would read as half the cost the gate actually charged.
+"""
+
+_PERCENT = Decimal(100)
+_MEDIAN_QUANTILE = Decimal("0.5")
+"""The quantile `derive_segment_floor` itself uses for the median it publishes."""
+
+_FLOOR_RANK_OF_A_LONE_OBSERVATION = 1
+"""Below this the quantile is not a quantile: the floor IS one instrument, not a property."""
+
+_MINIMUM_ROWS_FOR_A_SIZE_LADDER = 2
+"""One size cannot show a trend, so a single-size ladder reports no widening rather than zero."""
+
 _PAGE_CSS = """
 :root{
   --surface-0:#f4f4f2; --surface-1:#fcfcfb; --border:#e2e1dc;
   --text-primary:#0b0b0b; --text-secondary:#52514e; --text-muted:#77766f;
-  --series-1:__SERIES_LIGHT__; --gridline:#e1e0d9; --axis:#c3c2b7;
+  --series-1:__SERIES_LIGHT__; --series-2:__SERIES_TWO_LIGHT__;
+  --series-3:__SERIES_THREE_LIGHT__; --gridline:#e1e0d9; --axis:#c3c2b7;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     --surface-0:#111110; --surface-1:#1a1a19; --border:#33322e;
     --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#8a8a80;
-    --series-1:__SERIES_DARK__; --gridline:#2c2c2a; --axis:#383835;
+    --series-1:__SERIES_DARK__; --series-2:__SERIES_TWO_DARK__;
+    --series-3:__SERIES_THREE_DARK__; --gridline:#2c2c2a; --axis:#383835;
   }
 }
 [data-theme="dark"]{
   --surface-0:#111110; --surface-1:#1a1a19; --border:#33322e;
   --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#8a8a80;
-  --series-1:__SERIES_DARK__; --gridline:#2c2c2a; --axis:#383835;
+  --series-1:__SERIES_DARK__; --series-2:__SERIES_TWO_DARK__;
+  --series-3:__SERIES_THREE_DARK__; --gridline:#2c2c2a; --axis:#383835;
 }
 *{box-sizing:border-box;}
 body{margin:0;padding:32px;background:var(--surface-0);color:var(--text-primary);
@@ -193,6 +285,39 @@ summary{cursor:pointer;color:var(--text-secondary);font-size:12px;}
 details table{margin-top:6px;}
 details th,details td{font-size:12px;padding:3px 8px;}
 footer{color:var(--text-muted);font-size:12px;margin-top:26px;max-width:88ch;}
+/* ---- F01: the gate ---- */
+/* No fill and a dashed edge: UNPRICEABLE is the absence of a judgement, and painting it in
+   any status colour would file it under one. */
+.badge-absent{background:transparent;color:var(--text-muted);
+  border:1px dashed var(--axis);padding:0 7px;}
+.tile-absent{border-style:dashed;}
+.tile-absent .tile-value{color:var(--text-muted);}
+.legend{display:flex;flex-wrap:wrap;gap:16px;margin:0 0 10px;
+  color:var(--text-secondary);font-size:12px;}
+.legend span{display:inline-flex;align-items:center;gap:6px;}
+.swatch{width:12px;height:12px;border-radius:3px;display:inline-block;}
+.swatch-1{background:var(--series-1);}
+.swatch-2{background:var(--series-2);}
+.swatch-3{background:var(--series-3);}
+.stack-statutory{fill:var(--series-1);}
+.stack-execution{fill:var(--series-2);}
+.stack-uncertainty{fill:var(--series-3);}
+.bar{fill:var(--series-1);}
+.bar-label{fill:var(--text-secondary);font-size:11px;font-variant-numeric:tabular-nums;}
+.row-label{fill:var(--text-secondary);font-size:11px;}
+/* A wash, never a saturated block — the track is context, the floor mark is the finding. */
+.range-track{fill:var(--series-1);opacity:0.14;}
+.floor-band{fill:var(--series-1);opacity:0.32;}
+.floor-rule{stroke:var(--series-1);stroke-width:2;stroke-linecap:round;}
+.range-dot{fill:var(--series-1);stroke:var(--surface-1);stroke-width:2;}
+.range-ring{fill:var(--surface-1);stroke:var(--series-1);stroke-width:2;}
+.ladder-note{color:var(--text-secondary);font-size:12px;margin:0 0 8px;}
+/* A full-panel SVG scales its 11px type up with the panel — at 1400px a tick label renders
+   three times the size of the page's own text. The cap keeps chart type near body size, the
+   same size the staircase cards get from their grid column. */
+.plot{max-width:620px;}
+/* The page-wide rule makes an SVG a block that fills its column; a legend swatch is neither. */
+.legend svg{display:inline-block;width:14px;height:14px;}
 """
 # Substituted rather than %-formatted: a CSS stylesheet is full of `%` units, and
 # %-formatting a stylesheet is how `width:100%` becomes a format-string error.
@@ -202,6 +327,10 @@ _PAGE_CSS = (
     .replace("__GOOD__", _STATUS_GOOD)
     .replace("__SERIES_LIGHT__", _SERIES_LIGHT)
     .replace("__SERIES_DARK__", _SERIES_DARK)
+    .replace("__SERIES_TWO_LIGHT__", _SERIES_TWO_LIGHT)
+    .replace("__SERIES_TWO_DARK__", _SERIES_TWO_DARK)
+    .replace("__SERIES_THREE_LIGHT__", _SERIES_THREE_LIGHT)
+    .replace("__SERIES_THREE_DARK__", _SERIES_THREE_DARK)
 )
 
 
@@ -310,6 +439,179 @@ class RefusedEraRow:
 
 
 @dataclass(frozen=True, slots=True)
+class HurdleDecompositionRow:
+    """One priced ticket's hurdle, split into what it costs and what it is unsure about.
+
+    Every figure is read off the gate's own `CostHurdle` — `point_bps`, `required_bps` and
+    `uncertainty_bps` are that object's properties, copied, not recomputed. The page must not be
+    able to disagree with the arithmetic the decision was actually made with, and the only way to
+    guarantee that is to never do the arithmetic twice.
+    """
+
+    trading_symbol: str
+    segment_value: str
+    quantity: int
+    statutory_bps: Decimal
+    execution_point_bps: Decimal
+    execution_upper_bps: Decimal
+    point_bps: Decimal
+    required_bps: Decimal
+    uncertainty_bps: Decimal
+    is_execution_censored: bool
+    verdict_value: str
+    round_trip_spread_bps: Decimal | None
+    execution_interval_width_bps: Decimal | None
+
+    @property
+    def uncertainty_percent_of_required(self) -> Decimal | None:
+        """How much of the bar a signal has to clear is margin rather than expected cost."""
+        if self.required_bps <= 0:
+            return None
+        return self.uncertainty_bps / self.required_bps * _PERCENT
+
+
+@dataclass(frozen=True, slots=True)
+class HurdleSizeLadder:
+    """One instrument priced at one or more sizes, ascending — the shape of the margin.
+
+    Ascending rather than worst-first, alone on this page. The ladder exists to answer whether
+    the margin widens with size, and sorting it by cost would destroy exactly the ordering that
+    question is asked in.
+    """
+
+    trading_symbol: str
+    segment_value: str
+    rows: tuple[HurdleDecompositionRow, ...]
+
+    @property
+    def label(self) -> str:
+        return f"{self.trading_symbol} · {self.segment_value}"
+
+    @property
+    def largest_required_bps(self) -> Decimal:
+        return max((row.required_bps for row in self.rows), default=Decimal(0))
+
+    @property
+    def uncertainty_widening_bps(self) -> Decimal | None:
+        """How much wider the margin is at the largest size than at the smallest.
+
+        `None` when the instrument was priced at one size only, which is the honest answer: a
+        single point cannot show a trend, and reporting zero would claim a flat one.
+        """
+        if len(self.rows) < _MINIMUM_ROWS_FOR_A_SIZE_LADDER:
+            return None
+        return self.rows[-1].uncertainty_bps - self.rows[0].uncertainty_bps
+
+    @property
+    def has_censored_size(self) -> bool:
+        """Whether any size on this ladder exceeded the visible book and was extrapolated."""
+        return any(row.is_execution_censored for row in self.rows)
+
+
+class FloorEvidenceVerdict(StrEnum):
+    """How much of a floor is measurement and how much is one instrument having a bad day.
+
+    Derived from the floor's own quantile arithmetic, never from a chosen instrument count: a
+    threshold like "thin below fifty" is the kind of magic constant `R.03` forbids, and it would
+    be wrong at both ends anyway. What is structural is that a nearest-rank quantile whose rank
+    is one IS a single observation, and that a floor whose standard error reaches the segment's
+    own median cannot be told apart from the middle of the distribution.
+    """
+
+    SINGLE_OBSERVATION = "single observation"
+    OVERLAPS_MEDIAN = "overlaps median"
+    RESOLVED = "resolved"
+
+
+@dataclass(frozen=True, slots=True)
+class SegmentEdgeFloorRow:
+    """One `L1.04` floor, the distribution behind it, and how firmly it is pinned.
+
+    `floor_uncertainty_bps` is the part `R.04` is about. The floor is a nearest-rank quantile, so
+    its sampling error is a rank error: the rank of the true quantile has standard deviation
+    sqrt(n·q·(1-q)), and converting that into basis points at the local slope between the floor
+    and the median turns "how many instruments stand behind this" into a width the reader can
+    see. Two hundred instruments pin a floor to a fraction of a basis point; eleven do not.
+    """
+
+    segment_value: str
+    session_date: date
+    floor_bps: Decimal
+    median_hurdle_bps: Decimal
+    cheapest_hurdle_bps: Decimal
+    dearest_hurdle_bps: Decimal
+    floor_quantile: Decimal
+    instrument_count: int
+    supporting_instrument_rank: int
+    floor_uncertainty_bps: Decimal
+    evidence_verdict: FloorEvidenceVerdict
+    description: str
+
+    @property
+    def spread_of_hurdles_bps(self) -> Decimal:
+        return self.dearest_hurdle_bps - self.cheapest_hurdle_bps
+
+    @property
+    def floor_lower_bps(self) -> Decimal:
+        """The optimistic end of the floor's own error band, never below zero."""
+        return max(Decimal(0), self.floor_bps - self.floor_uncertainty_bps)
+
+    @property
+    def floor_upper_bps(self) -> Decimal:
+        return self.floor_bps + self.floor_uncertainty_bps
+
+
+@dataclass(frozen=True, slots=True)
+class GateVerdictCensus:
+    """What the gate decided, counted — with the fourth count held apart from the other three.
+
+    `unpriceable_count` is deliberately NOT part of `rejected_count`. A veto is a judgement that
+    a trade is not worth taking; an unpriceable is the absence of any judgement at all. Summing
+    them would produce a "rejections" figure that quietly grows every time a data feed breaks.
+    """
+
+    pass_count: int
+    resize_count: int
+    veto_count: int
+    unpriceable_count: int
+
+    @property
+    def judged_count(self) -> int:
+        """Decisions the gate actually formed an opinion on."""
+        return self.pass_count + self.resize_count + self.veto_count
+
+    @property
+    def evaluated_count(self) -> int:
+        return self.judged_count + self.unpriceable_count
+
+    @property
+    def tradeable_count(self) -> int:
+        return self.pass_count + self.resize_count
+
+    @property
+    def unpriceable_percent_of_evaluations(self) -> Decimal | None:
+        if self.evaluated_count <= 0:
+            return None
+        return Decimal(self.unpriceable_count) / Decimal(self.evaluated_count) * _PERCENT
+
+
+@dataclass(frozen=True, slots=True)
+class PreconditionFailureRow:
+    """One named ticket precondition, and how often it was the thing that killed the trade."""
+
+    precondition_name: str
+    failure_count: int
+    evaluated_count: int
+    example_failure_reason: str
+
+    @property
+    def failure_percent_of_evaluations(self) -> Decimal | None:
+        if self.evaluated_count <= 0:
+            return None
+        return Decimal(self.failure_count) / Decimal(self.evaluated_count) * _PERCENT
+
+
+@dataclass(frozen=True, slots=True)
 class TransactionCostSurfaceState:
     """Everything the page shows, already resolved. The renderer reads nothing else."""
 
@@ -321,6 +623,48 @@ class TransactionCostSurfaceState:
     reconciliation_rows: tuple[ComponentReconciliationRow, ...]
     refused_eras: tuple[RefusedEraRow, ...]
     ledger_observation_count: int
+    # `F01`. Every one of these is optional and empty by default, so a caller built against the
+    # `L1.01`-only page keeps working and simply renders the gate sections as "not supplied"
+    # rather than as "nothing was rejected", which is the failure this whole page is about.
+    hurdle_ladders: tuple[HurdleSizeLadder, ...] = ()
+    edge_floor_rows: tuple[SegmentEdgeFloorRow, ...] = ()
+    verdict_census: GateVerdictCensus | None = None
+    precondition_rows: tuple[PreconditionFailureRow, ...] = ()
+
+    @property
+    def hurdle_rows(self) -> tuple[HurdleDecompositionRow, ...]:
+        return tuple(row for ladder in self.hurdle_ladders for row in ladder.rows)
+
+    @property
+    def hurdle_ceiling_bps(self) -> Decimal:
+        """The axis every ladder shares. One scale, so two cards can be read against each other."""
+        return max((row.required_bps for row in self.hurdle_rows), default=Decimal(0))
+
+    @property
+    def dearest_hurdle_row(self) -> HurdleDecompositionRow | None:
+        rows = self.hurdle_rows
+        return max(rows, key=lambda row: row.required_bps) if rows else None
+
+    @property
+    def widest_uncertainty_row(self) -> HurdleDecompositionRow | None:
+        """Where the margin is largest — the ticket whose cost is least well known."""
+        rows = self.hurdle_rows
+        return max(rows, key=lambda row: row.uncertainty_bps) if rows else None
+
+    @property
+    def censored_hurdle_count(self) -> int:
+        """Tickets whose size exceeded the visible book, so the impact term is extrapolated."""
+        return sum(1 for row in self.hurdle_rows if row.is_execution_censored)
+
+    @property
+    def thinnest_floor_row(self) -> SegmentEdgeFloorRow | None:
+        """The floor with the fewest instruments behind it — the one to trust least."""
+        rows = self.edge_floor_rows
+        return min(rows, key=lambda row: row.instrument_count) if rows else None
+
+    @property
+    def failing_precondition_count(self) -> int:
+        return sum(row.failure_count for row in self.precondition_rows)
 
     @property
     def priced_rows(self) -> tuple[SegmentCostRow, ...]:
@@ -397,6 +741,8 @@ def build_transaction_cost_surface_state(
     structure_history: ChargeStructureHistory | None = None,
     rule_store: PointInTimeMarketRuleStore | None = None,
     known_as_of: date | None = None,
+    gate_decisions: Sequence[GateDecision] = (),
+    edge_floors: Sequence[SegmentEdgeFloor] = (),
 ) -> TransactionCostSurfaceState:
     """Price every segment once, read the ledger once, and freeze the result.
 
@@ -408,6 +754,13 @@ def build_transaction_cost_surface_state(
     refused-era panel report the RATE boundary as well as the structural one; without it the
     panel reports only what the structure history knows, and says so rather than implying the
     earlier dates are priceable.
+
+    `gate_decisions` are `L1.02` decisions the caller has ALREADY taken — this function never
+    runs the gate. Three of the page's four `F01` sections are read out of them (the hurdle
+    decomposition, the verdict census, the precondition failures) precisely because they are one
+    object: a page that recomputed any of the three would be able to show a hurdle that never
+    decided anything. `edge_floors` are `L1.04` floors as derived and stored, for the same
+    reason. Both default to empty, so every existing caller keeps the `L1.01` page unchanged.
     """
     history = structure_history or nse_charge_structure_history()
     rows: list[SegmentCostRow] = []
@@ -435,6 +788,10 @@ def build_transaction_cost_surface_state(
         reconciliation_rows=_reconciliation_rows(engine, ledger, priced_on=priced_on),
         refused_eras=_refused_era_rows(history, rule_store),
         ledger_observation_count=ledger.observation_count(),
+        hurdle_ladders=_hurdle_size_ladders(gate_decisions),
+        edge_floor_rows=_edge_floor_rows(edge_floors),
+        verdict_census=_verdict_census(gate_decisions),
+        precondition_rows=_precondition_failure_rows(gate_decisions),
     )
 
 
@@ -668,6 +1025,206 @@ def _refused_era_row_for(
     )
 
 
+# --------------------------------------------------------------------------- F01 assembly
+
+
+def _priced_quantity(decision: GateDecision) -> int:
+    """The size the hurdle on this decision was actually computed at.
+
+    On a RESIZE that is the approved quantity and not the proposed one — the gate re-prices at
+    the size it solved for, and showing the proposed size beside a resized hurdle would put the
+    wrong denominator under every basis point on the row. The fill knows its own quantity, so it
+    is asked first; the verdict is only consulted when there is no fill to ask.
+    """
+    fill = decision.expected_fill
+    if fill is not None:
+        return fill.quantity
+    if decision.verdict is GateVerdict.RESIZE:
+        return decision.approved_quantity
+    return decision.signal.proposed_quantity
+
+
+def _hurdle_decomposition_row(decision: GateDecision) -> HurdleDecompositionRow | None:
+    """One decision's hurdle as a display row, or `None` when it never got one.
+
+    An `UNPRICEABLE` decision has no hurdle at all, and that is the point of it: there is nothing
+    to decompose, so it contributes to the verdict census and to nothing else. Inventing a zero
+    row for it would draw an empty bar that reads as "free to trade".
+    """
+    hurdle = decision.hurdle
+    if hurdle is None:
+        return None
+    fill = decision.expected_fill
+    return HurdleDecompositionRow(
+        trading_symbol=decision.signal.trading_symbol,
+        segment_value=decision.signal.segment.value,
+        quantity=_priced_quantity(decision),
+        statutory_bps=hurdle.statutory_bps,
+        execution_point_bps=hurdle.execution_point_bps,
+        execution_upper_bps=hurdle.execution_upper_bps,
+        point_bps=hurdle.point_bps,
+        required_bps=hurdle.required_bps,
+        uncertainty_bps=hurdle.uncertainty_bps,
+        is_execution_censored=hurdle.is_execution_censored,
+        verdict_value=decision.verdict.value,
+        round_trip_spread_bps=(
+            None if fill is None else fill.spread_cost_bps * _LEGS_PER_ROUND_TRIP
+        ),
+        execution_interval_width_bps=(
+            None if fill is None else fill.cost_interval_width_bps * _LEGS_PER_ROUND_TRIP
+        ),
+    )
+
+
+def _hurdle_size_ladders(decisions: Sequence[GateDecision]) -> tuple[HurdleSizeLadder, ...]:
+    """Group priced hurdles by instrument, order the sizes inside each, worst ladder first."""
+    grouped: dict[tuple[str, str], list[HurdleDecompositionRow]] = {}
+    for decision in decisions:
+        row = _hurdle_decomposition_row(decision)
+        if row is None:
+            continue
+        grouped.setdefault((row.trading_symbol, row.segment_value), []).append(row)
+    ladders = [
+        HurdleSizeLadder(
+            trading_symbol=trading_symbol,
+            segment_value=segment_value,
+            rows=tuple(sorted(rows, key=lambda row: row.quantity)),
+        )
+        for (trading_symbol, segment_value), rows in grouped.items()
+    ]
+    ladders.sort(key=lambda ladder: (-ladder.largest_required_bps, ladder.label))
+    return tuple(ladders)
+
+
+def _verdict_census(decisions: Sequence[GateDecision]) -> GateVerdictCensus | None:
+    """Count the four verdicts, or `None` when no decision was supplied at all.
+
+    `None` rather than four zeros, deliberately. Zero vetoes out of zero evaluations and zero
+    vetoes out of a thousand are opposite findings, and a census of zeros renders as the second.
+    """
+    if not decisions:
+        return None
+    counts = dict.fromkeys(GateVerdict, 0)
+    for decision in decisions:
+        counts[decision.verdict] += 1
+    return GateVerdictCensus(
+        pass_count=counts[GateVerdict.PASS],
+        resize_count=counts[GateVerdict.RESIZE],
+        veto_count=counts[GateVerdict.VETO],
+        unpriceable_count=counts[GateVerdict.UNPRICEABLE],
+    )
+
+
+def _precondition_failure_rows(
+    decisions: Sequence[GateDecision],
+) -> tuple[PreconditionFailureRow, ...]:
+    """Count failures per named check, keeping one real reason per name.
+
+    Every `PreconditionName` gets a row even when it never failed: the four checks are a fixed
+    set, and a name that vanishes from the table reads as "not applicable" when what actually
+    happened is "checked, and fine". Rows carry their own evaluated count because the checks do
+    not all run on the same tickets — the range-width check only fires for a caller proposing a
+    range, and a share computed against the wrong denominator would understate it.
+    """
+    failure_counts = dict.fromkeys(PreconditionName, 0)
+    evaluated_counts = dict.fromkeys(PreconditionName, 0)
+    example_reasons: dict[PreconditionName, str] = {}
+    reports = [
+        decision.preconditions for decision in decisions if decision.preconditions is not None
+    ]
+    if not reports:
+        return ()
+    for report in reports:
+        for result in report.results:
+            evaluated_counts[result.name] += 1
+            if not result.is_satisfied:
+                failure_counts[result.name] += 1
+                example_reasons.setdefault(result.name, result.reason)
+    rows = [
+        PreconditionFailureRow(
+            precondition_name=name.value,
+            failure_count=failure_counts[name],
+            evaluated_count=evaluated_counts[name],
+            example_failure_reason=example_reasons.get(name, ""),
+        )
+        for name in PreconditionName
+    ]
+    rows.sort(key=lambda row: (-row.failure_count, row.precondition_name))
+    return tuple(rows)
+
+
+def _nearest_rank(instrument_count: int, quantile: Decimal) -> int:
+    """The rank `derive_segment_floor` itself selects, restated so the page can reason about it.
+
+    Restated rather than imported because the private helper it mirrors returns a VALUE and this
+    needs the RANK — the position in the sorted universe that the published floor came from. That
+    position is the whole evidence story: rank 10 of 200 is a quantile, rank 1 of 11 is one
+    instrument wearing a quantile's name.
+    """
+    return int((Decimal(instrument_count) * quantile).to_integral_value(rounding=ROUND_CEILING))
+
+
+def _floor_uncertainty_bps(floor: SegmentEdgeFloor, floor_rank: int) -> Decimal:
+    """The floor's own standard error, in basis points, from the depth of evidence behind it.
+
+    A nearest-rank quantile's sampling error is an error in the RANK it selects: over repeated
+    samples of the same segment, the rank of the true quantile has standard deviation
+    sqrt(n·q·(1-q)). That is a count, not a cost, so it is converted at the local slope of the
+    hurdle distribution — the basis points per rank between the floor and the median, the two
+    order statistics the floor actually publishes. The result is what `R.04` asks a surface to
+    show: the same algorithm at every maturity, with the confidence visibly different.
+
+    Zero when the floor and the median select the same rank. There is then no measured slope to
+    convert with, and inventing one would put a confident-looking band on nothing.
+    """
+    median_rank = _nearest_rank(floor.instrument_count, _MEDIAN_QUANTILE)
+    ranks_between = median_rank - floor_rank
+    if ranks_between <= 0:
+        return Decimal(0)
+    bps_per_rank = (floor.median_hurdle_bps - floor.floor_bps) / Decimal(ranks_between)
+    rank_standard_deviation = (
+        Decimal(floor.instrument_count) * floor.floor_quantile * (Decimal(1) - floor.floor_quantile)
+    ).sqrt()
+    return rank_standard_deviation * bps_per_rank
+
+
+def _floor_evidence_verdict(
+    floor: SegmentEdgeFloor, floor_rank: int, uncertainty_bps: Decimal
+) -> FloorEvidenceVerdict:
+    """Both tests are comparisons between measured quantities, never against a chosen count."""
+    if floor_rank <= _FLOOR_RANK_OF_A_LONE_OBSERVATION:
+        return FloorEvidenceVerdict.SINGLE_OBSERVATION
+    if floor.floor_bps + uncertainty_bps >= floor.median_hurdle_bps:
+        return FloorEvidenceVerdict.OVERLAPS_MEDIAN
+    return FloorEvidenceVerdict.RESOLVED
+
+
+def _edge_floor_rows(floors: Sequence[SegmentEdgeFloor]) -> tuple[SegmentEdgeFloorRow, ...]:
+    """Cheapest floor first: the tightest screen is the one a reader reaches for."""
+    rows = []
+    for floor in floors:
+        floor_rank = _nearest_rank(floor.instrument_count, floor.floor_quantile)
+        uncertainty_bps = _floor_uncertainty_bps(floor, floor_rank)
+        rows.append(
+            SegmentEdgeFloorRow(
+                segment_value=floor.segment.value,
+                session_date=floor.session_date,
+                floor_bps=floor.floor_bps,
+                median_hurdle_bps=floor.median_hurdle_bps,
+                cheapest_hurdle_bps=floor.cheapest_hurdle_bps,
+                dearest_hurdle_bps=floor.dearest_hurdle_bps,
+                floor_quantile=floor.floor_quantile,
+                instrument_count=floor.instrument_count,
+                supporting_instrument_rank=floor_rank,
+                floor_uncertainty_bps=uncertainty_bps,
+                evidence_verdict=_floor_evidence_verdict(floor, floor_rank, uncertainty_bps),
+                description=floor.describe(),
+            )
+        )
+    rows.sort(key=lambda row: (row.floor_bps, row.segment_value))
+    return tuple(rows)
+
+
 # --------------------------------------------------------------------------- chart geometry
 
 _VIEW_WIDTH = Decimal(480)
@@ -687,6 +1244,55 @@ _BPS_QUANTUM = Decimal("0.01")
 _RISE_QUANTUM = Decimal("0.000001")
 _LABEL_INSET = Decimal(6)
 _MINIMUM_TREADS_FOR_A_STEP = 2
+_PERCENT_QUANTUM = Decimal("0.1")
+
+# `F01` geometry. Three more charts, each with its own row height and gutters, all drawn into
+# the same 480-unit viewBox so cards sitting side by side in the grid share a visual scale.
+_HURDLE_PLOT_LEFT = Decimal(66)
+_HURDLE_PLOT_RIGHT = Decimal(404)
+_HURDLE_ROW_HEIGHT = Decimal(32)
+_HURDLE_BAR_THICKNESS = Decimal(18)
+_HURDLE_TOP_PADDING = Decimal(14)
+_HURDLE_AXIS_BAND = Decimal(34)
+_SEGMENT_GAP = Decimal(2)
+"""The surface gap that separates touching fills. One width, everywhere, never a stroke."""
+_BAR_CORNER_RADIUS = Decimal(4)
+_LABEL_GAP = Decimal(6)
+_TEXT_CENTRING_LIFT = Decimal(4)
+"""Half an 11px cap-height — what a baseline needs to sit a label on a mark's centre line."""
+
+_FLOOR_PLOT_LEFT = Decimal(94)
+_FLOOR_PLOT_RIGHT = Decimal(446)
+_FLOOR_ROW_HEIGHT = Decimal(54)
+_FLOOR_TOP_PADDING = Decimal(20)
+_FLOOR_AXIS_BAND = Decimal(36)
+_FLOOR_TRACK_THICKNESS = Decimal(8)
+_FLOOR_BAND_THICKNESS = Decimal(20)
+_FLOOR_RULE_HALF_HEIGHT = Decimal(14)
+_FLOOR_MARKER_RADIUS = Decimal(4)
+_FLOOR_LABEL_LIFT = Decimal(16)
+_FLOOR_LABEL_DROP = Decimal(18)
+_DECADE = Decimal(10)
+
+_PRECONDITION_PLOT_LEFT = Decimal(198)
+_PRECONDITION_PLOT_RIGHT = Decimal(432)
+_PRECONDITION_ROW_HEIGHT = Decimal(28)
+_PRECONDITION_BAR_THICKNESS = Decimal(14)
+_PRECONDITION_TOP_PADDING = Decimal(12)
+_PRECONDITION_AXIS_BAND = Decimal(30)
+
+_HURDLE_STACK_PARTS: tuple[tuple[str, str], ...] = (
+    ("stack-statutory", "statutory charges"),
+    ("stack-execution", "execution, expected"),
+    ("stack-uncertainty", "uncertainty margin"),
+)
+"""The stack, in the order it is drawn: known cost, estimated cost, then the margin on top.
+
+That order is the argument. Statutory charges are read from circulars, execution is estimated
+from the book, and the margin is what the estimate does not know — so the bar reads left to
+right from the most certain part of the hurdle to the least, and the reader can see how much of
+the far end is not a cost at all.
+"""
 
 
 def _coordinate(value: Decimal) -> str:
@@ -704,6 +1310,15 @@ def _format_residual_in_paise(value: Decimal) -> str:
 def _format_rise_bps(value: Decimal) -> str:
     """A rounding-scale rise is invisible at two decimals, so this one keeps six."""
     return str(value.quantize(_RISE_QUANTUM))
+
+
+def _format_percent(value: Decimal | None) -> str:
+    return "—" if value is None else f"{value.quantize(_PERCENT_QUANTUM)}%"
+
+
+def _format_count(value: int) -> str:
+    """Grouped, because a five-figure quantity read as a four-figure one is a sizing error."""
+    return f"{value:,}"
 
 
 def _interpolate(
@@ -854,6 +1469,416 @@ def _staircase_figure(staircase: CostStaircase) -> str:
     )
 
 
+# --------------------------------------------------------------------------- F01 charts
+
+
+def _bar_path(
+    x_start: Decimal, x_end: Decimal, y_top: Decimal, thickness: Decimal, *, round_data_end: bool
+) -> str:
+    """A bar as a path: square where it meets the baseline, rounded at the data end.
+
+    The rounding is dropped on a segment narrower than the radius rather than scaled down —
+    a 1px-wide bar with a 4px corner is a blob, and a blob is a value the reader cannot measure.
+    """
+    y_bottom = y_top + thickness
+    if not round_data_end or x_end - x_start <= _BAR_CORNER_RADIUS:
+        return (
+            f"M {_coordinate(x_start)} {_coordinate(y_top)} H {_coordinate(x_end)} "
+            f"V {_coordinate(y_bottom)} H {_coordinate(x_start)} Z"
+        )
+    radius = _BAR_CORNER_RADIUS
+    return (
+        f"M {_coordinate(x_start)} {_coordinate(y_top)} "
+        f"H {_coordinate(x_end - radius)} "
+        f"A {_coordinate(radius)} {_coordinate(radius)} 0 0 1 "
+        f"{_coordinate(x_end)} {_coordinate(y_top + radius)} "
+        f"V {_coordinate(y_bottom - radius)} "
+        f"A {_coordinate(radius)} {_coordinate(radius)} 0 0 1 "
+        f"{_coordinate(x_end - radius)} {_coordinate(y_bottom)} "
+        f"H {_coordinate(x_start)} Z"
+    )
+
+
+def _hurdle_part_values(row: HurdleDecompositionRow) -> tuple[Decimal, ...]:
+    """The three stacked parts, in `_HURDLE_STACK_PARTS` order. They sum to `required_bps`."""
+    return (row.statutory_bps, row.execution_point_bps, row.uncertainty_bps)
+
+
+def _hurdle_ladder_svg(ladder: HurdleSizeLadder, ceiling_bps: Decimal) -> str:
+    """One instrument's sizes as stacked bars, on the axis every ladder on the page shares."""
+    rows = ladder.rows
+    if not rows or ceiling_bps <= 0:
+        return ""
+    view_height = _HURDLE_TOP_PADDING + _HURDLE_ROW_HEIGHT * len(rows) + _HURDLE_AXIS_BAND
+    plot_bottom = _HURDLE_TOP_PADDING + _HURDLE_ROW_HEIGHT * len(rows)
+
+    def horizontal(value: Decimal) -> Decimal:
+        return _interpolate(value, Decimal(0), ceiling_bps, _HURDLE_PLOT_LEFT, _HURDLE_PLOT_RIGHT)
+
+    gridlines = "".join(
+        f'<line class="gridline" x1="{_coordinate(horizontal(ceiling_bps * fraction))}" '
+        f'y1="{_coordinate(_HURDLE_TOP_PADDING)}" '
+        f'x2="{_coordinate(horizontal(ceiling_bps * fraction))}" '
+        f'y2="{_coordinate(plot_bottom)}"></line>'
+        f'<text class="tick" text-anchor="middle" '
+        f'x="{_coordinate(horizontal(ceiling_bps * fraction))}" '
+        f'y="{_coordinate(plot_bottom + Decimal(14))}">'
+        f"{escape(_format_bps(ceiling_bps * fraction))}</text>"
+        for fraction in _GRIDLINE_FRACTIONS
+    )
+    marks: list[str] = []
+    for index, row in enumerate(rows):
+        bar_top = (
+            _HURDLE_TOP_PADDING
+            + _HURDLE_ROW_HEIGHT * index
+            + (_HURDLE_ROW_HEIGHT - _HURDLE_BAR_THICKNESS) / 2
+        )
+        centre = bar_top + _HURDLE_BAR_THICKNESS / 2
+        marks.append(
+            f'<text class="row-label" text-anchor="end" '
+            f'x="{_coordinate(_HURDLE_PLOT_LEFT - _LABEL_GAP)}" '
+            f'y="{_coordinate(centre + _TEXT_CENTRING_LIFT)}">'
+            f"{escape(_format_count(row.quantity))}</text>"
+        )
+        drawn = [
+            (css_class, word, value)
+            for (css_class, word), value in zip(
+                _HURDLE_STACK_PARTS, _hurdle_part_values(row), strict=True
+            )
+            if value > 0
+        ]
+        cumulative = Decimal(0)
+        for position, (css_class, word, value) in enumerate(drawn):
+            start_x = horizontal(cumulative)
+            cumulative += value
+            end_x = horizontal(cumulative)
+            is_data_end = position == len(drawn) - 1
+            if not is_data_end:
+                end_x -= _SEGMENT_GAP
+            if end_x <= start_x:
+                continue
+            path = _bar_path(
+                start_x, end_x, bar_top, _HURDLE_BAR_THICKNESS, round_data_end=is_data_end
+            )
+            marks.append(
+                f"<g><title>{escape(_format_count(row.quantity))} units — {escape(word)} "
+                f"{escape(_format_bps(value))} bps of a {escape(_format_bps(row.required_bps))} "
+                f'bps hurdle</title><path class="{css_class}" d="{path}"></path></g>'
+            )
+        # One label per bar, at the tip, outside the mark: the total the signal must clear.
+        marks.append(
+            f'<text class="bar-label" text-anchor="start" '
+            f'x="{_coordinate(horizontal(row.required_bps) + _LABEL_GAP)}" '
+            f'y="{_coordinate(centre + _TEXT_CENTRING_LIFT)}">'
+            f"{escape(_format_bps(row.required_bps))}</text>"
+        )
+    label = (
+        f"{ladder.label}: required hurdle in basis points at {len(rows)} sizes, each bar split "
+        f"into statutory charges, expected execution cost and the uncertainty margin"
+    )
+    return (
+        f'<svg viewBox="0 0 {_coordinate(_VIEW_WIDTH)} {_coordinate(view_height)}" '
+        f'role="img" aria-label="{escape(label)}">'
+        f"{gridlines}"
+        f'<line class="axis-rule" x1="{_coordinate(_HURDLE_PLOT_LEFT)}" '
+        f'y1="{_coordinate(_HURDLE_TOP_PADDING)}" x2="{_coordinate(_HURDLE_PLOT_LEFT)}" '
+        f'y2="{_coordinate(plot_bottom)}"></line>'
+        f"{''.join(marks)}"
+        f'<text class="tick" text-anchor="middle" '
+        f'x="{_coordinate((_HURDLE_PLOT_LEFT + _HURDLE_PLOT_RIGHT) / 2)}" '
+        f'y="{_coordinate(view_height - Decimal(4))}">required hurdle (bps), by quantity</text>'
+        f"</svg>"
+    )
+
+
+def _hurdle_ladder_table(ladder: HurdleSizeLadder) -> str:
+    """The stack's table view — every number in the chart, plus the two the chart cannot hold."""
+    body = "".join(
+        f"<tr><td class=figure>{escape(_format_count(row.quantity))}</td>"
+        f"<td>{escape(row.verdict_value.upper())}</td>"
+        f"<td class=figure>{escape(_format_bps(row.statutory_bps))}</td>"
+        f"<td class=figure>{escape(_format_bps(row.execution_point_bps))}</td>"
+        f"<td class=figure>{escape(_format_bps(row.uncertainty_bps))}</td>"
+        f"<td class=figure>{escape(_format_bps(row.required_bps))}</td>"
+        f"<td class=figure>{escape(_format_percent(row.uncertainty_percent_of_required))}</td>"
+        f"<td class=figure>{escape(_format_bps(row.round_trip_spread_bps))}</td>"
+        f"<td>{'extrapolated' if row.is_execution_censored else 'within book'}</td></tr>"
+        for row in ladder.rows
+    )
+    return (
+        f"<details><summary>{escape(ladder.label)} hurdles as a table</summary>"
+        f"<table><thead><tr><th class=figure>quantity</th><th>verdict</th>"
+        f"<th class=figure>statutory</th><th class=figure>execution</th>"
+        f"<th class=figure>margin</th><th class=figure>required</th>"
+        f"<th class=figure>margin share</th><th class=figure>spread, both legs</th>"
+        f"<th>depth</th></tr></thead><tbody>{body}</tbody></table></details>"
+    )
+
+
+def _hurdle_ladder_figure(ladder: HurdleSizeLadder, ceiling_bps: Decimal) -> str:
+    rows = ladder.rows
+    if not rows:
+        return ""
+    widening = ladder.uncertainty_widening_bps
+    if widening is None:
+        widening_note = (
+            "Priced at one size only, so this card cannot show whether the margin widens — one "
+            "point is not a trend, and it is not being reported as a flat one."
+        )
+    elif widening > 0:
+        widening_note = (
+            f"The margin is {_format_bps(widening)} bps WIDER at "
+            f"{_format_count(rows[-1].quantity)} units than at "
+            f"{_format_count(rows[0].quantity)} — nobody chose that; it is what the execution "
+            f"estimate stops being sure of once the order outgrows the visible book."
+        )
+    else:
+        widening_note = (
+            f"The margin does not widen across these sizes "
+            f"({_format_bps(widening)} bps end to end), which is what a liquid instrument well "
+            f"inside the visible book looks like."
+        )
+    depth_note = (
+        " At least one size here exceeds the visible book, so its impact term is extrapolated "
+        "rather than walked — that is exactly where the margin is supposed to grow."
+        if ladder.has_censored_size
+        else ""
+    )
+    caption = (
+        "Bars are cumulative and end at the hurdle the signal must clear. The last part of "
+        "each is not a cost at all: it is what the execution estimate does not know, and it is "
+        "the entire safety margin this gate has."
+    )
+    return (
+        f'<div class="chart"><h3>{escape(ladder.label)}</h3>'
+        f'<p class="ladder-note">{escape(widening_note + depth_note)}</p>'
+        f"<figure>{_hurdle_ladder_svg(ladder, ceiling_bps)}"
+        f"<figcaption>{escape(caption)}</figcaption></figure>"
+        f"{_hurdle_ladder_table(ladder)}</div>"
+    )
+
+
+_HURDLE_LEGEND = (
+    '<p class="legend">'
+    '<span><i class="swatch swatch-1"></i>statutory charges, from circulars</span>'
+    '<span><i class="swatch swatch-2"></i>execution cost, expected from the book</span>'
+    '<span><i class="swatch swatch-3"></i>uncertainty margin — the pessimistic end</span>'
+    "</p>"
+)
+
+
+def _decade_ticks(low: Decimal, high: Decimal) -> tuple[Decimal, ...]:
+    """Powers of ten inside the domain — the only tick values a log axis can be read off."""
+    if low <= 0 or high <= low:
+        return ()
+    first = int(low.log10().to_integral_value(rounding=ROUND_CEILING))
+    last = int(high.log10().to_integral_value(rounding=ROUND_FLOOR))
+    return tuple(_DECADE**exponent for exponent in range(first, last + 1))
+
+
+def _floor_strip_svg(rows: Sequence[SegmentEdgeFloorRow]) -> str:
+    """Each segment's measured hurdle range, with the floor and its own error band on it."""
+    if not rows:
+        return ""
+    values = [
+        value
+        for row in rows
+        for value in (
+            row.cheapest_hurdle_bps,
+            row.floor_bps,
+            row.median_hurdle_bps,
+            row.dearest_hurdle_bps,
+            row.floor_lower_bps,
+            row.floor_upper_bps,
+        )
+        if value > 0
+    ]
+    if not values:
+        return ""
+    low, high = min(values), max(values)
+    view_height = _FLOOR_TOP_PADDING + _FLOOR_ROW_HEIGHT * len(rows) + _FLOOR_AXIS_BAND
+    plot_bottom = _FLOOR_TOP_PADDING + _FLOOR_ROW_HEIGHT * len(rows)
+
+    def horizontal(value: Decimal) -> Decimal:
+        """Log position, clamped into the plot so a zero-clamped band end cannot escape it."""
+        if value <= 0:
+            return _FLOOR_PLOT_LEFT
+        placed = _interpolate(
+            value.ln(), low.ln(), high.ln(), _FLOOR_PLOT_LEFT, _FLOOR_PLOT_RIGHT
+        )
+        return max(_FLOOR_PLOT_LEFT, min(_FLOOR_PLOT_RIGHT, placed))
+
+    gridlines = "".join(
+        f'<line class="gridline" x1="{_coordinate(horizontal(tick))}" '
+        f'y1="{_coordinate(_FLOOR_TOP_PADDING)}" x2="{_coordinate(horizontal(tick))}" '
+        f'y2="{_coordinate(plot_bottom)}"></line>'
+        f'<text class="tick" text-anchor="middle" x="{_coordinate(horizontal(tick))}" '
+        f'y="{_coordinate(plot_bottom + Decimal(14))}">{escape(_format_bps(tick))}</text>'
+        for tick in _decade_ticks(low, high)
+    )
+    marks: list[str] = []
+    for index, row in enumerate(rows):
+        centre = _FLOOR_TOP_PADDING + _FLOOR_ROW_HEIGHT * index + _FLOOR_ROW_HEIGHT / 2
+        track_left = horizontal(row.cheapest_hurdle_bps)
+        track_right = horizontal(row.dearest_hurdle_bps)
+        band_left = horizontal(row.floor_lower_bps)
+        band_right = horizontal(row.floor_upper_bps)
+        floor_x = horizontal(row.floor_bps)
+        marks.append(
+            f'<text class="row-label" text-anchor="end" '
+            f'x="{_coordinate(_FLOOR_PLOT_LEFT - _LABEL_GAP)}" '
+            f'y="{_coordinate(centre)}">{escape(row.segment_value)}</text>'
+            f'<text class="tick" text-anchor="end" '
+            f'x="{_coordinate(_FLOOR_PLOT_LEFT - _LABEL_GAP)}" '
+            # Abbreviated: the gutter is one label wide, and "170 instruments" set at chart
+            # type overruns the viewBox and loses its first characters to the clip.
+            f'y="{_coordinate(centre + Decimal(14))}">'
+            f"n={escape(_format_count(row.instrument_count))}</text>"
+            f'<rect class="range-track" x="{_coordinate(track_left)}" '
+            f'y="{_coordinate(centre - _FLOOR_TRACK_THICKNESS / 2)}" '
+            f'width="{_coordinate(max(Decimal(1), track_right - track_left))}" '
+            f'height="{_coordinate(_FLOOR_TRACK_THICKNESS)}" rx="4"></rect>'
+        )
+        if band_right > band_left:
+            marks.append(
+                f'<rect class="floor-band" x="{_coordinate(band_left)}" '
+                f'y="{_coordinate(centre - _FLOOR_BAND_THICKNESS / 2)}" '
+                f'width="{_coordinate(band_right - band_left)}" '
+                f'height="{_coordinate(_FLOOR_BAND_THICKNESS)}" rx="3"></rect>'
+            )
+        marks.append(
+            f'<circle class="range-dot" cx="{_coordinate(track_left)}" '
+            f'cy="{_coordinate(centre)}" r="{_coordinate(_FLOOR_MARKER_RADIUS)}"></circle>'
+            f'<circle class="range-ring" cx="{_coordinate(horizontal(row.median_hurdle_bps))}" '
+            f'cy="{_coordinate(centre)}" r="{_coordinate(_FLOOR_MARKER_RADIUS)}"></circle>'
+            f'<circle class="range-dot" cx="{_coordinate(track_right)}" '
+            f'cy="{_coordinate(centre)}" r="{_coordinate(_FLOOR_MARKER_RADIUS)}"></circle>'
+            f'<line class="floor-rule" x1="{_coordinate(floor_x)}" '
+            f'y1="{_coordinate(centre - _FLOOR_RULE_HALF_HEIGHT)}" '
+            f'x2="{_coordinate(floor_x)}" '
+            f'y2="{_coordinate(centre + _FLOOR_RULE_HALF_HEIGHT)}"></line>'
+            # The floor above the mark, the two extremes below it: three labels that cannot
+            # collide with each other however close the values sit on a log axis.
+            f'<text class="bar-label" text-anchor="middle" x="{_coordinate(floor_x)}" '
+            f'y="{_coordinate(centre - _FLOOR_LABEL_LIFT)}">'
+            f"{escape(_format_bps(row.floor_bps))}</text>"
+            # Dropped when the floor IS the cheapest instrument, which is what a single-rank
+            # quantile means: printing the same number twice on one row reads as two findings.
+            + (
+                ""
+                if row.cheapest_hurdle_bps == row.floor_bps
+                else f'<text class="tick" text-anchor="start" x="{_coordinate(track_left)}" '
+                f'y="{_coordinate(centre + _FLOOR_LABEL_DROP)}">'
+                f"{escape(_format_bps(row.cheapest_hurdle_bps))}</text>"
+            )
+            + f'<text class="tick" text-anchor="end" x="{_coordinate(track_right)}" '
+            f'y="{_coordinate(centre + _FLOOR_LABEL_DROP)}">'
+            f"{escape(_format_bps(row.dearest_hurdle_bps))}</text>"
+            f"<g><title>{escape(row.description)}</title>"
+            f'<rect class="hit" x="{_coordinate(_FLOOR_PLOT_LEFT)}" '
+            f'y="{_coordinate(centre - _FLOOR_ROW_HEIGHT / 2)}" '
+            f'width="{_coordinate(_FLOOR_PLOT_RIGHT - _FLOOR_PLOT_LEFT)}" '
+            f'height="{_coordinate(_FLOOR_ROW_HEIGHT)}"></rect></g>'
+        )
+    label = (
+        "Measured hurdle range per segment on a logarithmic basis-point axis: cheapest "
+        "instrument, the screening floor with its standard-error band, the median, and the "
+        "dearest instrument"
+    )
+    return (
+        f'<svg viewBox="0 0 {_coordinate(_VIEW_WIDTH)} {_coordinate(view_height)}" '
+        f'role="img" aria-label="{escape(label)}">'
+        f"{gridlines}{''.join(marks)}"
+        f'<text class="tick" text-anchor="middle" '
+        f'x="{_coordinate((_FLOOR_PLOT_LEFT + _FLOOR_PLOT_RIGHT) / 2)}" '
+        f'y="{_coordinate(view_height - Decimal(4))}">'
+        f"measured round-trip hurdle (bps) — LOG scale</text>"
+        f"</svg>"
+    )
+
+
+_FLOOR_LEGEND = (
+    '<p class="legend">'
+    '<span><svg viewBox="0 0 14 14"><circle class="range-dot" cx="7" cy="7" r="4"></circle>'
+    "</svg>cheapest and dearest instrument</span>"
+    '<span><svg viewBox="0 0 14 14"><line class="floor-rule" x1="7" y1="1" x2="7" y2="13">'
+    "</line></svg>screening floor</span>"
+    '<span><svg viewBox="0 0 14 14"><rect class="floor-band" x="0" y="3" width="14" '
+    'height="8" rx="2"></rect></svg>floor ±1 standard error</span>'
+    '<span><svg viewBox="0 0 14 14"><circle class="range-ring" cx="7" cy="7" r="4"></circle>'
+    "</svg>median instrument</span>"
+    "</p>"
+)
+
+
+def _precondition_bars_svg(rows: Sequence[PreconditionFailureRow]) -> str:
+    """Four named checks ranked by how often each one killed a ticket. One series, so no legend."""
+    if not rows:
+        return ""
+    ceiling = max((Decimal(row.failure_count) for row in rows), default=Decimal(0))
+    view_height = (
+        _PRECONDITION_TOP_PADDING + _PRECONDITION_ROW_HEIGHT * len(rows) + _PRECONDITION_AXIS_BAND
+    )
+    plot_bottom = _PRECONDITION_TOP_PADDING + _PRECONDITION_ROW_HEIGHT * len(rows)
+
+    def horizontal(value: Decimal) -> Decimal:
+        if ceiling <= 0:
+            return _PRECONDITION_PLOT_LEFT
+        return _interpolate(
+            value, Decimal(0), ceiling, _PRECONDITION_PLOT_LEFT, _PRECONDITION_PLOT_RIGHT
+        )
+
+    marks: list[str] = []
+    for index, row in enumerate(rows):
+        bar_top = (
+            _PRECONDITION_TOP_PADDING
+            + _PRECONDITION_ROW_HEIGHT * index
+            + (_PRECONDITION_ROW_HEIGHT - _PRECONDITION_BAR_THICKNESS) / 2
+        )
+        centre = bar_top + _PRECONDITION_BAR_THICKNESS / 2
+        end_x = horizontal(Decimal(row.failure_count))
+        marks.append(
+            f'<text class="row-label" text-anchor="end" '
+            f'x="{_coordinate(_PRECONDITION_PLOT_LEFT - _LABEL_GAP)}" '
+            f'y="{_coordinate(centre + _TEXT_CENTRING_LIFT)}">'
+            f"{escape(row.precondition_name)}</text>"
+        )
+        if end_x > _PRECONDITION_PLOT_LEFT:
+            path = _bar_path(
+                _PRECONDITION_PLOT_LEFT,
+                end_x,
+                bar_top,
+                _PRECONDITION_BAR_THICKNESS,
+                round_data_end=True,
+            )
+            marks.append(
+                f"<g><title>{escape(row.precondition_name)} failed "
+                f"{escape(_format_count(row.failure_count))} of "
+                f"{escape(_format_count(row.evaluated_count))} tickets</title>"
+                f'<path class="bar" d="{path}"></path></g>'
+            )
+        marks.append(
+            f'<text class="bar-label" text-anchor="start" '
+            f'x="{_coordinate(end_x + _LABEL_GAP)}" '
+            f'y="{_coordinate(centre + _TEXT_CENTRING_LIFT)}">'
+            f"{escape(_format_count(row.failure_count))}</text>"
+        )
+    label = "Ticket precondition failures by name, most frequent first"
+    return (
+        f'<svg viewBox="0 0 {_coordinate(_VIEW_WIDTH)} {_coordinate(view_height)}" '
+        f'role="img" aria-label="{escape(label)}">'
+        f'<line class="axis-rule" x1="{_coordinate(_PRECONDITION_PLOT_LEFT)}" '
+        f'y1="{_coordinate(_PRECONDITION_TOP_PADDING)}" '
+        f'x2="{_coordinate(_PRECONDITION_PLOT_LEFT)}" '
+        f'y2="{_coordinate(plot_bottom)}"></line>'
+        f"{''.join(marks)}"
+        f'<text class="tick" text-anchor="middle" '
+        f'x="{_coordinate((_PRECONDITION_PLOT_LEFT + _PRECONDITION_PLOT_RIGHT) / 2)}" '
+        f'y="{_coordinate(view_height - Decimal(4))}">tickets killed by this check</text>'
+        f"</svg>"
+    )
+
+
 # --------------------------------------------------------------------------- table rows
 
 
@@ -919,6 +1944,205 @@ def _refused_era_row(row: RefusedEraRow) -> str:
     )
 
 
+_FLOOR_EVIDENCE_BADGES: dict[FloorEvidenceVerdict, tuple[str, str]] = {
+    FloorEvidenceVerdict.SINGLE_OBSERVATION: ("badge-critical", "SINGLE OBSERVATION"),
+    FloorEvidenceVerdict.OVERLAPS_MEDIAN: ("badge-warning", "OVERLAPS MEDIAN"),
+    FloorEvidenceVerdict.RESOLVED: ("badge-good", "RESOLVED"),
+}
+
+
+def _edge_floor_row(row: SegmentEdgeFloorRow) -> str:
+    badge_class, word = _FLOOR_EVIDENCE_BADGES[row.evidence_verdict]
+    return (
+        f"<tr><td>{escape(row.segment_value)}</td>"
+        f"<td>{escape(row.session_date.isoformat())}</td>"
+        f"<td class=figure>{escape(_format_count(row.instrument_count))}</td>"
+        f"<td class=figure>{escape(_format_count(row.supporting_instrument_rank))}</td>"
+        f"<td class=figure>{escape(_format_bps(row.cheapest_hurdle_bps))}</td>"
+        f"<td class=figure>{escape(_format_bps(row.floor_bps))}</td>"
+        f"<td class=figure>±{escape(_format_bps(row.floor_uncertainty_bps))}</td>"
+        f"<td class=figure>{escape(_format_bps(row.median_hurdle_bps))}</td>"
+        f"<td class=figure>{escape(_format_bps(row.dearest_hurdle_bps))}</td>"
+        f'<td><span class="badge {badge_class}">{escape(word)}</span></td>'
+        f"<td class=reason>{escape(row.description)}</td></tr>"
+    )
+
+
+def _precondition_failure_table_row(row: PreconditionFailureRow) -> str:
+    reason = row.example_failure_reason or "never failed on the decisions shown here"
+    return (
+        f"<tr><td>{escape(row.precondition_name)}</td>"
+        f"<td class=figure>{escape(_format_count(row.failure_count))}</td>"
+        f"<td class=figure>{escape(_format_count(row.evaluated_count))}</td>"
+        f"<td class=figure>{escape(_format_percent(row.failure_percent_of_evaluations))}</td>"
+        f"<td class=reason>{escape(reason)}</td></tr>"
+    )
+
+
+# --------------------------------------------------------------------------- F01 sections
+
+
+def _empty_note(sentence: str) -> str:
+    """An explicit 'not supplied', never a blank space that reads as 'nothing was found'."""
+    return f'<div class="note muted">{escape(sentence)}</div>'
+
+
+def _hurdle_tiles(state: TransactionCostSurfaceState) -> str:
+    dearest = state.dearest_hurdle_row
+    widest = state.widest_uncertainty_row
+    if dearest is None or widest is None:
+        return ""
+    return (
+        f'<div class="tiles">'
+        f'<div class="tile"><div class="tile-value">'
+        f"{escape(_format_bps(dearest.required_bps))}</div>"
+        f'<div class="tile-label">dearest hurdle to clear, bps '
+        f"({escape(dearest.trading_symbol)} at {escape(_format_count(dearest.quantity))} "
+        f"units)</div></div>"
+        f'<div class="tile"><div class="tile-value">'
+        f"{escape(_format_percent(dearest.uncertainty_percent_of_required))}</div>"
+        f'<div class="tile-label">of that hurdle is margin, not expected cost</div></div>'
+        f'<div class="tile"><div class="tile-value">'
+        f"{escape(_format_bps(widest.uncertainty_bps))}</div>"
+        f'<div class="tile-label">widest margin anywhere, bps '
+        f"({escape(widest.trading_symbol)} at {escape(_format_count(widest.quantity))} "
+        f"units)</div></div>"
+        f'<div class="tile"><div class="tile-value">'
+        f"{escape(_format_count(state.censored_hurdle_count))}</div>"
+        f'<div class="tile-label">tickets priced beyond the visible book</div></div>'
+        f"</div>"
+    )
+
+
+def _hurdle_section(state: TransactionCostSurfaceState) -> str:
+    """The hurdle, decomposed — and the one section that explains where the margin comes from."""
+    if not state.hurdle_ladders:
+        # Two different absences, and they must not share a sentence. Nothing supplied means the
+        # page was built without the gate; everything unpriced means the gate ran and could not
+        # form an opinion, which is a finding rather than a gap in the page.
+        census = state.verdict_census
+        if census is None:
+            return _empty_note(
+                "No gate decision was supplied to this page, so there is no hurdle to "
+                "decompose. This is not a claim that nothing was rejected: the page was built "
+                "without the gate, and it says so rather than drawing an empty chart that "
+                "would read as calm."
+            )
+        return _empty_note(
+            f"{_format_count(census.evaluated_count)} decisions were supplied and not one of "
+            f"them could be priced, so there is no hurdle to decompose. That is an absence of "
+            f"judgement, not an absence of cost — see the verdict panel below."
+        )
+    ceiling = state.hurdle_ceiling_bps
+    cards = "".join(
+        _hurdle_ladder_figure(ladder, ceiling) for ladder in state.hurdle_ladders
+    )
+    return (
+        f"{_hurdle_tiles(state)}{_HURDLE_LEGEND}"
+        f'<p class="sub">Every ladder is drawn on the SAME axis, ending at '
+        f"{escape(_format_bps(ceiling))} bps, so two cards can be compared directly. Sizes run "
+        f"upward inside a card and the dearest instrument comes first between cards.</p>"
+        f'<div class="charts">{cards}</div>'
+    )
+
+
+def _floor_section(state: TransactionCostSurfaceState) -> str:
+    if not state.edge_floor_rows:
+        return _empty_note(
+            "No segment floor was supplied, so no segment can be screened out cheaply here. A "
+            "missing floor is not an open door: `L1.04` itself refuses rather than defaulting, "
+            "and this page reports the absence for the same reason."
+        )
+    rows = "".join(_edge_floor_row(row) for row in state.edge_floor_rows)
+    return (
+        f'{_FLOOR_LEGEND}<div class="panel">'
+        f'<div class="plot">{_floor_strip_svg(state.edge_floor_rows)}</div>'
+        f"<table><thead><tr><th>Segment</th><th>Session</th>"
+        f"<th class=figure>instruments</th><th class=figure>behind the floor</th>"
+        f"<th class=figure>cheapest</th><th class=figure>floor</th>"
+        f"<th class=figure>±1 s.e.</th><th class=figure>median</th>"
+        f"<th class=figure>dearest</th><th>Evidence</th><th>As derived</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table></div>"
+    )
+
+
+def _verdict_section(state: TransactionCostSurfaceState) -> str:
+    """Three judgements in a row, and the fourth count deliberately kept out of it."""
+    census = state.verdict_census
+    if census is None:
+        return _empty_note(
+            "No gate decision was supplied, so there is no verdict to count. Zero vetoes out of "
+            "zero evaluations and zero out of a thousand are opposite findings, and this page "
+            "will not render the first as though it were the second."
+        )
+    judgements = (
+        (GateVerdict.PASS, census.pass_count, "cleared the hurdle at the proposed size"),
+        (GateVerdict.RESIZE, census.resize_count, "cleared only at a smaller, solved-for size"),
+        (GateVerdict.VETO, census.veto_count, "priced, and judged not worth taking"),
+    )
+    tiles = "".join(
+        f'<div class="tile"><div class="tile-value">{escape(_format_count(count))}</div>'
+        f'<div class="tile-label">'
+        f'<span class="badge {_GATE_VERDICT_BADGES[verdict][0]}">'
+        f"{escape(_GATE_VERDICT_BADGES[verdict][1])}</span> {escape(sentence)}</div></div>"
+        for verdict, count, sentence in judgements
+    )
+    unpriceable_class, unpriceable_word = _GATE_VERDICT_BADGES[GateVerdict.UNPRICEABLE]
+    return (
+        f'<div class="tiles">{tiles}</div>'
+        f'<div class="note"><div class="tiles">'
+        f'<div class="tile tile-absent"><div class="tile-value">'
+        f"{escape(_format_count(census.unpriceable_count))}</div>"
+        f'<div class="tile-label"><span class="badge {unpriceable_class}">'
+        f"{escape(unpriceable_word)}</span> no opinion could be formed</div></div>"
+        f'<div class="tile tile-absent"><div class="tile-value">'
+        f"{escape(_format_percent(census.unpriceable_percent_of_evaluations))}</div>"
+        f'<div class="tile-label">of all {escape(_format_count(census.evaluated_count))} '
+        f"evaluations</div></div></div>"
+        f"<p>This count sits outside the row above and wears no status colour, on purpose. A "
+        f"veto is a judgement — the trade was priced and is not worth taking. UNPRICEABLE is "
+        f"the absence of one: a book that could not be read, a date with no compiled rate, an "
+        f"instrument never measured. Adding the two together would produce a rejection total "
+        f"that grows every time a data feed breaks, and a system that treats an outage as a "
+        f"decision has stopped measuring anything. "
+        f"{escape(_format_count(census.judged_count))} of "
+        f"{escape(_format_count(census.evaluated_count))} evaluations were actually judged, and "
+        f"{escape(_format_count(census.tradeable_count))} of those are tradeable.</p></div>"
+    )
+
+
+def _precondition_section(state: TransactionCostSurfaceState) -> str:
+    if not state.precondition_rows:
+        census = state.verdict_census
+        if census is not None:
+            return _empty_note(
+                f"None of the {_format_count(census.evaluated_count)} decisions supplied got as "
+                f"far as a precondition check — the checks run only once a ticket can be priced "
+                f"at all. An empty table here is never 'every ticket passed'."
+            )
+        return _empty_note(
+            "No precondition report reached this page. The four ticket checks run inside the "
+            "gate, so this section is empty exactly when the gate was not run — not when every "
+            "ticket passed."
+        )
+    rows = "".join(_precondition_failure_table_row(row) for row in state.precondition_rows)
+    caption = (
+        "Which economic fact killed the ticket, by name. A denominator error, a ticket too "
+        "small to carry a flat charge, a spread wider than the edge and a range narrower than "
+        "its own cost are four different problems, and only one of them is fixed by finding a "
+        "better signal."
+    )
+    return (
+        f'<div class="panel"><figure class="plot">'
+        f"{_precondition_bars_svg(state.precondition_rows)}"
+        f"<figcaption>{escape(caption)}</figcaption></figure>"
+        f"<table><thead><tr><th>Precondition</th><th class=figure>failed</th>"
+        f"<th class=figure>evaluated</th><th class=figure>failure rate</th>"
+        f"<th>One real refusal, in its own words</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table></div>"
+    )
+
+
 # --------------------------------------------------------------------------- the page
 
 
@@ -960,6 +2184,10 @@ def render_transaction_cost_page(state: TransactionCostSurfaceState) -> str:
         '<div class="note muted">No segment could be priced on this date, so there is no '
         "staircase to draw. Every refusal is listed above with the fact it is missing.</div>"
     )
+    hurdle_section = _hurdle_section(state)
+    floor_section = _floor_section(state)
+    verdict_section = _verdict_section(state)
+    precondition_section = _precondition_section(state)
 
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -1001,6 +2229,32 @@ fraction of the capital a sizing decision is about to commit.</p>
 {staircase_body}
 </div>
 
+<h2>The hurdle, decomposed — and how much of it is not a cost</h2>
+<p class="sub">A signal does not have to beat the expected cost of trading; it has to beat the
+PESSIMISTIC end of it. That is the whole safety margin in this system: there is no 1.5x
+multiplier anywhere, because a single multiplier is necessarily wrong in both directions at once
+— too timid on a liquid instrument at small size, far too brave on an illiquid one at size. The
+third part of every bar below is that margin, and it is measured, not chosen: it widens exactly
+when the execution estimate stops being able to see the depth it needs.</p>
+{hurdle_section}
+
+<h2>Per-segment edge floors — the cheap question, asked first</h2>
+<p class="sub">Below a segment's floor there is nothing to discuss, and finding that out costs
+one comparison instead of a full costing run per instrument. A floor is a low quantile of the
+hurdles measured across the real universe, so it moves when the market, the rates or the
+liquidity move, and nobody edits a number. It is a screening bound and never an approval:
+clearing it says a trade is CONCEIVABLE somewhere in the segment, never that this trade at this
+size is worth taking — only the gate can say that. The band on each floor is its own standard
+error, from the number of instruments actually behind the quantile; a wide band is the page
+telling you the floor is a number, not yet a property of the segment.</p>
+{floor_section}
+
+<h2>What the gate decided</h2>
+{verdict_section}
+
+<h2>Which economic fact killed the ticket</h2>
+{precondition_section}
+
 <h2>Reconciliation against real contract notes</h2>
 <div class="panel">
 <table><thead><tr><th>Component</th><th>Segment</th><th>Verdict</th>
@@ -1025,9 +2279,12 @@ nothing downstream can tell that it did.</p>
 </div>
 
 <footer>Worst first, deliberately. Colour on this page does one job — status — so evidence
-grades and reconciliation verdicts use the reserved palette and always carry a word; the one
-series colour belongs to the staircase, which is the only question here whose answer is a
-shape. {escape(str(state.refused_segment_count))} of
+grades, reconciliation verdicts, gate verdicts and floor maturity use the reserved palette and
+always carry a word. The exception is the hurdle stack, whose three parts are components of a
+sum rather than states, and which therefore uses categorical slots 1-3 with a legend, a labelled
+tip and a table of the same numbers. UNPRICEABLE wears no colour at all, because it is the
+absence of a judgement rather than a bad one, and it is never added to a rejection total.
+{escape(str(state.refused_segment_count))} of
 {escape(str(len(state.segment_rows)))} segments are refused outright. Prices and sizes on this
 page are the caller's stated assumptions, not measurements: they are parameters of
 <code>build_transaction_cost_surface_state</code> precisely so nobody can mistake a display
