@@ -1,5 +1,11 @@
 """`L3.30` — the guard that makes `R.02` executable.
 
+**Every credential sample below is assembled at runtime rather than written as a literal.** The
+guard scans the whole tracked tree including this file, so a literal sample here would make its
+own test suite fail the gate — and the fix must not be to exclude this file, because an excluded
+file is a hole a real credential could later sit in. Assembling also tests the thing that
+matters: the detector works on the string it is handed, which is what it does in production.
+
 The tests that matter are the adversarial ones. A secret scanner is only worth having if it
 catches the shapes that actually leak, and only worth KEEPING if it does not cry wolf — a guard
 that produces noise gets disabled, and a disabled guard is worse than none because it is still
@@ -27,11 +33,14 @@ A_PATH = Path("somewhere.py")
 @pytest.mark.parametrize(
     ("name", "sample"),
     [
-        ("github_personal_access_token", "token = 'ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'"),
-        ("github_fine_grained_token", "t = 'github_pat_" + "11ABCDEFG0abcdefghijklmnop'"),
-        ("anthropic_api_key", "key = 'sk-ant-" + "api03-AbCdEfGhIjKlMnOpQrStUvWx'"),
-        ("aws_access_key_id", "aws = 'AKIAIOSFODNN7EXAMPLX'"),
-        ("private_key_block", "-----BEGIN RSA PRIVATE KEY-----"),
+        (
+            "github_personal_access_token",
+            "token = '" + "ghp" + "_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'",
+        ),
+        ("github_fine_grained_token", "t = '" + "github" + "_pat_11ABCDEFG0abcdefghijklmnop'"),
+        ("anthropic_api_key", "key = '" + "sk-" + "ant-api03-AbCdEfGhIjKlMnOpQrStUvWx'"),
+        ("aws_access_key_id", "aws = '" + "AKIA" + "IOSFODNN7EXAMPLX'"),
+        ("private_key_block", "-----BEGIN " + "RSA PRIVATE" + " KEY-----"),
     ],
 )
 def test_every_credential_shape_this_project_holds_is_caught(name: str, sample: str) -> None:
@@ -43,7 +52,7 @@ def test_every_credential_shape_this_project_holds_is_caught(name: str, sample: 
 @pytest.mark.unit
 def test_a_broker_credential_is_caught_and_named_the_most_expensive_one() -> None:
     """The one that can place orders on a real account."""
-    findings = scan_text("kite_api_secret = 'z9x8c7v6b5n4m3a2s1d0'", A_PATH)
+    findings = scan_text("kite_api" + "_secret = 'z9x8c7v6b5n4m3a2s1d0'", A_PATH)
     assert findings
     assert findings[0].pattern_name == "broker_credential_assignment"
     assert "real trading account" in findings[0].blast_radius
@@ -81,17 +90,17 @@ def test_ordinary_code_does_not_trip_the_guard(harmless: str) -> None:
 @pytest.mark.adversarial
 def test_a_credential_split_across_a_line_is_still_caught_where_it_is_written() -> None:
     """Concatenation defeats a naive scanner; the assignment form still catches the shape."""
-    assert scan_text("t = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'", A_PATH) == []
+    assert scan_text("t = '" + "ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'", A_PATH) == []
     # ...which is why the guard is not the only control. Documented, not pretended away:
     # a determined author can evade any regex. The guard exists for the ACCIDENT — a pasted
     # token, a debug print, a config file added in haste — which is how B.10 happened.
-    assert scan_text("t = 'ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'", A_PATH)
+    assert scan_text("t = '" + "ghp" + "_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'", A_PATH)
 
 
 @pytest.mark.adversarial
 def test_a_placeholder_is_not_a_credential() -> None:
     for documentation in (
-        "GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "GITHUB_TOKEN=" + "ghp" + "_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
         "api_key = 'example_key_do_not_use_abcdefghij'",
     ):
         assert scan_text(documentation, A_PATH) == []
@@ -99,7 +108,8 @@ def test_a_placeholder_is_not_a_credential() -> None:
 
 @pytest.mark.adversarial
 def test_the_line_number_points_at_the_credential() -> None:
-    text = "\n".join(["import os", "", "token = 'ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'"])
+    credential_line = "token = '" + "ghp" + "_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'"
+    text = "\n".join(["import os", "", credential_line])
     (finding,) = scan_text(text, A_PATH)
     assert finding.line == 3
     assert str(finding).startswith("somewhere.py:3:")

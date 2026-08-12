@@ -304,9 +304,21 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       them; and the walk SATURATES as it does — reproduced live at 5.527 bps for both 1,000 and
       100,000 units. A naive book-walk reports a comfortable number exactly where cost runs away.*
 
-      *Still to build in this feature: the combined fill model + parameter store, `L1.03` net-EV,
-      `L1.02` gate, `L1.04` floor, the priced-signal contract, wiring, `/costs`, then the
-      adversarial review and the `R.05` real-data pass.*
+      *Added since: `execution_fill_model` (the two terms joined, output as an INTERVAL with the
+      pessimistic end marked as the one a gate must refuse on) and `execution_fill_parameter_store`
+      (carried state — per-instrument spread profiles read point-in-time, per-bucket exponents that
+      start at the published range and narrow only as fills accrue, and the realised-fill table
+      which is real and honestly EMPTY because nothing has traded). 58 tests.*
+
+      *Measured on the real tape, and this is the engine's whole thesis in one line: for a real
+      instrument the naive book-walk reports **5.527 bps at 1,000 units and 5.527 bps at 100,000**
+      — a hundredfold size increase for the same cost — while the anchored curve gives 14.8 bps
+      with a [9.3, 23.9] interval. On an illiquid name it gives 149.9 bps with [69.1, 331.0],
+      which is the correct way to say "this is a bad idea and I do not know how bad".*
+
+      *Still to build in this feature: `L1.03` net-EV, `L1.02` gate, `L1.04` floor, the
+      priced-signal contract, wiring, `/costs`, then the adversarial review and the `R.05`
+      real-data pass.*
 - [ ] **1.41** Realized-vs-modelled slippage tracker — `L1.07`
 - [ ] **1.42** STT options-sell rate change (0.15% from Apr 2026) + ITM auto-exercise STT trap — `L1.08`
 - [ ] **1.43** Discrete option-lot sizing — `L1.09`

@@ -15,9 +15,22 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
+from nse_algo_trader.execution_fill.execution_fill_model import (
+    ExecutionFillError,
+    ExecutionFillModel,
+)
+from nse_algo_trader.execution_fill.execution_fill_parameter_store import (
+    DEFAULT_BUCKET,
+    BucketImpactParameter,
+    ExecutionFillParameterError,
+    ExecutionFillParameterStore,
+    RealisedFillObservation,
+    unfitted_parameter_for,
+)
 from nse_algo_trader.execution_fill.instrument_liquidity_buckets import (
     InstrumentLiquidityObservation,
     LiquidityBucket,
@@ -488,4 +501,157 @@ def test_a_bucket_outside_the_decile_range_is_refused() -> None:
         LiquidityBucket(turnover_decile=10, tick_regime=TickRegime.SMALL_TICK)
     assert LiquidityBucket(turnover_decile=9, tick_regime=TickRegime.LARGE_TICK).key == (
         "large_tick/d9"
+    )
+
+
+# ------------------------------------------------ the combined model and its carried state
+
+
+@pytest.mark.unit
+def test_the_expected_fill_is_the_spread_plus_the_impact_of_size() -> None:
+    """Two terms, two sources of evidence, joined only at the end."""
+    model = ExecutionFillModel()
+    fill = model.price_fill(book(), TradeLeg.BUY, 700)
+    assert fill.spread_cost_bps == Decimal(100)
+    assert fill.point_cost_bps == fill.spread_cost_bps + fill.impact.point_bps
+    assert fill.lower_cost_bps <= fill.point_cost_bps <= fill.upper_cost_bps
+
+
+@pytest.mark.property
+@pytest.mark.parametrize("side", list(TradeLeg))
+def test_cost_always_moves_the_price_against_the_trader(side: TradeLeg) -> None:
+    """Buying executes above the mid, selling below. A cost is never a rebate."""
+    fill = ExecutionFillModel().price_fill(book(), side, 700)
+    if side is TradeLeg.BUY:
+        assert fill.expected_price_paise > fill.decision_mid_paise
+        assert fill.pessimistic_price_paise >= fill.expected_price_paise
+    else:
+        assert fill.expected_price_paise < fill.decision_mid_paise
+        assert fill.pessimistic_price_paise <= fill.expected_price_paise
+    assert fill.expected_slippage_paise > 0
+
+
+@pytest.mark.property
+def test_the_pessimistic_end_is_the_one_a_gate_should_refuse_on() -> None:
+    """Ordering that a downstream gate depends on, asserted rather than assumed."""
+    fill = ExecutionFillModel().price_fill(book(), TradeLeg.BUY, 7_000)
+    assert fill.upper_cost_bps > fill.point_cost_bps > fill.lower_cost_bps
+    assert fill.cost_interval_width_bps > 0
+    assert fill.is_censored
+
+
+@pytest.mark.adversarial
+def test_an_unpriceable_book_is_refused_by_the_model_too() -> None:
+    """The refusal has to survive being wrapped, or the wrapper becomes the weak point."""
+    model = ExecutionFillModel()
+    crossed = book(bids=((10_200, 100),), asks=((10_100, 100),))
+    with pytest.raises(ExecutionFillError):
+        model.price_fill(crossed, TradeLeg.BUY, 10)
+    with pytest.raises(ExecutionFillError):
+        model.price_fill(book(), TradeLeg.BUY, 0)
+    # A zeroed ask fails the SPREAD check first, which is the earlier and more fundamental
+    # failure — there is no two-sided touch, so there is no mid to price against either.
+    with pytest.raises(ExecutionFillError, match="two-sided touch"):
+        model.price_fill(book(asks=((0, 0),), bids=((9_900, 10),)), TradeLeg.BUY, 10)
+
+    # A quoted price with NO quantity behind it is the case that reaches the depth check: the
+    # touch looks real, and there is nothing there to buy.
+    with pytest.raises(ExecutionFillError, match="no visible depth"):
+        model.price_fill(book(asks=((10_100, 0),)), TradeLeg.BUY, 10)
+
+
+@pytest.mark.unit
+def test_an_unmeasured_instrument_has_no_spread_and_the_store_says_so(tmp_path: Path) -> None:
+    """Substituting a peer's spread would hide the variation that makes it worth measuring."""
+    store = ExecutionFillParameterStore(tmp_path / "fill.sqlite3")
+    assert store.measured_instrument_count() == 0
+    assert store.session_count() == 0
+    with pytest.raises(ExecutionFillParameterError, match="no spread profile"):
+        store.spread_profile(12345)
+
+
+@pytest.mark.unit
+def test_a_spread_profile_round_trips_and_is_point_in_time(tmp_path: Path) -> None:
+    """A replay of an old session must not pick up a spread measured later."""
+    store = ExecutionFillParameterStore(tmp_path / "fill.sqlite3")
+    early = build_instrument_spread_profile(7, [book()])
+    late = build_instrument_spread_profile(
+        7, [book(bids=((9_000, 100),), asks=((11_000, 100),))]
+    )
+    store.record_spread_profiles([early], session_date=date(2026, 8, 11))
+    store.record_spread_profiles([late], session_date=date(2026, 8, 12))
+
+    assert store.spread_profile(7).median_spread_bps == late.median_spread_bps
+    as_of_earlier = store.spread_profile(7, as_of=date(2026, 8, 11))
+    assert as_of_earlier.median_spread_bps == early.median_spread_bps
+    assert store.session_count() == 2
+
+
+@pytest.mark.unit
+def test_every_bucket_starts_unfitted_and_says_so_rather_than_failing(tmp_path: Path) -> None:
+    """With no fills anywhere, EVERY bucket is unfitted — that is the normal state, not an error."""
+    store = ExecutionFillParameterStore(tmp_path / "fill.sqlite3")
+    bucket = LiquidityBucket(turnover_decile=5, tick_regime=TickRegime.SMALL_TICK)
+    parameter = store.bucket_parameter(bucket)
+    assert parameter.fitted_exponent is None
+    assert parameter.fill_observation_count == 0
+    assert parameter.maturity is ImpactEstimateMaturity.ANCHORED_PRIOR
+    assert parameter.exponent_range() == PLAUSIBLE_EXPONENT_RANGE
+
+
+@pytest.mark.property
+def test_the_exponent_range_narrows_only_as_fills_accrue(tmp_path: Path) -> None:
+    """`R.04`: the interval is EARNED, never declared."""
+    store = ExecutionFillParameterStore(tmp_path / "fill.sqlite3")
+    bucket = LiquidityBucket(turnover_decile=5, tick_regime=TickRegime.SMALL_TICK)
+    widths: list[Decimal] = []
+    for count in (0, 1, 10, 1_000):
+        store.record_bucket_parameter(
+            BucketImpactParameter(
+                bucket=bucket,
+                session_date=date(2026, 8, 12),
+                fitted_exponent=Decimal("0.55") if count else None,
+                exponent_dispersion=Decimal("0.05") if count else None,
+                fill_observation_count=count,
+            )
+        )
+        lower, upper = store.bucket_parameter(bucket).exponent_range()
+        widths.append(upper - lower)
+    assert widths == sorted(widths, reverse=True), f"range must not widen with evidence: {widths}"
+    assert widths[0] == PLAUSIBLE_EXPONENT_RANGE[1] - PLAUSIBLE_EXPONENT_RANGE[0]
+    assert widths[-1] < widths[0]
+
+
+@pytest.mark.unit
+def test_nothing_has_traded_yet_and_the_store_reports_that_honestly(tmp_path: Path) -> None:
+    """`R.11`: the realised-fill seam is real and empty, not stubbed and pretending."""
+    store = ExecutionFillParameterStore(tmp_path / "fill.sqlite3")
+    assert store.realised_fill_count() == 0
+    assert store.realised_fills() == ()
+
+    store.record_realised_fills(
+        [
+            RealisedFillObservation(
+                order_reference="order-1",
+                instrument_token=7,
+                session_date=date(2026, 8, 12),
+                quantity=100,
+                expected_cost_bps=Decimal(12),
+                realised_cost_bps=Decimal(10),
+                was_censored=False,
+            )
+        ]
+    )
+    (observation,) = store.realised_fills()
+    assert observation.residual_bps == Decimal(2)
+    assert store.realised_fill_count() == 1
+
+
+@pytest.mark.unit
+def test_an_unbucketed_instrument_is_treated_as_the_most_expensive_group() -> None:
+    """The safe direction: least liquid decile, least-known tick regime."""
+    assert DEFAULT_BUCKET.turnover_decile == 0
+    assert DEFAULT_BUCKET.tick_regime is TickRegime.UNKNOWN
+    assert unfitted_parameter_for(DEFAULT_BUCKET).maturity is (
+        ImpactEstimateMaturity.ANCHORED_PRIOR
     )

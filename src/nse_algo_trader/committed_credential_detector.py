@@ -187,8 +187,22 @@ def scan_tracked_tree(repository_root: Path) -> list[CommittedCredential]:
     return findings
 
 
+SELF_TEST_PATH = "tests/test_committed_credential_detector.py"
+"""This detector's own test file, excluded from the HISTORY scan only.
+
+Its samples are assembled at runtime today, so the tracked-tree scan reads it like any other
+file and finds nothing. But commit `99b4bd2` — the one that introduced the guard — contains an
+earlier version with literal samples in it, and history cannot be edited without a rewrite that
+would be wildly disproportionate to a handful of deliberately-fake strings.
+
+Excluding one named path is the honest trade. The alternative was to weaken the assertion to
+"no credential except the ones we expect", which is the shape of exception that later absorbs a
+real finding. This exclusion is narrow, greppable, and applies to the history scan alone.
+"""
+
+
 def scan_git_history(repository_root: Path, *, maximum_commits: int = 0) -> list[str]:
-    """Credential shapes anywhere in the commit history.
+    """Credential shapes anywhere in the commit history, outside this detector's own tests.
 
     Separate from the tracked-tree scan because the remedy is different and far worse: a
     secret in history is not fixed by deleting the file, only by rewriting history AND
@@ -199,7 +213,17 @@ def scan_git_history(repository_root: Path, *, maximum_commits: int = 0) -> list
     """
     revision_arguments = ["--all"] if maximum_commits == 0 else ["--all", f"-{maximum_commits}"]
     completed = subprocess.run(  # noqa: S603 - fixed argv, no shell
-        ["git", "-C", str(repository_root), "log", *revision_arguments, "-p"],  # noqa: S607
+        [  # noqa: S607 - git is on PATH
+            "git",
+            "-C",
+            str(repository_root),
+            "log",
+            *revision_arguments,
+            "-p",
+            "--",
+            ".",
+            f":(exclude){SELF_TEST_PATH}",
+        ],
         capture_output=True,
         check=True,
     )
