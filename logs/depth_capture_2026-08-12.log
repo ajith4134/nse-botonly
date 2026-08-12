@@ -1,0 +1,11 @@
+[10:30:35] session closes at 15:30 IST, 4:59:24.604493 remaining
+[10:30:35] capture run id 103035
+[10:30:35] liquidity ranking from cash_2026-08-10.csv.zip
+[10:30:35] 2428 symbols carry a traded value
+[10:30:35] 9890 NSE equities are candidates; top value 31,115,601,818
+[10:30:37] could not read rates back from the tape: no tape at /home/opc/nse_archive/depth_tape/session_date=2026-08-12
+[10:30:37] 0 instruments have a measured packet rate
+[10:30:37] admitted 300 of 9,890 instruments | projected 0.00 GiB of a 0.44 GiB budget (0%)
+[10:30:37]   note: calibration cohort — the tape cannot yet report bytes/row or per-instrument rates, so both are measured from this cohort before the full universe is solved
+[10:30:37] 1 shard(s), 300 instruments
+[10:30:37] capturing

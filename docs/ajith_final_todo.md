@@ -310,9 +310,9 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **2.39** Kill switch / trading control config — `L3.07`
 - [ ] **2.40** Corrigibility off-switch — `L3.08`
 - [ ] **2.41** Intraday square-off executor — `L3.09`
-- [~] **2.42** Daily Kite token auto-refresh via TOTP — `L3.10` · `broker_sessions/kite_totp_auto_login.py` exists and runs in the live loop, but shipped inside commit `f713ad7` without citing this ID and **has no test file** — R.11 gap, not done (`A.74`)
-- [~] **2.43** Kite access-token store + authenticated client builder — `L3.11` · `kite_access_token_store.py` + `authenticated_kite_client_builder.py` exist and are consumed by the daily runner; **no test file** — same R.11 gap (`A.74`)
-- [~] **2.44** Broker credential loader — `L3.12` · `broker_credentials/broker_api_credentials_loader.py` + `kite_login_credentials_loader.py` exist; **no test file** — same R.11 gap (`A.74`)
+- [x] **2.42** Daily Kite token auto-refresh via TOTP — `L3.10` · `broker_sessions/kite_totp_auto_login.py`; 7 tests through the `http_session` DI seam — redirect-token extraction without visiting the callback, relative-`Location` resolution, redirect-loop termination, both named step failures, and proof the posted `twofa_value` is derived from the configured secret (`A.76`)
+- [x] **2.43** Kite access-token store + authenticated client builder — `L3.11` · 6:00-IST expiry proven at the boundary and across timezones, corrupt-file behaviour documented as deliberately loud, plus the **R.05 test that builds a client from the stored token and calls `profile()`** — the one the Angel path lacked (`A.74`, `O.52`)
+- [x] **2.44** Broker credential loader — `L3.12` · 18 tests: blank-vs-absent, whitespace stripping, secret masking, absent-secret-prints-`None`, and a guard that every `BrokerName` has an env-var prefix (`A.76`)
 - [x] **2.45** Angel One SmartAPI session (TOTP via pyotp) — `L3.13` · session cached per exchange day, tokens owner-only and repr-masked; two defects caught only by the real-data pass — the `"Bearer "` prefix that made every cached client a silent `AG8001`, and a wrong throttling diagnosis that was really an unloaded `.env` (`A.74`). 20 tests incl. an R.05 rehydrate-and-`getProfile` call
 - [ ] **2.46** Breeze session-token store + builder — `L3.14`
 - [ ] **2.47** Atomic multi-leg executor — `L3.15`

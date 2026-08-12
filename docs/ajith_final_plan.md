@@ -2664,6 +2664,28 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.76 · 2026-08-12 · `L3.10`–`L3.12` closed by testing the Kite credential path, and the answer was
+"no defect" — which is the point.** `A.74` found that a session cache can round-trip perfectly and still
+produce clients that cannot authenticate, and `A.75` found that the equivalent Kite path — the credentials
+for the **only execution broker** — had no tests at all. 36 tests were written, the R.05 one built a
+client from the stored token and called `profile()` against the live broker, and everything passed first
+run. The Kite path does not have the Angel defect.
+
+*Why that is worth recording rather than shrugging at.* Before the test existed, "Kite is fine" and "Kite
+has the same defect and nobody has looked" were indistinguishable, and the second one costs a trading day.
+The test converted an assumption into a measurement at the cost of an hour. The same reasoning now applies
+to `L3.14` (Breeze), which is unbuilt and will get the rehydrate-and-call test as part of its definition
+of done rather than after an incident.
+
+*What the tests hold, beyond coverage.* The login is exercised through the `http_session` DI seam, so no
+test spends a live Kite login — that runs pre-market from the scheduler and is rate-limited in practice.
+The seam records what was posted, which is the only way to prove the TOTP code came from the configured
+secret rather than from anywhere else. The token store's 6:00-IST expiry is proven at the boundary and
+from a UTC caller, because this host runs in UTC and a naive comparison would call a mid-session token
+expired. The corrupt-file behaviour is *documented as deliberately different from Angel's*: Angel raises
+a named error because its caller recovers with a fresh login, while Kite has no in-process recovery, so
+its store raises loudly rather than returning the `None` that means "not logged in yet".
+
 **A.75 · 2026-08-12 · The tree was reconciled against this catalog and the todo, and the todo was found
 UNDER-claiming, not over-claiming.** A read-only audit matched all 58 modules, 33 test files and 215
 commits against the 93 `[x]`/`[~]` task lines. Four results, in order of how much they matter:

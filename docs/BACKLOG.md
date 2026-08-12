@@ -8,16 +8,13 @@ Reconcile with the live task list at each session start.
 
 Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) · ⛔ blocked
 
-## Broker session + credential path (2026-08-12, opened by the `A.75` audit) — 🔴 OPEN
+## Broker session + credential path (2026-08-12, opened by the `A.75` audit) — 🟡 one closed, two open
 
-- 🔴 **The entire Kite login path has no tests.** `broker_sessions/kite_totp_auto_login.py`,
-  `kite_access_token_store.py`, `authenticated_kite_client_builder.py`,
-  `broker_credentials/broker_api_credentials_loader.py` and `kite_login_credentials_loader.py` are all
-  live in the daily runner and none has a test file. This is the code holding the credentials for the
-  **only execution broker**, and `L3.13` has just demonstrated that a token store can round-trip
-  perfectly and still hand out clients that cannot authenticate. Owner: tasks `2.42`/`2.43`/`2.44`, now
-  `[~]`. Done when each has unit + adversarial tests and one R.05 rehydrate-and-call test like
-  `test_a_rehydrated_client_can_actually_talk_to_angel`.
+- 🟢 **CLOSED same day — the Kite login path now has tests** (`A.76`). 36 tests across
+  `tests/test_kite_session_path.py` and `tests/test_broker_credential_loaders.py`, including the R.05
+  test that builds a client from the stored token and calls `profile()` against the live broker. It
+  passed on the first run, so the defect that motivated it (`A.74`) is **not** present in the Kite path —
+  which is a measurement, not an assumption, and is the whole reason it was worth writing.
 - 🔴 **A warning policy can silently disable a broker.** `SmartConnect.__init__` trips
   `error::DeprecationWarning` (`ssl.OP_NO_TLSv1`); `_build_angel_one_client`'s blanket `except Exception`
   turns that into `None`, which every caller reads as "the broker is unreachable". The `L3.13` real-data
