@@ -2664,6 +2664,34 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.77 · 2026-08-12 · The depth capture's two halves were reading different amounts of history, and it
+cost 4.7× the universe.** First live full-session capture (`L0.20`/`L0.21`), started 10:30 IST with the
+market open. It admitted **300 of 9,890 instruments** and filled **0%** of its own disk budget — a
+capture that was neither disk-bound nor rate-bound, just uninformed.
+
+*The mechanism.* `measured_bytes_per_row` reads across **all** sessions on the tape, so yesterday's
+703 MiB was enough to skip calibration entirely. `measured_rates_from_tape` read **today only**, and at
+10:30 today's partition did not exist — so the admission controller had a byte cost for every row and a
+packet rate for nothing, and fell back to the 300-instrument calibration cohort. Both halves feed the
+same solve. Neither was wrong on its own.
+
+*The fix, and why the first version of it was still wrong.* Prior sessions now supply the rate prior,
+oldest-first so a nearer session wins, with today's rates **overlaid** rather than substituted. The
+first attempt returned today's rates whenever they were non-empty — which after a mid-session restart
+means the 300 instruments just captured, re-admitting exactly the cohort the fix existed to escape. A
+packet rate is a property of how actively an instrument trades and is stable across adjacent sessions;
+it is a legitimate prior, and the controller still sheds mid-session when reality disagrees.
+
+*Measured after the restart:* 9,000 rates carried from 2026-08-11, **1,420 of 9,890 admitted, 0.45 GiB
+of a 0.45 GiB budget, 100%**. The capture is now bound by the disk policy rather than by ignorance,
+which is the honest constraint to be bound by.
+
+*What it is still not.* 1,420 is **14% of the cash universe**, so `R.09` is not satisfied — that is a
+retention-and-disk constraint (30 sessions × 0.45 GiB from a 0.40 fraction of 33 GB free), not a design
+choice, and it is recorded in BACKLOG rather than dressed up. The first run's own report is the evidence
+for the sizing: **60.4 bytes/row over 154,945 rows**, of which 41,377 were duplicate books — a
+same-book suppression would buy back roughly a quarter of the tape and is the first lever to pull.
+
 **A.76 · 2026-08-12 · `L3.10`–`L3.12` closed by testing the Kite credential path, and the answer was
 "no defect" — which is the point.** `A.74` found that a session cache can round-trip perfectly and still
 produce clients that cannot authenticate, and `A.75` found that the equivalent Kite path — the credentials

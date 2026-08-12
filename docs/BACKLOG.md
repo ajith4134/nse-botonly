@@ -8,6 +8,20 @@ Reconcile with the live task list at each session start.
 
 Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) · ⛔ blocked
 
+## Live depth capture (2026-08-12, first real full-session run) — 🟡 running, two open
+
+- 🟡 **`R.09` not satisfied: 1,420 of 9,890 cash instruments captured (14%).** Not a design choice — the
+  capture is disk-bound at 100% of its budget (30 retention sessions × 0.45 GiB, from a 0.40 fraction of
+  33 GB free). Three levers, cheapest first: (1) **suppress duplicate books** — 41,377 of 154,945 rows in
+  the first run were `DUPLICATE_OF_PREVIOUS_BOOK`, ~27% of the tape for no information; (2) lower
+  retention below 30 sessions; (3) more disk. Options (1) and (2) are free and neither has been costed
+  (`A.77`).
+- 🔴 **A mid-session restart re-solves from a partial tape.** Today's fix overlays today's rates on the
+  prior session's, which handles the case correctly *now*, but nothing prevents a future run from
+  admitting a cohort, dying, and restarting with a tape whose only same-day evidence is that cohort. The
+  prior carries it, so it degrades gracefully rather than collapsing — but it degrades silently, and
+  there is no test for the restart path. `measured_rates_from_tape` has no test at all (`A.77`).
+
 ## Broker session + credential path (2026-08-12, opened by the `A.75` audit) — 🟡 one closed, two open
 
 - 🟢 **CLOSED same day — the Kite login path now has tests** (`A.76`). 36 tests across

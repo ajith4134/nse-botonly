@@ -9,3 +9,21 @@
 [10:30:37]   note: calibration cohort — the tape cannot yet report bytes/row or per-instrument rates, so both are measured from this cohort before the full universe is solved
 [10:30:37] 1 shard(s), 300 instruments
 [10:30:37] capturing
+[10:43:32] signal 2 — ending the session cleanly
+Connection closed: None - None
+[10:43:38] session: 154,945 packets written, 0 dropped to overflow
+[10:43:38]   shard 01: 154,945 rows | DUPLICATE_OF_PREVIOUS_BOOK=41,377, STALE_BEYOND_DERIVED_THRESHOLD=1
+[10:43:38] tape now holds 0.69 GiB
+[10:43:47] usability: 0 usable · 0 with caveats · 300 unusable (coverage floor 90%, session fence 0.0%)
+[10:43:47] session bytes/row 60.4 over 154,945 rows
+[10:43:47] verdict written to /home/opc/nse_archive/depth_tape/session_report_2026-08-12_103035.json
+[10:43:53] session closes at 15:30 IST, 4:46:06.036979 remaining
+[10:43:53] capture run id 104353
+[10:43:54] liquidity ranking from cash_2026-08-10.csv.zip
+[10:43:54] 2428 symbols carry a traded value
+[10:43:54] 9890 NSE equities are candidates; top value 31,115,601,818
+[10:44:53] 9,000 rates carried from prior sessions as a sizing prior
+[10:44:53] 9000 instruments have a measured packet rate
+[10:44:53] admitted 1,420 of 9,890 instruments | projected 0.45 GiB of a 0.45 GiB budget (100%)
+[10:44:53] 1 shard(s), 1,420 instruments
+[10:44:53] capturing

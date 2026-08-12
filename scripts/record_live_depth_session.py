@@ -136,13 +136,50 @@ def build_candidates(
 
 
 def measured_rates_from_tape(tape_root: Path, session_date: datetime) -> dict[int, float]:
-    """Per-instrument packets/s, each over its own observed span in today's tape."""
+    """Per-instrument packets/s, from today's tape or the most recent session that has one.
+
+    MEASURED, and it cost most of a session: reading rates from TODAY only meant that at
+    09:15 there were none, so the admission controller had nothing to size 9,890
+    instruments with and admitted only the 300-instrument calibration cohort — 3% of the
+    universe, against a budget it then filled to 0%. Meanwhile `measured_bytes_per_row`
+    reads across ALL sessions, so the run skipped calibration entirely on the strength of
+    yesterday's tape while refusing to use yesterday's rates. The two halves of the same
+    solve were reading different amounts of history.
+
+    A prior session's rate is the right prior: packet rate is a property of how actively
+    an instrument trades, which is stable across adjacent sessions in a way that makes it
+    a far better estimate than the no-estimate the controller was getting. It is still
+    only a prior — the controller sheds mid-session when reality disagrees.
+
+    Today's tape does not REPLACE the prior, it overlays it. A restart mid-session finds
+    today's tape holding rates for whatever narrow cohort was captured so far, and taking
+    that alone would re-admit only that cohort — the same trap one level deeper, and the
+    one that made this function's first fix insufficient.
+    """
     reader = MarketDepthTapeReader(tape_root)
     try:
-        return reader.instrument_packet_rates(session_date.date())
-    except Exception as read_failure:  # noqa: BLE001 — reported, then treated as no data
-        log(f"could not read rates back from the tape: {read_failure}")
+        available_sessions = sorted(reader.session_dates())
+    except Exception as list_failure:  # noqa: BLE001 — reported, then treated as no data
+        log(f"could not list tape sessions: {list_failure}")
         return {}
+
+    today = session_date.date()
+    rates: dict[int, float] = {}
+    for prior_session in [day for day in available_sessions if day < today]:
+        try:  # oldest first, so a nearer session overwrites a further one
+            rates.update(reader.instrument_packet_rates(prior_session))
+        except Exception as read_failure:  # noqa: BLE001 — try the next session
+            log(f"could not read rates for {prior_session}: {read_failure}")
+    prior_count = len(rates)
+
+    try:
+        rates.update(reader.instrument_packet_rates(today))
+    except Exception as read_failure:  # noqa: BLE001 — a prior-only estimate still works
+        log(f"could not read today's rates: {read_failure}")
+
+    if prior_count:
+        log(f"{prior_count:,} rates carried from prior sessions as a sizing prior")
+    return rates
 
 
 def make_shards(
