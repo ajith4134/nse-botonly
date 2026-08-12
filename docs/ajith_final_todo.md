@@ -107,8 +107,8 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [x] **1.15** Multi-broker failover + gap-fill aggregation — `L0.15` · union+disagreement grading, derived source preference; fills the bar store nightly (`A.72`)
 - [ ] **1.16** Breeze 1-second historical bars — `L0.16`
 - [x] **1.17** Broker symbology resolver (ICICI is one instance) — `L0.17` · Angel One built: 3,163 mappings, 100% coverage of the bar step (`A.73`); ICICI instance still credential-blocked
-- [ ] **1.18** Fyers deep-history adapter — `L0.18`
-- [ ] **1.19** Groww historical adapter — `L0.19`
+- [ ] **1.18** Fyers deep-history adapter — `L0.18` ⛔ BLOCKED, **re-verified mechanically 2026-08-12** (`A.78`): `fyers-apiv3` imports fine and `.env` carries `FYERS_APP_ID` + `FYERS_API_SECRET`, but v3 mints a token only through an interactive `generate-authcode` browser redirect, and the non-interactive TOTP path needs `FY_ID` + PIN + TOTP secret, none of which exist. `generate_token()` without an auth code raises `AttributeError: 'SessionModel' object has no attribute 'auth_token'`. ⚠️ *operator action: complete one browser auth, or add the three TOTP-login variables*
+- [ ] **1.19** Groww historical adapter — `L0.19` ⛔ BLOCKED, **re-verified mechanically 2026-08-12** (`A.78`): `growwapi` installs, the client builds and prints "Ready to Groww!" on BOTH stored tokens — and every endpoint (`get_historical_candles`, `get_quote`, `get_ltp`, `get_holdings_for_user`) answers `GrowwAPIException: Access forbidden for this request`. The ₹499/mo subscription is not active. ⚠️ *operator action: activate the subscription*
 - [~] **1.20** Live order-book depth recorder (P4b) — `L0.20` — ***PULLED FORWARD out of sequence, see
       `A.44`***: the depth tape is the only `L0` artifact that cannot be reconstructed after the fact, so
       every session without a recorder is permanently lost data. `src/nse_algo_trader/market_depth/`

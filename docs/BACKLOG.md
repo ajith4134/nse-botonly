@@ -8,6 +8,18 @@ Reconcile with the live task list at each session start.
 
 Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) · ⛔ blocked
 
+## Broker adapters blocked on the operator (2026-08-12, re-verified) — ⛔ OPEN
+
+- ⛔ **`L0.18` Fyers** — needs one interactive browser auth at `generate-authcode`, OR `FY_ID` + PIN +
+  TOTP secret added to `.env` for the unattended login. App id and secret alone cannot mint a token
+  (`A.78`).
+- ⛔ **`L0.19` Groww** — ₹499/mo API subscription is not active; all four endpoints tried return
+  `Access forbidden`, on both stored tokens (`A.78`).
+- 🔴 **`fyers-apiv3` pins conflict with `growwapi`.** `requests==2.31.0` and `aiohttp==3.9.3` versus the
+  2.34.2 / 3.14.3 that `growwapi` pulled in. Gate is green on the newer versions and the live Kite call
+  works, so they stay — but this must be settled (separate venv, vendored client, or drop one SDK) before
+  either adapter is built, not discovered then.
+
 ## `docs/SYSTEM_MAP.md` describes the PRE-RESET tree (2026-08-12) — 🔴 OPEN
 
 - 🔴 **SYSTEM_MAP is 285 KB of the system that was archived and deleted on 2026-08-10** (`A.26`). Its

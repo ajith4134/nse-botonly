@@ -2664,6 +2664,36 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.78 · 2026-08-12 · `L0.18` and `L0.19` re-tested rather than believed, and both blockers are real —
+but for different reasons than the plan recorded.** The frontier after `L0.17` is two broker adapters the
+plan marks "blocked (credentials)" and "blocked (subscription)". Those labels were written months ago and
+`.env` has grown since, so `R.17` says test them rather than inherit the verdict.
+
+*Fyers (`L0.18`) — blocked, and the label was right for the wrong reason.* `fyers-apiv3` is installed and
+imports; `FYERS_APP_ID` and `FYERS_API_SECRET` are both present. That is not enough: v3 issues a token
+only through `https://api-t1.fyers.in/api/v3/generate-authcode`, an interactive browser redirect, and
+`generate_token()` without an auth code raises `AttributeError: 'SessionModel' object has no attribute
+'auth_token'`. The non-interactive TOTP login needs `FY_ID`, a PIN and a TOTP secret — none in `.env`. So
+the block is not "no credentials" but "credentials of the wrong kind for an unattended host".
+
+*Groww (`L0.19`) — blocked, and the SDK actively hides it.* `growwapi` installs, `GrowwAPI(token)`
+constructs on both `GROWW_ACCESS_TOKEN` and `GROWW_TOTP_ACCESS_TOKEN`, and prints "Ready to Groww!" —
+then **every** endpoint refuses: `get_historical_candles`, `get_quote`, `get_ltp` and
+`get_holdings_for_user` all raise `GrowwAPIException: Access forbidden for this request`. The
+subscription is not active. This is `O.52` for the third time in one day: a broker SDK constructor that
+validates nothing, and a client that looks alive until asked for something. Four endpoints were tried
+rather than one, so "forbidden" is a property of the account and not of one call.
+
+*Dependency cost, recorded rather than absorbed.* Installing `growwapi` moved `requests` to 2.34.2 and
+`aiohttp` to 3.14.3, which breaks `fyers-apiv3`'s hard pins (`requests==2.31.0`, `aiohttp==3.9.3`). The
+gate stayed green (943 passed) and the live Kite `profile()` call still works on the newer `requests`, so
+the newer versions stay. The conflict is unresolvable while both SDKs are installed and must be settled
+when either adapter unblocks — in BACKLOG, not silently.
+
+*Consequence for sequence.* Both frontier tasks are operator-blocked, so the next build is `L0.22`
+(tick-level order-book reconstruction), which is unblocked, has real input on disk, and is the named
+queued consumer that keeps `L0.20`/`L0.21` at `[~]` under `R.11`.
+
 **A.77 · 2026-08-12 · The depth capture's two halves were reading different amounts of history, and it
 cost 4.7× the universe.** First live full-session capture (`L0.20`/`L0.21`), started 10:30 IST with the
 market open. It admitted **300 of 9,890 instruments** and filled **0%** of its own disk budget — a
