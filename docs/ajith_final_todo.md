@@ -320,7 +320,23 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       *Still open in this feature: `L1.04` floor derived from this hurdle, the `/costs` surface,
       the adversarial review, and the `R.05` real-data pass over the bar store at the strategy's
       own horizon.*
-- [ ] **1.38** Per-segment minimum-edge floor — `L1.04`
+- [ ] **1.38** Per-segment minimum-edge floor — `L1.04` · built in
+      `cost_gate/per_segment_edge_floor.py`, DERIVED from the real hurdle distribution rather than
+      typed: the plan's ~6-8 / ~10-11 / ~25-30 bps figures appear nowhere in the code, and the floor
+      moves when the market, the statutory rates or liquidity move, with nobody editing a number.
+      Point-in-time, so a replay screens with the floor that was true then. Refuses a segment with
+      too few priced instruments — a floor from three is not a property of a segment, and a
+      screening bound built from noise rejects real trades invisibly, because a rejected signal
+      leaves no trace. 10 tests. *Closes with F01.*
+
+      *`R.05` DERIVED ON THE REAL UNIVERSE, 200 instruments, session 2026-08-11:*
+      *`NSE-MIS` floor **9.3 bps** (cheapest 5.5, median 23.1, dearest 351.9);*
+      *`NSE-CNC` floor **26.4 bps** (cheapest 23.8, median 36.8, dearest 363.6).*
+      *The plan predicted ~6-8 bps for large cash and the measured CHEAPEST is 5.5, so its
+      optimistic end was right — but the measured MEDIAN is 23.1, roughly triple. The gap is the
+      execution cost the plan's figures omitted, which is precisely what `L1.05`/`L1.06` exist to
+      supply. Delivery sits ~17 bps above intraday, which is the double-sided STT plus the
+      per-scrip depository debit showing up as a number rather than an argument.*
 - [ ] **1.39** Fill / slippage model — `L1.05` — *IN PROGRESS, and building as ONE engine with
       `1.40` per `A.92`: with a real five-level book the size-dependence IS the calculation, so
       splitting them would ship a size-blind model the second entry replaces wholesale.*
