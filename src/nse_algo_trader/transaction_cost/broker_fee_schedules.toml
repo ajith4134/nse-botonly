@@ -1,0 +1,206 @@
+# Broker commercial schedules — data, not code.
+#
+# These are published prices, not policy thresholds, so they are facts under R.23(e); they
+# live outside the source tree's literals so that a price change is a data edit with a new
+# citation rather than a code edit, and so R.03's money-literal guard stays meaningful.
+#
+# Every amount is in PAISE and every rate is a decimal fraction of turnover, matching the
+# convention in nse_market_rule_history: the circulars and price pages are written in rupees
+# and percent, the arithmetic wants paise and fractions, and converting at the point of use is
+# how a factor-of-100 error gets in.
+#
+# `pieces` describes brokerage as a piecewise-linear function of one leg's turnover:
+# brokerage = flat_paise + rate * turnover, over [from_paise, to_paise). The last piece has no
+# `to_paise`. This shape is not decoration — it is what makes the breakeven solve exact and
+# what makes cost-per-rupee a genuine step function of quantity.
+#
+# DO NOT average these across brokers. The percentage legs differ by more than 3x and only
+# Angel One has a floor, so the turnover at which the flat cap starts binding is broker-specific.
+
+[[schedule]]
+broker = "zerodha"
+effective_from = 2020-03-19
+source_reference = "zerodha.com/charges — published charge list, read 2026-08-12; no 2025 or 2026 pricing change found"
+source_date = 2026-08-12
+evidence_grade = "primary_circular"
+depository = "CDSL"
+depository_markup_paise = 950
+auto_square_off_paise = 5000
+call_and_trade_paise = 5000
+physical_settlement_rate = "0.0025"
+physical_settlement_netted_rate = "0.001"
+# Rounding is a BROKER property here because no circular mandating one could be read
+# (research/219 §12.8, O.70). Zerodha publishes rounding STT to the nearest rupee; that is
+# evidence about Zerodha, not about the levy, so it is recorded here and nowhere else.
+statutory_rounding = "nearest_rupee"
+brokerage_rounding = "nearest_paisa"
+
+  [[schedule.brokerage]]
+  segment = "NSE-CNC"
+  note = "delivery is free"
+  pieces = [ { from_paise = 0, rate = "0", flat_paise = "0" } ]
+
+  [[schedule.brokerage]]
+  segment = "NSE-MIS"
+  note = "lower of 0.03% or Rs 20 per executed order; the two meet at Rs 66,666.67 turnover"
+  pieces = [
+    { from_paise = 0, to_paise = 6666667, rate = "0.0003", flat_paise = "0" },
+    { from_paise = 6666667, rate = "0", flat_paise = "2000" },
+  ]
+
+  [[schedule.brokerage]]
+  segment = "NFO-FUT"
+  note = "lower of 0.03% or Rs 20 per executed order"
+  pieces = [
+    { from_paise = 0, to_paise = 6666667, rate = "0.0003", flat_paise = "0" },
+    { from_paise = 6666667, rate = "0", flat_paise = "2000" },
+  ]
+
+  [[schedule.brokerage]]
+  segment = "NFO-OPT"
+  note = "flat Rs 20 per executed order, no percentage leg"
+  pieces = [ { from_paise = 0, rate = "0", flat_paise = "2000" } ]
+
+  [[schedule.brokerage]]
+  segment = "CDS-FUT"
+  note = "lower of 0.03% or Rs 20"
+  pieces = [
+    { from_paise = 0, to_paise = 6666667, rate = "0.0003", flat_paise = "0" },
+    { from_paise = 6666667, rate = "0", flat_paise = "2000" },
+  ]
+
+  [[schedule.brokerage]]
+  segment = "CDS-OPT"
+  pieces = [ { from_paise = 0, rate = "0", flat_paise = "2000" } ]
+
+  [[schedule.brokerage]]
+  segment = "MCX-FUT"
+  note = "lower of 0.03% or Rs 20"
+  pieces = [
+    { from_paise = 0, to_paise = 6666667, rate = "0.0003", flat_paise = "0" },
+    { from_paise = 6666667, rate = "0", flat_paise = "2000" },
+  ]
+
+  [[schedule.brokerage]]
+  segment = "MCX-OPT"
+  pieces = [ { from_paise = 0, rate = "0", flat_paise = "2000" } ]
+
+
+[[schedule]]
+broker = "upstox"
+effective_from = 2023-01-01
+source_reference = "upstox.com/pricing — read 2026-08-12. Delivery is NOT free, unlike Zerodha"
+source_date = 2026-08-12
+evidence_grade = "primary_circular"
+depository = "CDSL"
+depository_markup_paise = 0
+auto_square_off_paise = 7500
+call_and_trade_paise = 7500
+physical_settlement_rate = "0.0025"
+physical_settlement_netted_rate = "0.001"
+statutory_rounding = "exact"
+brokerage_rounding = "nearest_paisa"
+
+  [[schedule.brokerage]]
+  segment = "NSE-CNC"
+  note = "Rs 20 per order — delivery is not free here"
+  pieces = [ { from_paise = 0, rate = "0", flat_paise = "2000" } ]
+
+  [[schedule.brokerage]]
+  segment = "NSE-MIS"
+  note = "lower of 0.1% or Rs 20; they meet at Rs 20,000 turnover"
+  pieces = [
+    { from_paise = 0, to_paise = 2000000, rate = "0.001", flat_paise = "0" },
+    { from_paise = 2000000, rate = "0", flat_paise = "2000" },
+  ]
+
+  [[schedule.brokerage]]
+  segment = "NFO-FUT"
+  note = "lower of 0.05% or Rs 20; they meet at Rs 40,000 turnover"
+  pieces = [
+    { from_paise = 0, to_paise = 4000000, rate = "0.0005", flat_paise = "0" },
+    { from_paise = 4000000, rate = "0", flat_paise = "2000" },
+  ]
+
+  [[schedule.brokerage]]
+  segment = "NFO-OPT"
+  pieces = [ { from_paise = 0, rate = "0", flat_paise = "2000" } ]
+
+  [[schedule.brokerage]]
+  segment = "CDS-FUT"
+  pieces = [
+    { from_paise = 0, to_paise = 4000000, rate = "0.0005", flat_paise = "0" },
+    { from_paise = 4000000, rate = "0", flat_paise = "2000" },
+  ]
+
+  [[schedule.brokerage]]
+  segment = "CDS-OPT"
+  pieces = [ { from_paise = 0, rate = "0", flat_paise = "2000" } ]
+
+  [[schedule.brokerage]]
+  segment = "MCX-FUT"
+  pieces = [
+    { from_paise = 0, to_paise = 4000000, rate = "0.0005", flat_paise = "0" },
+    { from_paise = 4000000, rate = "0", flat_paise = "2000" },
+  ]
+
+  [[schedule.brokerage]]
+  segment = "MCX-OPT"
+  pieces = [ { from_paise = 0, rate = "0", flat_paise = "2000" } ]
+
+
+[[schedule]]
+broker = "angel_one"
+effective_from = 2023-01-01
+source_reference = "angelone.in/pricing — read 2026-08-12. The only one of the three with a floor, and it has no separate auto-square-off fee"
+source_date = 2026-08-12
+evidence_grade = "primary_circular"
+depository = "CDSL"
+depository_markup_paise = 0
+auto_square_off_paise = 0
+call_and_trade_paise = 2000
+physical_settlement_rate = "0.0025"
+physical_settlement_netted_rate = "0.001"
+statutory_rounding = "exact"
+brokerage_rounding = "nearest_paisa"
+
+  [[schedule.brokerage]]
+  segment = "NSE-CNC"
+  note = "lower of Rs 20 or 0.1%, with a Rs 5 floor — three pieces, and the floor is the one no other broker has"
+  pieces = [
+    { from_paise = 0, to_paise = 500000, rate = "0", flat_paise = "500" },
+    { from_paise = 500000, to_paise = 2000000, rate = "0.001", flat_paise = "0" },
+    { from_paise = 2000000, rate = "0", flat_paise = "2000" },
+  ]
+
+  [[schedule.brokerage]]
+  segment = "NSE-MIS"
+  pieces = [
+    { from_paise = 0, to_paise = 500000, rate = "0", flat_paise = "500" },
+    { from_paise = 500000, to_paise = 2000000, rate = "0.001", flat_paise = "0" },
+    { from_paise = 2000000, rate = "0", flat_paise = "2000" },
+  ]
+
+  [[schedule.brokerage]]
+  segment = "NFO-FUT"
+  pieces = [ { from_paise = 0, rate = "0", flat_paise = "2000" } ]
+
+  [[schedule.brokerage]]
+  segment = "NFO-OPT"
+  pieces = [ { from_paise = 0, rate = "0", flat_paise = "2000" } ]
+
+  [[schedule.brokerage]]
+  segment = "CDS-FUT"
+  pieces = [ { from_paise = 0, rate = "0", flat_paise = "2000" } ]
+
+  [[schedule.brokerage]]
+  segment = "CDS-OPT"
+  pieces = [ { from_paise = 0, rate = "0", flat_paise = "2000" } ]
+
+  [[schedule.brokerage]]
+  segment = "MCX-FUT"
+  pieces = [ { from_paise = 0, rate = "0", flat_paise = "2000" } ]
+
+  [[schedule.brokerage]]
+  segment = "MCX-OPT"
+  pieces = [ { from_paise = 0, rate = "0", flat_paise = "2000" } ]

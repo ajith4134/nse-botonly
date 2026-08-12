@@ -30,6 +30,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from datetime import time as dt_time
+from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -157,6 +158,15 @@ from nse_algo_trader.replay_session_clock import replay_sessions
 from nse_algo_trader.security_identity_record_store import (
     SecurityIdentityRecordStore,
     observations_from_bhavcopy_rows,
+)
+from nse_algo_trader.transaction_cost.charge_reconciliation_ledger import (
+    ChargeReconciliationLedger,
+)
+from nse_algo_trader.transaction_cost.chargeable_market_segments import ChargeableSegment
+from nse_algo_trader.transaction_cost.nse_transaction_cost_engine import (
+    TradeSpecification,
+    TransactionCostError,
+    default_transaction_cost_engine,
 )
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -866,6 +876,66 @@ def _load_new_archive_days() -> str:
         )
 
 
+def _price_the_days_transaction_costs(target: date) -> str:
+    """`L1.01`: assert the day is priceable, and record what trading it costs.
+
+    Runs the charge engine over the session's own date rather than over today's rates, so a
+    run replayed for an older session reports that session's costs. What it is really testing
+    is COVERAGE: if a statutory rate lapses — an effective window closing with nothing
+    seeded after it — this step fails on the first day it matters instead of on the day
+    somebody notices a backtest looked generous.
+
+    The breakeven is reported per segment because that is the number `L1.02`'s gate will
+    compare every signal against, and seeing it move is how a rate change becomes visible in
+    operations rather than only in a test.
+    """
+    engine = default_transaction_cost_engine()
+    priced: list[str] = []
+    refused: list[str] = []
+    for segment in ChargeableSegment:
+        representative = _representative_trade_for(segment, target)
+        try:
+            cost = engine.price_round_trip(representative)
+        except TransactionCostError as failure:
+            refused.append(f"{segment.value}: {type(failure).__name__}")
+            continue
+        priced.append(f"{segment.value} {cost.exact_bps_of_turnover:.1f}bps")
+    ledger = ChargeReconciliationLedger()
+    drifting = ledger.drifting_components()
+    summary = " · ".join(priced) if priced else "nothing priced"
+    if refused:
+        summary += f" · REFUSED {len(refused)}: {'; '.join(refused)}"
+    summary += f" · {ledger.observation_count()} contract-note observations"
+    if drifting:
+        summary += (
+            f" · {len(drifting)} DRIFTING: "
+            + "; ".join(f"{item.component.value}@{item.segment.value}" for item in drifting)
+        )
+    if not priced:
+        raise RuntimeError(f"no segment could be priced for {target}: {summary}")
+    return summary
+
+
+def _representative_trade_for(segment: ChargeableSegment, target: date) -> TradeSpecification:
+    """A mid-sized trade in each segment, sized off the configured capital.
+
+    Deliberately derived from the account rather than fixed: the cost of trading is a
+    function of position size, so a hardcoded quantity would report a cost that belongs to
+    nobody's account (`R.03`).
+    """
+    capital = load_trading_capital_from_environment()
+    price_paise = capital.rupees_for_fraction(Decimal("0.001")) * Decimal(100)
+    quantity = max(1, int(capital.rupees_for_fraction(Decimal("0.05")) / (price_paise / 100)))
+    return TradeSpecification(
+        segment=segment,
+        quantity=quantity,
+        entry_price_paise=price_paise,
+        exit_price_paise=price_paise,
+        trade_date=target,
+        strike_paise=price_paise if segment.is_option else None,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -913,6 +983,11 @@ def main() -> int:
     _run_step(report, "clock integrity", _assess_clock_integrity)
     _run_step(report, "consolidated feed", _consolidate_broker_feeds)
     _run_step(report, "deep history", _load_new_archive_days)
+    _run_step(
+        report,
+        "transaction costs",
+        lambda: _price_the_days_transaction_costs(target),
+    )
     # Last: the surface should be photographed AFTER the run has changed the state
     # it displays, so the capture shows the day that just happened.
     _run_step(report, "dashboard surfaces", _capture_dashboard_surfaces)

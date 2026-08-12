@@ -660,6 +660,32 @@ queued, calibration-gated next slice (research/96).
 
 ## §4 · MAINTENANCE LEDGER
 
+- **2026-08-12 (`L1.01` — NSE transaction-cost engine, the first `L1` slice)** — new package
+  `src/nse_algo_trader/transaction_cost/` (7 modules + a TOML broker-schedule data file):
+  `chargeable_market_segments` (the eight-segment charge vocabulary and the base/leg/rounding enums),
+  `charge_structure_history` (WHICH levy applies to which segment, on what base, on which leg — dated
+  and cited, because the structure has its own history), `broker_fee_schedules` (piecewise-linear
+  per-order brokerage loaded from data, three brokers), `nse_transaction_cost_engine` (the core: resolve
+  → apply → `ChargeLine[]` → `RoundTripCost`, exact `Decimal` paise, evidence grade carried to the
+  answer), `breakeven_move_solver` (closed-form piecewise-linear root — the equation is self-referential
+  because the exit price sets the sell-side levies), `quantity_cost_economics` (the cost staircase and
+  the minimum-viable-quantity solve), `charge_reconciliation_ledger` (SQLite carried state: modelled vs
+  billed per component, verdict derived from where the confidence interval sits, never a correction
+  factor). Rates come from `L0.31`'s bitemporal store — nothing here holds a rate literal — and four
+  families were added to it (`SEBI_TURNOVER_FEE`, `GOODS_AND_SERVICES_TAX`,
+  `DEPOSITORY_PARTICIPANT_CHARGE`, `INVESTOR_PROTECTION_FUND_CONTRIBUTION`, plus
+  `COMMODITIES_TRANSACTION_TAX`). **Wired:** a `transaction costs` step in
+  `scripts/run_daily_operations.py` and the `/costs` surface
+  (`dashboard/transaction_cost_surface_renderer.py`, added to `SURFACED_MODULES` and to the screenshot
+  `ROUTES`). **Found by building it:** three wrong rates seeded the same morning (`A.90`) plus a
+  `coverage()` crash in `L0.31` that the new facts triggered (`A.91`); the corpus corrected twice (the
+  SEBI fee is on NOTIONAL, and exercised-option STT is 0.125% until 2026-04-01 on a basis that changed
+  in 2019, not 2024). **R.05:** 3,416 real symbols priced off the `L0.34` archive; the option breakeven
+  steps on the real statutory dates and stays flat between them, including flat across the March-2026
+  IPFT rollback. Spec `docs/research/219`; 89 tests; ruff + mypy + money-guard clean; full suite green.
+  **OPEN (`R.11`):** the consumer this exists for — `L1.02`'s gate — is queued, so `1.35` is `[~]`; and
+  these breakevens are statutory-and-brokerage only, so they are a FLOOR until `L1.05` models slippage.
+
 - **2026-08-04 (Option trade-quality FLOOR + per-trade EVIDENCE card — "proof, not blind" selection)** —
   operator asked whether option trades are picked blind or with real proof of a profit goal. Two changes so
   the answer is provably the latter. **(A) Trade-quality floor** (`structure_payoff_optimizer._evaluate`): a

@@ -2664,6 +2664,62 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.90 · 2026-08-12 · `L1.01` specified, and the rate sourcing found three defects in facts `L0.31`
+seeded this morning plus two errors in the corpus's own beliefs.** Spec at `docs/research/219`.
+
+*Scope, narrowed on purpose.* `research/164` (2026-08-03) specified `L1.01` + the pre-trade gate +
+the slippage model as ONE slice. That bundling is **rejected** as an `R.18` violation — three engines in
+one slice is how a slice ships thin. `L1.01` is the deterministic charge engine (statutory + broker
+levies, point-in-time, plus the breakeven solve and the per-order quantity economics); the gate stays
+`L1.02`, the slippage and impact models stay `L1.05`/`L1.06`. `164`'s central finding — "this is
+SALVAGE, not greenfield" — is **void**: the file it planned to harden,
+`paper_trading/indian_trading_cost_model.py`, was deleted by the reset of 2026-08-10.
+
+*Three defects in the seeded rule history, all silent.* (1) `nse_market_rule_history.py:308-320` seeds
+the OPTIONS exchange-transaction charge at `0.0000297` — that is ₹297/crore, the **cash-market** rate;
+the options rate is ₹3,503/crore of premium, so the seeded value understates it **~12×** on the segment
+that trades most. (2) `:172-182` seeds cash stamp duty at the delivery rate 0.015% scoped to ALL cash,
+so every intraday query resolves **5× overstated**. (3) Cash-equity STT is absent entirely, so the cash
+segment cannot be priced at all. Fixed in place rather than superseded: these records were compiled the
+same day (`COMPILED_ON = 2026-08-12`), so there is no belief history between morning and afternoon worth
+preserving.
+
+*Two corrections to what the corpus believed.* (a) **The SEBI turnover fee on options is charged on
+NOTIONAL, not premium** — `research/164` and `b28` both say premium. NSE has used notional since
+2018-19 and SEBI forced BSE onto it by private letter, disclosed 2024-04-26 with a ~₹165 crore
+back-payment. There is no public circular, so it is stored `SECONDARY_TRIANGULATED` with the
+disagreement in the source string. On a ₹150-premium 24000-strike NIFTY option, notional is ~160×
+premium. (b) **Exercised-option STT is 0.125%, not 0.15%, until 2026-04-01**, and the
+settlement-price → intrinsic-value base change was **2019-09-01, not 2024** — five years earlier than
+`b28` recorded. `164`'s history table was right and `b28` was wrong; the two are now reconciled. The
+April-2026 0.15% is enacted law (Finance Bill 2026, Clause 143), not a proposal.
+
+*A scope-vocabulary decision.* `RuleScope.segment` was carrying two meanings — Kite exchange codes
+(`NSE`, `NFO`, what the instrument-master observer emits) and instrument type (`NFO-FUT`). Costs need a
+third axis it never had: **product mode**, because delivery and intraday are taxed differently on the
+same exchange segment. Resolved with one declared vocabulary, `ChargeableSegment` →
+`NSE-CNC`/`NSE-MIS`/`NFO-FUT`/`NFO-OPT`/`CDS-FUT`/`CDS-OPT`/`MCX-FUT`/`MCX-OPT`; the existing `NSE` and
+`NFO` seeds are re-scoped. Index-vs-stock is deliberately NOT a charge segment — the statutory rates are
+identical, and splitting them would invent a difference that does not exist.
+
+*Rounding is an open blocker, not an assumption.* No SEBI or NSE circular mandating a rounding
+convention for statutory levies could be read (two candidates timed out repeatedly). The only primary
+clause recovered says levies may be recovered "only at actuals paid or payable" — a no-markup rule, not
+a precision rule. So the engine rounds NOTHING on statutory lines, keeps exact `Decimal` paise, models
+rounding as a per-BROKER rule where the evidence actually points, and lets the reconciliation ledger
+measure each broker's real rounding from contract notes. Logged in `BACKLOG.md`.
+
+*Sourcing re-run, not inherited (`R.17`).* Sixteen candidates installed and RUN in a throwaway venv on
+this host. `zerodha-brokerage-calculator` 0.2.0 installs but carries four stale constants — futures STT
+`0.0001` and options STT `0.0005` are each **half** the current rate, options exchange charge `0.00053`
+is 49% high — with pure `float` and no effective-dating. `nautilus_trader` still will not install
+(`manylinux_2_35` vs this host's glibc 2.34, matching `A.39`). `staircase` was rejected on a measured
+float artefact (`0.0002999999999993008` where `0.0003` was layered). `intervaltree` genuinely worked but
+was rejected because `L0.31` already resolves point-in-time WITH provenance and refusal, and a second
+provenance-free lookup path is the duplication `R.06` exists to prevent. **Bespoke-in-repo, no vendor,
+no new dependency** — every Indian calculator inspected carried the exact stale-rate bug this engine
+exists to prevent.
+
 **A.89 · 2026-08-12 · `L0.34`'s adversarial review found that the load I had just signed off was
 missing two entire trading sessions, and the differential test could not have seen it.** Six defects, all
 reproduced against the real archive and the loaded store. This entry exists because the sign-off in
@@ -4025,3 +4081,45 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
+
+**A.91 · 2026-08-12 · `L1.01` built, and building it broke four things that were already passing.**
+Spec `docs/research/219`; the slice is `1.35` in the todo and closes `[~]`, not `[x]`, because
+`L1.02`'s gate — the consumer this engine exists for — is queued (`R.11`).
+
+*What it is.* `src/nse_algo_trader/transaction_cost/`: eight chargeable segments, nine components,
+every rate resolved out of `L0.31` at the trade's own date and REFUSED where the era is uncompiled.
+Three real solves rather than a fee calculator — a closed-form piecewise-linear breakeven root (the
+equation is self-referential, since the exit price sets the sell-side levies that set the breakeven,
+and the per-order brokerage cap puts kinks in it), an integer solve for the minimum viable quantity
+over the resulting step function, and a reconciliation ledger carrying modelled-versus-billed
+residuals per component. 82 tests, wired to the daily runner and to `/costs`.
+
+*Four defects found by building it, all previously green.* (1)+(2)+(3) are the three seeded-fact
+errors recorded in `A.90`. (4) is new: `PointInTimeMarketRuleStore.coverage()` raised
+`TypeError: '<' not supported between 'date' and 'NoneType'` the moment two records shared an
+`effective_from` and either was still in force. That is the normal shape of one circular setting a
+rate for several scopes — the SEBI turnover fee sets eight at once — and it simply had not occurred
+in the seeded data before. The merge loop also failed to absorb intervals following an open-ended
+one. Both fixed with the sort key made explicit.
+
+*What the engine's own tests then caught.* The reconciliation ledger's first verdict rule required the
+confidence interval to be NARROWER than the rounding floor before saying anything, which reported a
+137-paise mean offset as "not enough data" — it hid the exact signal the ledger exists to raise. Now
+the test is where the interval SITS relative to the band, not how wide it is. And nearest-rupee
+rounding, applied to stamp duty because it looked harmless, DELETED a 29-paise charge; the only
+rounding evidence anywhere concerns STT, so only the transaction taxes follow the coarse rule.
+
+*What the real tape caught (`R.05`).* 3,416 real symbols priced on 2026-06-30. One — DHARAN, closing
+at 16 paise — bills as exactly zero, because every levy on a Rs 16 turnover is a fraction of a paisa.
+The zero is correct and dangerous: a gate dividing an edge by it clears any hurdle. `RoundTripCost`
+now carries the billed total AND the exact total, with `bills_as_free` so the case cannot be consumed
+blind (`O.71`). The option breakeven was also confirmed to STEP on the real statutory dates and stay
+flat between them, including staying flat across the March-2026 IPFT rollback, which moved money
+between two lines without changing what a member pays.
+
+*One blocker closed rather than accepted (`R.16`).* Commodity refused to price at first because the MCX
+exchange transaction charge had never been sourced. Rather than dropping the segment or pricing it as
+if the exchange took nothing, the rate was researched and seeded (MCX/F&A/631/2024, futures Rs 2.10
+per lakh, options Rs 41.80 per lakh of premium, effective 2024-10-01). MCX's own PDF is unreadable to
+automated fetches, so it is `SECONDARY_TRIANGULATED` across five sources agreeing on the rate and the
+circular number, and the unread primary is logged.

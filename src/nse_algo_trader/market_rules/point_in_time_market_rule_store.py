@@ -95,8 +95,13 @@ class RuleFamily(StrEnum):
     PER_STOCK_PRICE_BAND = "per_stock_price_band"
     DYNAMIC_PRICE_BAND = "dynamic_price_band"
     SECURITIES_TRANSACTION_TAX = "securities_transaction_tax"
+    COMMODITIES_TRANSACTION_TAX = "commodities_transaction_tax"
     STAMP_DUTY = "stamp_duty"
     EXCHANGE_TRANSACTION_CHARGE = "exchange_transaction_charge"
+    INVESTOR_PROTECTION_FUND_CONTRIBUTION = "investor_protection_fund_contribution"
+    SEBI_TURNOVER_FEE = "sebi_turnover_fee"
+    GOODS_AND_SERVICES_TAX = "goods_and_services_tax"
+    DEPOSITORY_PARTICIPANT_CHARGE = "depository_participant_charge"
     PRE_OPEN_AUCTION = "pre_open_auction"
     SESSION_HOURS = "session_hours"
     SPAN_MARGIN = "span_margin"
@@ -123,6 +128,16 @@ _GRADE_RANK: Mapping[EvidenceGrade, int] = {
 """**Observed outranks documentary, and that is deliberate.** A circular says what the rule
 was announced to be; the exchange's own published instrument master says what was actually
 in force that day. Where the two disagree the market traded on the second one."""
+
+
+def evidence_grade_rank(grade: EvidenceGrade) -> int:
+    """How much a grade is worth, for callers that must combine several.
+
+    Public because a consumer assembling one answer out of several facts — a cost built from
+    six levies, say — can only be as trustworthy as its worst-sourced input, and there is no
+    way to say that without ordering the grades.
+    """
+    return _GRADE_RANK[grade]
 
 
 class RuleValueKind(StrEnum):
@@ -574,15 +589,28 @@ class PointInTimeMarketRuleStore:
                 observed_window=observed_window,
                 observed_by=observed_by,
             )
-        intervals = sorted((record.effective_from, record.effective_to) for record in records)
+        # Sorted with the open-ended intervals LAST within a start date. Sorting the raw
+        # tuples raises `TypeError: '<' not supported between 'date' and 'NoneType'` the
+        # moment two records share an `effective_from` and either is still in force — which
+        # is the normal shape of a rate that applies to several scopes from one circular, and
+        # was simply absent from the seeded data until `L1.01` added it.
+        intervals = sorted(
+            ((record.effective_from, record.effective_to) for record in records),
+            key=lambda interval: (interval[0], interval[1] is None, interval[1] or interval[0]),
+        )
         merged: list[tuple[date, date | None]] = []
         for start, end in intervals:
-            if merged and merged[-1][1] is not None and start <= merged[-1][1]:
-                previous_start, previous_end = merged[-1]
-                merged[-1] = (
-                    previous_start,
-                    None if end is None else max(previous_end or start, end),
-                )
+            if not merged:
+                merged.append((start, end))
+                continue
+            previous_start, previous_end = merged[-1]
+            if previous_end is None:
+                # Still in force, and the sort guarantees `start` is not earlier, so this
+                # interval is already inside it. Appending would leave `merged` unmerged and
+                # make `latest` disagree with `is_open_ended`.
+                continue
+            if start <= previous_end:
+                merged[-1] = (previous_start, None if end is None else max(previous_end, end))
             else:
                 merged.append((start, end))
         holes = tuple(

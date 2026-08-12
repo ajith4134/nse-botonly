@@ -1192,3 +1192,106 @@ visible rather than relying on care: the honest answer is that the loader should
 does all of its filtering, so a test physically cannot apply a subset of it. I have not done that — the
 three stages are still separately callable, and the test now calls all three by discipline rather than by
 construction. That is a weaker guarantee than it looks, and it is recorded as such.
+
+## O.69 · 2026-08-12 · A rate table that is one day old is not a rate table I can trust
+
+**Opinion.** The three defects the `L1.01` sourcing pass found in `L0.31`'s rate history — an options
+exchange charge that is really a cash rate (~12× understated), a cash stamp duty scoped to all cash but
+carrying the delivery-only rate (5× overstated intraday), and cash STT missing entirely — were all seeded
+THIS MORNING, by me, in a slice I signed off. The pattern is not carelessness about rates; it is that
+`L0.31`'s job was to build the STORE, and the facts were seeded as a demonstration that it worked. A fact
+seeded to prove a mechanism is not a fact anybody checked against its source.
+
+**Reasoning.** Every one of the three is invisible from inside `L0.31`: the store resolves them correctly,
+reports them covered, grades them, and its 34 tests pass — because the tests check RESOLUTION, and the
+defect is in the CONTENT. Nothing in a point-in-time rule store can tell you a rate is the wrong rate. Only
+a consumer that knows what the number means can, which is why the defects surfaced the moment the first
+real consumer went looking. The general form: **coverage is not correctness, and a store reporting a family
+as covered is reporting that it has a value, not that the value is right.**
+
+**Confidence: measured** for the three defects — each was checked against a primary circular whose PDF text
+was fetched (NSE/FA/64232, NSE/FA/73061, Finance Bill 2026 Clause 143), and the arithmetic reconciles
+(₹306.99 + ₹0.01 = ₹307 each side, cash; ₹3,503 + ₹50 = ₹3,553, options). **Reasoned** for the claim about
+WHY they happened — I am diagnosing my own earlier slice from its shape, not from a record of my reasoning
+at the time.
+
+**What would change my mind.** If the other 11 seeded families turn out clean when their first consumer
+arrives, then this was three bad rows rather than a systematic property of demonstration-seeding, and the
+lesson shrinks to "cost rates specifically need a consumer to check them". I have not audited the other
+families and am not claiming they are wrong — only that nothing has checked them either. That audit is the
+honest next move and it is not in this slice.
+
+## O.70 · 2026-08-12 · When the law is silent, the engine must be silent too — not average
+
+**Opinion.** No circular mandating how statutory levies round could be read, so the engine rounds nothing
+on statutory lines and models rounding as a per-BROKER rule instead. The tempting alternative — adopt
+Zerodha's published "nearest rupee, ≥50 paise up" as the convention — would have been wrong in a specific
+and expensive way: it would convert one broker's billing practice into a regulatory fact, and every future
+reader of the code would see a rounding rule and assume it was sourced.
+
+**Reasoning.** `R.23(e)` permits a constant when it is a physical or regulatory fact with a source. A
+broker's rounding practice IS sourced, but it is a source for a fact about that broker, not about the levy.
+Putting it in the statutory layer would launder the provenance — the value would be right for Zerodha and
+silently wrong for every other broker, with nothing in the code saying so. Keeping it in the broker
+schedule costs one extra field and makes the reconciliation ledger able to MEASURE each broker's real
+rounding, which is strictly more than assuming one.
+
+**Confidence: reasoned.** The absence of a rounding circular is a failure to fetch, not a proof of absence
+— two candidate NSE circulars (INSP61999, FATAX63809) timed out on repeated attempts, so "no rule exists"
+is exactly what I must NOT conclude. What I am confident about is the design consequence: given uncertainty
+about where a rule lives, the layer with the weaker claim should hold it.
+
+**What would change my mind.** Fetching either circular. If NSE does mandate a rounding precision for
+statutory levies, it belongs in the rule store as a dated fact with its own family, the broker field
+becomes a deviation-from-mandate rather than the primary rule, and any broker whose contract notes
+disagree with the mandate becomes a finding rather than a configuration.
+
+## O.71 · 2026-08-12 · A charge of zero is a more dangerous output than a charge that is slightly wrong
+
+**Opinion.** The `L1.01` real-data pass priced 3,416 real symbols and found one — DHARAN, closing at 16
+paise — where every charge line is a fraction of a paisa and the billed total is exactly zero. My first
+instinct was to add a minimum-billable floor so the number would never be zero. That would have been
+wrong: the zero is CORRECT, and inventing a floor would have put a fabricated charge into a statutory
+line. What the case actually needs is for the zero to be *visible* to whatever divides by it.
+
+**Reasoning.** A gate that computes `edge_bps / cost_bps` clears any hurdle when the cost is zero, so a
+sub-paisa symbol would look like the best trade in the universe rather than the least tradeable one.
+The honest fix separates two questions that had been sharing one number: what the broker BILLS (zero,
+correct, reconcilable against a contract note) and what the trade COSTS (1.69 paise, also correct, and
+the right denominator). So `RoundTripCost` now carries both, plus `bills_as_free` so a consumer cannot
+reach the dangerous case without seeing it. The general form: **when a correct answer is dangerous for a
+downstream consumer, fix the interface, not the answer.**
+
+**Confidence: measured** on the finding — one symbol in a real 3,416-symbol cross-section, and I read its
+lines individually. **Reasoned** on the design: I have not yet built `L1.02`, so my claim about how the
+gate will consume this is an argument about a consumer that does not exist.
+
+**What would change my mind.** If `L1.02` turns out to need a single number rather than a pair, the right
+answer is for the gate to always use the exact figure and treat the billed one as reconciliation-only —
+which would make `bills_as_free` a reporting flag rather than a branch a caller must handle. I would also
+revisit if real contract notes show brokers applying a minimum charge, because then the floor is a real
+broker fact and belongs in the broker schedule — where, unlike in the statutory layer, it could be cited.
+
+## O.72 · 2026-08-12 · Coverage is a property of a store; correctness is a property of a consumer
+
+**Opinion.** `L0.31` reported all three cost families as covered, resolved them cleanly, graded them, and
+passed 34 tests — while two of the three were wrong and a third was missing. This is not a criticism of
+the store. It is that **no point-in-time rule store can tell you a rate is the wrong rate**, and building
+one and believing its coverage report is a category error I made this morning and corrected this
+afternoon only because a consumer arrived that knew what the numbers meant.
+
+**Reasoning.** The store's tests check resolution — the right record for the right date at the right
+belief time — and every one of them passes just as happily on a wrong value. The information needed to
+catch a mis-scoped rate is not in the store at all; it is in the arithmetic of the thing that uses it.
+The check that actually caught the exchange-charge defect was not a test I wrote, it was reconciling
+two seeded lines against a total the circular states in words: Rs 306.99 plus Rs 0.01 equals Rs 307. That
+is a consumer-side check, and it is now a parametrized test across both eras and three segments.
+
+**Confidence: measured.** Three defects, each verified against a primary circular whose text was fetched,
+and each now pinned by a regression test that fails on the old value.
+
+**What would change my mind.** Nothing about the diagnosis. What I am unsure about is the remedy at
+scale: eleven other seeded families have still never been checked by a consumer, and I have logged that
+rather than fixed it. The tempting general rule — "every fact needs an arithmetic cross-check" — is not
+achievable for families like expiry weekday where no independent total exists to reconcile against. For
+those the honest answer may be that coverage is all we get, and the dashboard should say so differently.

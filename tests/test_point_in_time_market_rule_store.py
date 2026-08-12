@@ -650,12 +650,16 @@ def test_the_seeded_store_refuses_the_eras_it_has_no_source_for() -> None:
     )
 
     store = seeded_nse_market_rule_store()
-    segment_scope = RuleScope(segment="NFO")
+    # The charge-scope vocabulary declared in `A.90`: "NFO" alone was ambiguous
+    # between options and futures, and cash needed splitting by product mode.
+    segment_scope = RuleScope(segment="NFO-OPT")
 
     with pytest.raises(RuleCoverageError):
         store.resolve(RuleFamily.EXCHANGE_TRANSACTION_CHARGE, date(2019, 6, 1), scope=segment_scope)
     with pytest.raises(RuleCoverageError):
-        store.resolve(RuleFamily.STAMP_DUTY, date(2018, 6, 1), scope=RuleScope(segment="NSE"))
+        store.resolve(
+            RuleFamily.STAMP_DUTY, date(2018, 6, 1), scope=RuleScope(segment="NSE-CNC")
+        )
     with pytest.raises(RuleCoverageError):
         store.resolve(RuleFamily.PER_STOCK_PRICE_BAND, date(2024, 6, 1))
 
@@ -676,7 +680,7 @@ def test_the_seeded_rates_are_the_ones_a_cost_model_would_use_today() -> None:
     )
 
     store = seeded_nse_market_rule_store()
-    options = RuleScope(segment="NFO")
+    options = RuleScope(segment="NFO-OPT")
     futures = RuleScope(segment="NFO-FUT")
 
     # 0.0625% of premium in the 2023-2024 era, 0.1% after.

@@ -238,7 +238,24 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 
 **— L1 —**
 
-- [ ] **1.35** NSE transaction-cost engine — `L1.01`
+- [~] **1.35** NSE transaction-cost engine — `L1.01` · every statutory and broker levy on an NSE trade,
+      priced POINT-IN-TIME out of `L0.31`'s bitemporal store and REFUSED where the era is uncompiled.
+      Eight chargeable segments (cash delivery/intraday, equity futures/options, currency, commodity),
+      nine components, exact `Decimal` paise, evidence grade carried through to the answer. Three
+      genuine solves rather than a fee calculator: a closed-form piecewise-linear BREAKEVEN root
+      (self-referential — the exit price sets the sell-side levies that set the breakeven), an integer
+      solve for the minimum viable quantity over the brokerage step function, and a reconciliation
+      LEDGER that measures the engine's own error against real contract notes and refuses to turn a
+      residual into a correction factor. Spec `docs/research/219`; 82 tests; wired as a daily-runner
+      step and surfaced at `/costs`. **Found and fixed three silent defects in facts seeded the same
+      morning** (`A.90`): an options exchange charge that was really a cash rate (~12x low), a cash
+      stamp duty scoped to all cash but carrying the delivery-only rate (5x high intraday), and cash
+      STT missing entirely — plus a latent `coverage()` crash in `L0.31` that the new facts triggered.
+      **Corrected the corpus twice:** the SEBI turnover fee is charged on NOTIONAL, not premium
+      (`research/164` and `b28` both wrong), and exercised-option STT is 0.125% until 2026-04-01 with
+      the intrinsic-value basis dating from 2019, not 2024. R.05 passed on the real tape: 3,416 real
+      symbols priced, and the option breakeven steps on the real statutory dates and is flat between
+      them. `[~]` not `[x]` per `R.11` — the primary consumer, `L1.02`'s gate, is still queued
 - [ ] **1.36** Pre-trade cost gate — `L1.02`
 - [ ] **1.37** Net-EV gate — `L1.03`
 - [ ] **1.38** Per-segment minimum-edge floor — `L1.04`

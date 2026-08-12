@@ -38,6 +38,7 @@ ROUTES = (
     "/clock",
     "/feed",
     "/history",
+    "/costs",
 )
 
 PAGE_LOAD_TIMEOUT_MILLISECONDS = 120_000

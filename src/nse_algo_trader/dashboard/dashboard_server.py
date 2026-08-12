@@ -21,8 +21,10 @@ import pkgutil
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from html import escape
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, Request
 from fastapi.responses import (
@@ -71,6 +73,11 @@ from nse_algo_trader.dashboard.regime_brain_read_model import (
 from nse_algo_trader.dashboard.regime_brain_surface_renderer import (
     render_regime_brain_page,
 )
+from nse_algo_trader.dashboard.transaction_cost_surface_renderer import (
+    SegmentPricingAssumption,
+    build_transaction_cost_surface_state,
+    render_transaction_cost_page,
+)
 from nse_algo_trader.market_depth.market_depth_tape_store import (
     DepthTapeStoreError,
     MarketDepthTapeReader,
@@ -82,6 +89,13 @@ from nse_algo_trader.market_depth.order_book_snapshot_replay_engine import (
 )
 from nse_algo_trader.market_rules.nse_market_rule_history import (
     seeded_nse_market_rule_store,
+)
+from nse_algo_trader.transaction_cost.charge_reconciliation_ledger import (
+    ChargeReconciliationLedger,
+)
+from nse_algo_trader.transaction_cost.chargeable_market_segments import ChargeableSegment
+from nse_algo_trader.transaction_cost.nse_transaction_cost_engine import (
+    NseTransactionCostEngine,
 )
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -160,6 +174,57 @@ def _remember_key(response: HTMLResponse | RedirectResponse, request: Request) -
         response.set_cookie(ACCESS_COOKIE_NAME, supplied, httponly=True, samesite="lax", path="/")
 
 
+IST = ZoneInfo("Asia/Kolkata")
+"""The exchange's own timezone. A cost page dated by UTC would show yesterday's session
+after 18:30 IST, which is exactly when the operator is looking at it."""
+
+TRANSACTION_COST_DISPLAY_ASSUMPTIONS: tuple[SegmentPricingAssumption, ...] = (
+    SegmentPricingAssumption(
+        segment=ChargeableSegment.EQUITY_INTRADAY,
+        price_paise=Decimal(140_000),
+        lot_size=100,
+        representative_lots=10,
+        maximum_lots=40,
+    ),
+    SegmentPricingAssumption(
+        segment=ChargeableSegment.EQUITY_DELIVERY,
+        price_paise=Decimal(140_000),
+        lot_size=100,
+        representative_lots=10,
+        maximum_lots=40,
+    ),
+    SegmentPricingAssumption(
+        segment=ChargeableSegment.EQUITY_OPTIONS,
+        price_paise=Decimal(15_000),
+        lot_size=75,
+        representative_lots=2,
+        maximum_lots=40,
+        strike_paise=Decimal(2_400_000),
+    ),
+    SegmentPricingAssumption(
+        segment=ChargeableSegment.EQUITY_FUTURES,
+        price_paise=Decimal(2_400_000),
+        lot_size=75,
+        representative_lots=1,
+        maximum_lots=20,
+    ),
+)
+"""What each segment is DISPLAYED at. Assumptions, and labelled as such on the page.
+
+Cash uses a 100-share block as its ladder step rather than a single share. The staircase is
+computed one priced round trip per tread, so a ladder of 20,000 single shares is 20,000 pricing
+calls and an SVG with 20,000 points — measured at 10.5 MB of HTML, which is not a page.
+
+Four of the eight segments, because these are the ones being traded first; currency and
+commodity price correctly and are simply not shown until a holon trades them."""
+
+TRANSACTION_COST_DISPLAY_CEILING_BPS = Decimal(50)
+"""The cost ceiling the minimum-viable-quantity column solves against.
+
+A DISPLAY choice, not a policy: `L1.04` derives the real per-segment floor from data. This
+only decides what the column asks, and it is here rather than in the engine so nobody mistakes
+it for a measurement."""
+
 SURFACED_MODULES: frozenset[str] = frozenset(
     {
         "nse_algo_trader.regime.trend_strength_regime_classifier",
@@ -193,6 +258,14 @@ SURFACED_MODULES: frozenset[str] = frozenset(
         "nse_algo_trader.deep_history.deep_history_bhavcopy_reader",
         "nse_algo_trader.deep_history.deep_history_archive_loader",
         "nse_algo_trader.dashboard.deep_history_surface_renderer",
+        "nse_algo_trader.transaction_cost.chargeable_market_segments",
+        "nse_algo_trader.transaction_cost.charge_structure_history",
+        "nse_algo_trader.transaction_cost.broker_fee_schedules",
+        "nse_algo_trader.transaction_cost.nse_transaction_cost_engine",
+        "nse_algo_trader.transaction_cost.breakeven_move_solver",
+        "nse_algo_trader.transaction_cost.quantity_cost_economics",
+        "nse_algo_trader.transaction_cost.charge_reconciliation_ledger",
+        "nse_algo_trader.dashboard.transaction_cost_surface_renderer",
     }
 )
 """Modules that genuinely have a panel today. Declaring this is safe precisely BECAUSE
@@ -360,6 +433,29 @@ def build_dashboard_app() -> FastAPI:
         response = HTMLResponse(
             render_market_rule_coverage_page(seeded_nse_market_rule_store().coverage())
         )
+        _remember_key(response, request)
+        return response
+
+    @app.get("/costs", response_class=HTMLResponse)
+    def transaction_cost_surface(request: Request) -> HTMLResponse:
+        """`L1.01`'s surface: what trading each segment costs, and what it refuses to price.
+
+        The pricing assumptions are declared HERE rather than inside the renderer, because a
+        representative premium is a display choice and freezing one in the engine's own module
+        would turn it into a policy every reader would mistake for a measurement.
+        """
+        if not _is_authorised(request):
+            return _unauthorised_html()
+        rule_store = seeded_nse_market_rule_store()
+        state = build_transaction_cost_surface_state(
+            NseTransactionCostEngine(rule_store),
+            ChargeReconciliationLedger(),
+            TRANSACTION_COST_DISPLAY_ASSUMPTIONS,
+            priced_on=datetime.now(IST).date(),
+            cost_bps_ceiling=TRANSACTION_COST_DISPLAY_CEILING_BPS,
+            rule_store=rule_store,
+        )
+        response = HTMLResponse(render_transaction_cost_page(state))
         _remember_key(response, request)
         return response
 

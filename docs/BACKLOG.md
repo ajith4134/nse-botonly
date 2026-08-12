@@ -3610,3 +3610,37 @@ expiries; EXIDEIND + NUVAMA held 1 and left F&O ~35 trading days later). `DALBHA
   (one login per day, token reused) would stop the nightly run burning its allowance.
 - **ICICI Breeze symbology remains unbuilt** (`L0.17`). The resolver framework now exists and takes a new
   broker as one class; Breeze needs a daily web-minted session key before its master can be read.
+- **The rounding convention for statutory levies is unsourced** (`L1.01`, `A.90`, `O.70`). No SEBI or NSE
+  circular mandating rounding precision for STT/stamp duty/exchange charges/SEBI fee could be read; two
+  candidates (NSE/INSP61999, NSE/FATAX63809) timed out on repeated fetches. The only primary clause
+  recovered, NSE/INSP/2006/44, is a no-markup rule ("at actuals paid or payable"), not a precision rule.
+  The engine therefore rounds NOTHING on statutory lines and carries rounding as a per-broker field.
+  Resolve by direct download (curl, not WebFetch) of the two circulars; if a mandate exists it becomes a
+  new `RuleFamily` and the broker field becomes a deviation-from-mandate.
+- **MCX's own circular PDF could not be read** (`L1.01`). The MCX transaction charges now seeded
+  (futures Rs 2.10/lakh, options Rs 41.80/lakh of premium, MCX/F&A/631/2024 eff. 2024-10-01) are
+  triangulated across five independent sources that agree on both the rate AND the circular number,
+  but mcxindia.com returns HTTP 403 to every automated request (Akamai bot protection), so the
+  primary text was never read. Also unrecovered: MCX's 2017-2024 slab table, and whether the charge
+  is levied on one side or both. Resolve with a manual browser download of MCX/F&A/631/2024.
+- **Seven cost facts rest on secondary sources** (`L1.01`, `research/219` §12.9): cash STT base rates
+  (Finance Bill 2023 PDF returns 403); pre-Oct-2024 exchange-charge slab breakpoints (not aggregated
+  anywhere, so those dates are REFUSED rather than guessed); the SEBI options-fee notional basis (no
+  public circular — only BSE's own disclosure); GST's exclusion of STT/stamp (statute-derived, no CBIC
+  circular); the Sept-2019 intrinsic-value base change (three citing sources, primary not pulled);
+  commodity and SLB segment IPFT (no line item found). Each is stored at its true evidence grade and
+  surfaces through `RoundTripCost.weakest_evidence_grade`, so a caller can see what its cost rests on.
+- **The other 11 seeded rule families have never been checked by a consumer** (`O.69`). `L1.01` found
+  three wrong rows in the three families it actually uses. The remaining families were seeded the same
+  way and nothing has verified their CONTENT — only that the store resolves them. Audit each against its
+  cited source before its first consumer trusts it.
+- **`L1.01`'s primary consumer is queued** (`R.11`). The charge engine is complete and wired to the
+  daily runner and `/costs`, but the thing it was built FOR — `L1.02`'s pre-trade gate, which turns a
+  round-trip cost into a PASS/RESIZE/VETO on a real signal — does not exist yet. Until it does, no
+  signal is actually being stopped by cost, which is the whole point of the `L1` layer. `1.35` is
+  therefore `[~]`, not `[x]`.
+- **Slippage is not modelled anywhere yet** (`L1.05`/`L1.06`). The breakeven figures this engine
+  produces are STATUTORY-AND-BROKERAGE ONLY. On a real fill the spread is frequently the larger term,
+  especially for the small cash trades where `L1.01` reports a cost near zero, so a breakeven from
+  this engine is a FLOOR on what a trade must earn, never the whole hurdle. Anything quoting these
+  numbers as "the cost of trading" before `L1.05` lands is understating it.
