@@ -29,6 +29,9 @@ from fastapi.responses import (
     RedirectResponse,
 )
 
+from nse_algo_trader.dashboard.market_rule_coverage_surface_renderer import (
+    render_market_rule_coverage_page,
+)
 from nse_algo_trader.dashboard.module_surface_catalogue import build_module_catalogue
 from nse_algo_trader.dashboard.operations_wall_renderer import render_operations_wall
 from nse_algo_trader.dashboard.order_book_replay_surface_renderer import (
@@ -49,6 +52,9 @@ from nse_algo_trader.market_depth.order_book_snapshot_replay_engine import (
     InstrumentCoverageReport,
     OrderBookReplayError,
     OrderBookSnapshotReplayEngine,
+)
+from nse_algo_trader.market_rules.nse_market_rule_history import (
+    seeded_nse_market_rule_store,
 )
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -132,6 +138,9 @@ SURFACED_MODULES: frozenset[str] = frozenset(
         "nse_algo_trader.strategy.intraday_mean_reversion_engine",
         "nse_algo_trader.market_depth.order_book_snapshot_replay_engine",
         "nse_algo_trader.dashboard.order_book_replay_surface_renderer",
+        "nse_algo_trader.market_rules.point_in_time_market_rule_store",
+        "nse_algo_trader.market_rules.nse_market_rule_history",
+        "nse_algo_trader.dashboard.market_rule_coverage_surface_renderer",
     }
 )
 """Modules that genuinely have a panel today. Declaring this is safe precisely BECAUSE
@@ -251,6 +260,21 @@ def build_dashboard_app() -> FastAPI:
                 f"<h1>Cannot replay the depth tape</h1><p>{failure}</p>", status_code=503
             )
         response = HTMLResponse(render_order_book_replay_page(report))
+        _remember_key(response, request)
+        return response
+
+    @app.get("/rules", response_class=HTMLResponse)
+    def market_rule_coverage_surface(request: Request) -> HTMLResponse:
+        """`L0.31`'s surface: which eras this project can price and which it refuses.
+
+        Measured from the seeded store itself, so a family compiled tomorrow appears here
+        with no edit, and one whose facts are removed turns red by itself.
+        """
+        if not _is_authorised(request):
+            return _unauthorised_html()
+        response = HTMLResponse(
+            render_market_rule_coverage_page(seeded_nse_market_rule_store().coverage())
+        )
         _remember_key(response, request)
         return response
 

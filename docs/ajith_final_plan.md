@@ -2664,6 +2664,56 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.80 · 2026-08-12 · `L0.31` built as a store that would rather REFUSE than substitute, and the
+refusals cover most of Indian market history.** A replay of 2019 applying 2026's STT rate returns a
+plausible number and a wrong conclusion; the same for today's expiry weekday applied to the nine years
+NIFTY expired on Thursday. So the central design choice is that a date outside what has actually been
+compiled raises `RuleCoverageError`, and per `research/61` that is *most* of the history — pre-2003 tick
+sizes, pre-2020 stamp duty, the 2004-2013 options-STT path, and the entire pre-Oct-2024
+exchange-transaction-charge slab schedule are documented, permanent gaps.
+
+*What was built.* Sixteen rule families (the full `research/61` §2.8 enumeration, not a sample), two time
+axes — effective time at the exchange and belief time at this project — and an interval-reconciliation
+solver that splits at every boundary, picks a winner per segment by scope specificity then evidence
+grade then recency, and **reports what lost**. A genuine tie returns UNRESOLVED rather than being decided
+by a preference the store invented.
+
+*The `R.03` question, answered rather than dodged.* An STT rate is a hardcoded constant by every
+syntactic test. `R.23(e)` exempts "a physical or regulatory fact, sourced in a comment", and the exemption
+is carried by the CITATION, not the type — so `MarketRuleRecord.__post_init__` rejects any record with an
+empty `source_reference`. That check is the entire difference between a regulatory fact and the thing
+`R.03` bans, and it is enforced at construction rather than trusted.
+
+*Two decisions worth recording because they were not obvious.*
+
+1. **Observed outranks documentary.** `market_data.instrument_master` holds 227,535 dated rows of real
+   tick and lot sizes. Where it covers a date it beats a circular, because the circular says what was
+   *announced* and the instrument master says what was *in force*. The grade ladder is
+   observed > primary > secondary > unverified, not the documentary ladder alone.
+2. **Scope specificity outranks evidence grade.** A BANKNIFTY expiry rule is not a better-sourced claim
+   about every index's expiry, it is a statement about a different subject, so a narrow weakly-sourced
+   rule beats a broad strongly-sourced one rather than competing with it.
+
+*The `R.05` pass corrected the feature.* Checking the seeded expiry weekdays against the exchange's own
+contracts in `instrument_master` found NIFTY's 2029-12-24 expiry on a **Monday** against a TUESDAY rule.
+Not an error: NSE rolls expiry back to the previous session when the scheduled day is a holiday, and
+2029-12-25 is Christmas. So the rule is the SCHEDULED weekday and the calendar resolves holidays — which
+the test now asserts. It also surfaced a second-order limit: `nse_trading_session_calendar` reports 2029
+as unreliable (zero recognised holidays, because `pandas_market_calendars` publishes no rules past 2026),
+so the test defers to that self-declared unreliability rather than asserting against a source that has
+already said it cannot answer.
+
+*Sourcing (`research/215` §6b).* No Python library models both temporal axes — `bitemporal` targets
+Python 2.5, `scd2` stamps validity with `datetime.now()` so it cannot backfill, `sqlalchemy-continuum`
+versions rows rather than intervals, and `pygrametl` (the one serious contender) models valid time only.
+`portion` 2.6.2 genuinely does the interval half and is adopted as a **differential test oracle**, not as
+the solver: its last-writer-wins reconciliation would silently prefer the most recently compiled fact,
+which is the arbitrary preference this store exists to refuse.
+
+*Open, recorded:* five families are uncovered, and `tick_size` is uncovered **deliberately** — the
+2003-2024 circular chain is readable but unread, and seeding a flat ₹0.05 would be a guess wearing a
+citation. The first real consumer, `L1.01`, is still queued.
+
 **A.79 · 2026-08-12 · `L0.22` built, renamed to what it actually is, and three of its estimators were
 wrong until real data and a second implementation said so.** The plan entry reads "tick-level order-book
 reconstruction" and also says it is retail-infeasible. Both are true, so the module is

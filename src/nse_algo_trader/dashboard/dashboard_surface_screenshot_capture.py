@@ -29,7 +29,7 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8080"
 ACCESS_TOKEN_PATH = Path("~/.nse_algo_trader/dashboard_access_token.txt").expanduser()
 DEFAULT_OUTPUT_ROOT = Path("~/nse_archive/dashboard_screenshots").expanduser()
 
-ROUTES = ("/wall", "/regime", "/manifest", "/microstructure")
+ROUTES = ("/wall", "/regime", "/manifest", "/microstructure", "/rules")
 """Every route a human reads. `/healthz` is excluded deliberately — it returns plain text
 and has no visual claim to confirm.
 

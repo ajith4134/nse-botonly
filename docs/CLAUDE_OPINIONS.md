@@ -886,3 +886,49 @@ that this generalises to every LOB library is inference from five, not a census.
 book series as input. `mansoor-mamnoon/limit-order-book` is the one candidate that might be it — its
 own analytics output already includes imbalance, micro-price and impact — but it needs a CMake/C++
 build never attempted here, so it is surfaced in `research/214` for the operator rather than judged.
+
+## O.56 · 2026-08-12 · A store that cannot say "I don't know" is worse than no store
+
+**Opinion.** `L0.31` holds ~30 facts and refuses five of its sixteen families outright. A reasonable
+instinct is that this makes it half-built. I think the refusals are the more valuable half. The
+alternative — return the nearest known rule — produces a plausible number for every historical query,
+and a plausible number is indistinguishable from a correct one at the point of use. A study that
+silently priced 2019 options at the 2024 STT rate would look completely normal.
+
+**Reasoning.** The asymmetry is what decides it. A refusal costs one visible failure that someone fixes
+by compiling a circular. A substitution costs an invisible error that propagates into every conclusion
+drawn from that study, and is discoverable only by someone who already suspects it. This is the same
+shape as `O.52` — a broker client that constructs without validating — and the fix is the same: make
+the ignorant state a distinct, loud value rather than a plausible one.
+
+**Confidence: reasoned.** The design argument is strong and `research/61` measured that most eras have no
+admissible source. What I have NOT measured is how often a consumer will hit a refusal in practice, or
+whether that turns out to be so frequent that callers start passing a default around it — which would
+reintroduce the substitution one layer up, where the store cannot see it.
+
+**What would change my mind.** Watching `L1.01` be written. If the cost engine ends up wrapping every
+`resolve()` in a try/except with a fallback rate, then the refusal was pushed rather than solved, and the
+right answer was a fidelity TIER on the returned value rather than an exception. I would rather find that
+out from the first consumer than guess now.
+
+## O.57 · 2026-08-12 · Adopting a library as a test oracle is a third option I keep under-using
+
+**Opinion.** Twice today the sourcing pass found one genuinely good library — `tclf` for trade
+classification, `portion` for interval reconciliation — and both times the honest verdict was neither
+DEPEND nor REJECT. Each was adopted as a **differential oracle in a property test**: not in the runtime
+path, because each lacked the state or policy the engine actually needs, but asserted against on random
+inputs where the two agree.
+
+**Reasoning.** The binary framing costs real quality. Depending on `tclf` would have forced a streaming
+engine through a batch sklearn estimator; rejecting it outright would have left the quote-rule defect it
+found — comparing against the touch rather than the midpoint — sitting in the code with thirty passing
+unit tests over it. The oracle option gets the reference's correctness without its architecture, and it
+is cheap: one property test.
+
+**Confidence: measured**, at least for the value. `tclf` found a real defect on its first run;
+`portion` confirmed the interval splitting on 120 generated cases. Two for two.
+
+**What would change my mind.** An oracle that drifts — a library changing its own semantics and turning
+a green test red for a reason that is not my defect. That would make the pattern a maintenance cost
+rather than a free check. I would keep it regardless for anything implementing a NAMED algorithm from a
+paper, where the reference's reading of the paper is the thing I want to check mine against.

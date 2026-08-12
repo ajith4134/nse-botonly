@@ -8,6 +8,27 @@ Reconcile with the live task list at each session start.
 
 Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) · ⛔ blocked
 
+## `L0.31` point-in-time market rules (2026-08-12, `A.80`) — 🟡 built, five families uncovered
+
+- 🔴 **Five of sixteen families have no facts at all**, so every query against them refuses:
+  `tick_size`, `lot_size`, `per_stock_price_band`, `dynamic_price_band`, `session_hours`. Ranked by how
+  cheaply they close: `tick_size` and `session_hours` have readable circular chains (`research/61` §2.3,
+  §2.6) and are a reading job; `lot_size` has essentially no compiled history beyond NIFTY;
+  `per_stock_price_band` is the **hard** one — decided ad hoc daily by NSE Surveillance, in no circular,
+  archive unconfirmed.
+- 🔴 **`tick_size` is uncovered on purpose.** Seeding a flat ₹0.05 for 2003-2024 would be a guess with a
+  citation attached, which is worse than a refusal. Close it by reading the NSE Master Circular §3.3
+  chain, including the Jun-2024 move to price-linked tiers.
+- 🔴 **The observed-fact path is designed but not wired.** `market_data.instrument_master` has 227,535
+  dated rows of real tick/lot sizes; diffing consecutive `ingested_on` snapshots would generate
+  `OBSERVED_FROM_EXCHANGE_DATA` records automatically and detect a rule change the day it happens. The
+  grade exists and outranks documentary evidence; nothing populates it yet.
+- 🔴 **Consumer queued.** `L1.01` (transaction-cost engine, spec `research/164`) is the reason this
+  exists and does not exist yet. `R.06` is met by the `/rules` surface, not by a load-bearing caller.
+- ℹ️ **Persistence deferred.** The store is in-memory and rebuilt per request from the seeded table,
+  which is correct while the table is ~30 facts. It needs a SQLite table once circular-reading starts
+  producing facts faster than a Python module wants to hold them.
+
 ## `L0.22` order-book replay (2026-08-12, `A.79`) — 🟡 built, three open
 
 - 🔴 **`/microstructure` replays on request and is therefore bounded.** 25 instruments takes ~3.6s;

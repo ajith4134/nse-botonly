@@ -210,7 +210,7 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       place in the ingest core where remote payload data reaches URL construction, so discovered values
       are validated at construction — URL control characters, control bytes, unbounded length and empty
       values all refused, with 10 hostile inputs tested. `[~]` per `R.08`: no dashboard surface yet.*
-- [ ] **1.31** Point-in-time market rules + calendar history — `L0.31`
+- [x] **1.31** Point-in-time market rules + calendar history — `L0.31` · bitemporal rule store: 16 families, effective-time × belief-time, interval reconciliation with conflicts SURFACED not resolved away, and `RuleCoverageError` rather than substituting today's regime. Seeded from `research/61`'s dated circulars — 11 of 16 families covered, 5 deliberately uncovered because no admissible source exists. Spec `docs/research/215`; 34 tests incl. a `portion` differential property test and an R.05 pass against the exchange's own contracts (`A.80`). Surface at `/rules`
 - [ ] **1.32** Clock sync + drift alert — `L0.32`
 - [ ] **1.33** Multi-broker consolidated feed with liquidity-weighted cross-check — `L0.33`
 - [~] **1.34** Deep-history price + universe sourcing (~20yr) — `L0.34` — ***STARTED out of sequence***,
