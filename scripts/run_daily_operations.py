@@ -42,6 +42,11 @@ from nse_algo_trader.broker_credentials import (
 from nse_algo_trader.broker_credentials.kite_login_credentials_loader import (
     load_kite_login_credentials,
 )
+from nse_algo_trader.broker_sessions.angel_one_session_store import (
+    AngelOneSessionError,
+    AngelOneSessionFileStore,
+    session_record_from_login,
+)
 from nse_algo_trader.broker_sessions.authenticated_kite_client_builder import (
     build_authenticated_kite_client_if_valid,
 )
@@ -417,34 +422,66 @@ def _refresh_broker_symbology() -> str:
 def _build_angel_one_client() -> object | None:
     """An authenticated SmartAPI client, or None when Angel will not talk to us.
 
-    None rather than raising: Angel is a SECOND source, and a failure to reach it must
+    Tries the CACHED session first, so a run that wants a client more than once logs in
+    once. (An earlier version of this docstring claimed Angel throttles repeated logins.
+    That was WRONG — the repeated failures were this function being called before `.env`
+    was loaded, and a direct login succeeded immediately once that was ruled out. Caching
+    is still right, because a login per component is waste, but it is not a workaround for
+    a limit Angel was never imposing.)
+
+    None rather than raising: Angel is a SECOND source, so failing to reach it must
     degrade the run to single-source reconciliation rather than stop it. The reconciler
-    records the absence, so a permanently broken broker cannot look like a broker that
-    simply had no data.
+    records the absence, so a broken broker cannot be mistaken for one with no data.
     """
     try:
         import pyotp
         from SmartApi import SmartConnect
     except ImportError:
         return None
-    required = (
-        "ANGEL_ONE_API_KEY",
-        "ANGEL_ONE_CLIENT_CODE",
-        "ANGEL_ONE_PIN",
-        "ANGEL_ONE_TOTP_SECRET",
-    )
+    # Load credentials here rather than relying on an earlier step having done it. This
+    # function returning None is ambiguous by design — "Angel will not talk to us" — and
+    # an unloaded .env produced exactly that answer for a reason that had nothing to do
+    # with Angel. It cost a wrong conclusion: repeated Nones were read as Angel throttling
+    # logins when the real cause was this function being called before the environment was
+    # populated. `load_env_file_into_environ` is idempotent, so calling it is free.
+    load_env_file_into_environ()
+    if "ANGEL_ONE_API_KEY" not in os.environ:
+        return None
+
+    api_key = os.environ["ANGEL_ONE_API_KEY"]
+    store = AngelOneSessionFileStore()
+    try:
+        cached = store.load_for_today()
+    except AngelOneSessionError:
+        cached = None  # A corrupt cache is replaced by a fresh login, not a dead run.
+    if cached is not None:
+        rehydrated: object = SmartConnect(
+            api_key=api_key,
+            access_token=cached.jwt_token,
+            refresh_token=cached.refresh_token,
+            feed_token=cached.feed_token,
+        )
+        return rehydrated
+
+    required = ("ANGEL_ONE_CLIENT_CODE", "ANGEL_ONE_PIN", "ANGEL_ONE_TOTP_SECRET")
     if any(name not in os.environ for name in required):
         return None
     try:
-        client = SmartConnect(api_key=os.environ["ANGEL_ONE_API_KEY"])
-        session = client.generateSession(
+        client = SmartConnect(api_key=api_key)
+        login = client.generateSession(
             os.environ["ANGEL_ONE_CLIENT_CODE"],
             os.environ["ANGEL_ONE_PIN"],
             pyotp.TOTP(os.environ["ANGEL_ONE_TOTP_SECRET"]).now(),
         )
+        record = session_record_from_login(login)
+    # `AngelOneSessionError` (a refused or malformed login) is deliberately inside this
+    # net rather than beside it: every path here means "no Angel client", and separating
+    # them would imply a caller that can act on the difference. None is that answer.
     except Exception:  # noqa: BLE001 — SmartAPI raises assorted transport types
         return None
-    return client if session.get("status") else None
+    store.store(record)
+    authenticated: object = client
+    return authenticated
 
 
 def _fetch_with_throttle_backoff(
