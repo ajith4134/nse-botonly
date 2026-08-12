@@ -41,12 +41,17 @@ from decimal import Decimal
 from enum import StrEnum
 
 from nse_algo_trader.cost_gate.priced_signal import EdgeBasis, PricedSignal
+from nse_algo_trader.cost_gate.tradeable_ticket_preconditions import (
+    PreconditionReport,
+    evaluate_preconditions,
+)
 from nse_algo_trader.execution_fill.execution_fill_model import (
     ExecutionFillError,
     ExecutionFillModel,
     ExpectedFill,
 )
 from nse_algo_trader.market_depth.order_book_snapshot_replay_engine import BookSnapshot
+from nse_algo_trader.transaction_cost.chargeable_market_segments import TaxableBase
 from nse_algo_trader.transaction_cost.nse_transaction_cost_engine import (
     NseTransactionCostEngine,
     RoundTripCost,
@@ -115,6 +120,7 @@ class GateDecision:
     reason: str
     round_trip_cost: RoundTripCost | None = None
     expected_fill: ExpectedFill | None = None
+    preconditions: PreconditionReport | None = None
 
     @property
     def is_tradeable(self) -> bool:
@@ -173,8 +179,13 @@ class PreTradeCostGate:
         *,
         trade_date: date | None = None,
         known_as_of: date | None = None,
+        range_width_bps: Decimal | None = None,
     ) -> GateDecision:
-        """Decide. Never raises for an unpriceable trade — it returns `UNPRICEABLE`."""
+        """Decide. Never raises for an unpriceable trade — it returns `UNPRICEABLE`.
+
+        `range_width_bps` is supplied only by a caller proposing a RANGE trade, and is checked
+        against the hurdle by `L11.99`'s precondition. Omitting it is not a failure.
+        """
         if self._minimum_edge_basis is not None and not _basis_is_at_least(
             signal.edge_basis, self._minimum_edge_basis
         ):
@@ -206,6 +217,28 @@ class PreTradeCostGate:
                 ),
             )
 
+        preconditions = evaluate_preconditions(
+            signal,
+            fill,
+            flat_charges_paise=_flat_charges_paise(cost),
+            hurdle_bps=hurdle.required_bps,
+            range_width_bps=range_width_bps,
+        )
+        if not preconditions.all_satisfied:
+            # These are economic facts about the TICKET, independent of whether the signal is
+            # right. Resizing cannot fix a spread that exceeds the edge or a denominator that
+            # was wrong, so this is a veto rather than a resize.
+            return GateDecision(
+                verdict=GateVerdict.VETO,
+                signal=signal,
+                hurdle=hurdle,
+                approved_quantity=0,
+                reason=f"precondition failed — {preconditions.describe()}",
+                round_trip_cost=cost,
+                expected_fill=fill,
+                preconditions=preconditions,
+            )
+
         if signal.expected_edge_bps >= hurdle.required_bps:
             return GateDecision(
                 verdict=GateVerdict.PASS,
@@ -215,6 +248,7 @@ class PreTradeCostGate:
                 reason="edge clears the hurdle at the proposed size",
                 round_trip_cost=cost,
                 expected_fill=fill,
+                preconditions=preconditions,
             )
 
         viable = self._largest_viable_quantity(signal, snapshot, as_of, known_as_of)
@@ -230,6 +264,7 @@ class PreTradeCostGate:
                 ),
                 round_trip_cost=cost,
                 expected_fill=fill,
+                preconditions=preconditions,
             )
 
         resized_hurdle, resized_cost, resized_fill = self._hurdle_for(
@@ -246,6 +281,7 @@ class PreTradeCostGate:
             ),
             round_trip_cost=resized_cost,
             expected_fill=resized_fill,
+            preconditions=preconditions,
         )
 
     # ------------------------------------------------------------------ internals
@@ -337,3 +373,17 @@ _BASIS_STRENGTH: dict[EdgeBasis, int] = {
 
 def _basis_is_at_least(actual: EdgeBasis, required: EdgeBasis) -> bool:
     return _BASIS_STRENGTH[actual] >= _BASIS_STRENGTH[required]
+
+
+def _flat_charges_paise(cost: RoundTripCost) -> Decimal:
+    """The size-independent part of the round trip — what `L11.107`'s ticket rule bites on.
+
+    Brokerage that has reached its flat cap, plus any per-debit depository charge. These are
+    the charges whose PERCENTAGE explodes as the ticket shrinks, which is the whole reason a
+    minimum ticket exists.
+    """
+    flat = Decimal(0)
+    for line in cost.lines:
+        if line.taxable_base in (TaxableBase.PER_ORDER, TaxableBase.PER_DEBIT_TRANSACTION):
+            flat += line.exact_paise
+    return flat

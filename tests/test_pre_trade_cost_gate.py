@@ -27,6 +27,7 @@ from nse_algo_trader.cost_gate.priced_signal import (
     PricedSignalError,
     edge_from_mean_reversion_decision,
 )
+from nse_algo_trader.cost_gate.tradeable_ticket_preconditions import PreconditionName
 from nse_algo_trader.execution_fill.execution_fill_model import ExecutionFillModel
 from nse_algo_trader.market_depth.depth_tape_schema import DepthLevel, IntegrityFlag
 from nse_algo_trader.market_depth.order_book_snapshot_replay_engine import BookSnapshot
@@ -292,13 +293,18 @@ def test_a_date_with_no_compiled_rates_is_unpriceable_not_vetoed(gate: PreTradeC
 @pytest.mark.adversarial
 def test_no_size_clears_when_the_edge_is_hopeless(gate: PreTradeCostGate) -> None:
     """A veto at every size is a different statement from a resize, and says so."""
+    # An edge above the live spread (so the preconditions pass) but below the hurdle at every
+    # size. A vanishingly small edge would now be caught earlier and more usefully by the
+    # ticket and spread preconditions, which is the correct behaviour — this test exists for
+    # the OTHER branch, where the trade is economic in shape and simply not worth taking.
     decision = gate.evaluate(
-        signal(expected_edge_bps=Decimal("0.001"), proposed_quantity=10_000),
+        signal(expected_edge_bps=Decimal(20), proposed_quantity=10_000),
         book(),
         trade_date=TODAY,
     )
     assert decision.verdict is GateVerdict.VETO
     assert decision.approved_quantity == 0
+    assert decision.preconditions is not None and decision.preconditions.all_satisfied
     assert "any quantity" in decision.reason
 
 
@@ -331,3 +337,149 @@ def test_the_decision_explains_itself_in_one_line(gate: PreTradeCostGate) -> Non
     assert "TESTCO" in described
     assert "hurdle" in described
     assert "statutory" in described
+
+
+# ------------------------------- the ticket preconditions (L11.99, L11.106-L11.108)
+
+
+@pytest.mark.unit
+def test_an_option_priced_against_the_underlying_is_caught(gate: PreTradeCostGate) -> None:
+    """`L11.106`: the denominator must be the instrument you TRADE.
+
+    Five points on a Rs 100 premium is 5% and viable; the same five points against NIFTY at
+    24,000 is 0.02% and looks fatal. Both describe the same trade. Passing the underlying's
+    price as the reference understates every bps figure by roughly the ratio between them, and
+    it does so in the FLATTERING direction, which is why it must be caught rather than noticed.
+    """
+    underlying_priced = signal(
+        segment=ChargeableSegment.EQUITY_OPTIONS,
+        reference_price_paise=Decimal(2_400_000),
+        strike_paise=Decimal(2_400_000),
+        expected_edge_bps=Decimal(500),
+    )
+    decision = gate.evaluate(underlying_priced, book(), trade_date=TODAY)
+    assert decision.verdict is GateVerdict.VETO
+    assert decision.preconditions is not None
+    failures = {failure.name for failure in decision.preconditions.failures}
+    assert PreconditionName.TRADEABLE_UNIT_DENOMINATOR in failures
+
+
+@pytest.mark.unit
+def test_a_tiny_ticket_is_refused_because_the_flat_charge_swamps_it(
+    gate: PreTradeCostGate,
+) -> None:
+    """`L11.107`: a fixed per-order charge explodes as a percentage as the ticket shrinks.
+
+    The inversion worth remembering: cheap far-OTM options are the WORST scalping vehicle in
+    the universe, not the safest.
+    """
+    tiny = signal(
+        segment=ChargeableSegment.EQUITY_OPTIONS,
+        reference_price_paise=Decimal(500),
+        strike_paise=Decimal(2_400_000),
+        proposed_quantity=75,
+        expected_edge_bps=Decimal(200),
+    )
+    decision = gate.evaluate(tiny, book(), trade_date=TODAY)
+    assert decision.verdict is GateVerdict.VETO
+    assert decision.preconditions is not None
+    failures = {failure.name for failure in decision.preconditions.failures}
+    assert PreconditionName.MINIMUM_TICKET in failures
+
+
+@pytest.mark.property
+def test_the_minimum_ticket_is_derived_from_the_edge_not_a_rupee_floor(
+    gate: PreTradeCostGate,
+) -> None:
+    """`R.03`: a signal claiming more edge can carry a smaller ticket. No fixed floor exists."""
+    small_ticket = {
+        "segment": ChargeableSegment.EQUITY_OPTIONS,
+        "reference_price_paise": Decimal(2_000),
+        "strike_paise": Decimal(2_400_000),
+        "proposed_quantity": 75,
+    }
+    thin = gate.evaluate(
+        signal(**small_ticket, expected_edge_bps=Decimal(20)), book(), trade_date=TODAY
+    )
+    generous = gate.evaluate(
+        signal(**small_ticket, expected_edge_bps=Decimal(5_000)), book(), trade_date=TODAY
+    )
+    assert thin.preconditions is not None and generous.preconditions is not None
+    thin_failed = PreconditionName.MINIMUM_TICKET in {f.name for f in thin.preconditions.failures}
+    generous_failed = PreconditionName.MINIMUM_TICKET in {
+        f.name for f in generous.preconditions.failures
+    }
+    # The same ticket passes or fails depending on what the signal claims — which is what
+    # "derived, not floored" means.
+    assert thin_failed and not generous_failed
+
+
+@pytest.mark.unit
+def test_a_spread_wider_than_the_edge_is_refused_from_the_live_book(
+    gate: PreTradeCostGate,
+) -> None:
+    """`L11.108`: read the spread from the BOOK. A modelled spread cannot tell an illiquid
+    strike from a liquid one, which is the only case where the check matters."""
+    illiquid = book(bids=((100_000, 100),), asks=((180_000, 100),))
+    decision = gate.evaluate(
+        signal(expected_edge_bps=Decimal(50), reference_price_paise=Decimal(140_000)),
+        illiquid,
+        trade_date=TODAY,
+    )
+    assert decision.verdict is GateVerdict.VETO
+    assert decision.preconditions is not None
+    failures = {failure.name for failure in decision.preconditions.failures}
+    assert PreconditionName.LIVE_SPREAD in failures
+
+
+@pytest.mark.unit
+def test_a_range_narrower_than_its_own_cost_is_refused(gate: PreTradeCostGate) -> None:
+    """`L11.99`: below its trading cost a range is noise wearing a pattern's clothes."""
+    decision = gate.evaluate(
+        signal(expected_edge_bps=Decimal(500)),
+        book(),
+        trade_date=TODAY,
+        range_width_bps=Decimal(2),
+    )
+    assert decision.verdict is GateVerdict.VETO
+    assert decision.preconditions is not None
+    assert PreconditionName.RANGE_WIDTH in {f.name for f in decision.preconditions.failures}
+
+
+@pytest.mark.unit
+def test_a_wide_enough_range_does_not_block_the_trade(gate: PreTradeCostGate) -> None:
+    decision = gate.evaluate(
+        signal(expected_edge_bps=Decimal(500)),
+        book(),
+        trade_date=TODAY,
+        range_width_bps=Decimal(400),
+    )
+    assert decision.preconditions is not None
+    assert PreconditionName.RANGE_WIDTH not in {
+        f.name for f in decision.preconditions.failures
+    }
+
+
+@pytest.mark.property
+def test_every_precondition_runs_even_after_one_fails(gate: PreTradeCostGate) -> None:
+    """An operator needs to know whether fixing one thing helps or the trade is dead severally."""
+    doomed = signal(
+        segment=ChargeableSegment.EQUITY_OPTIONS,
+        reference_price_paise=Decimal(2_400_000),
+        strike_paise=Decimal(2_400_000),
+        proposed_quantity=1,
+        expected_edge_bps=Decimal(1),
+    )
+    decision = gate.evaluate(doomed, book(), trade_date=TODAY, range_width_bps=Decimal(1))
+    assert decision.preconditions is not None
+    assert len(decision.preconditions.results) == len(PreconditionName)
+    assert len(decision.preconditions.failures) > 1
+
+
+@pytest.mark.unit
+def test_a_healthy_trade_reports_every_precondition_satisfied(gate: PreTradeCostGate) -> None:
+    """A pass must be as legible as a failure."""
+    decision = gate.evaluate(signal(expected_edge_bps=Decimal(500)), book(), trade_date=TODAY)
+    assert decision.preconditions is not None
+    assert decision.preconditions.all_satisfied
+    assert "satisfied" in decision.preconditions.describe()

@@ -4096,6 +4096,49 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
 
+**A.97 · 2026-08-12 · Caught building the SPINE of a feature and calling it the feature.**
+Operator asked directly whether I was still working in slices rather than feature-by-feature. The
+honest answer was "mostly feature, with one real slip", and the slip is worth recording because it
+is the exact failure `A.93` was written to prevent, wearing the new vocabulary.
+
+*What happened.* `F01` contains **14 entries**. I had been building `L1.01`, `L1.02`, `L1.03`,
+`L1.05` and `L1.06` — the spine — while tracking my own increments rather than the feature's
+contents. Two different errors resulted, and they are different in kind:
+
+**Entries already DELIVERED and never ticked.** `L1.08` (the options STT rate change and the ITM
+auto-exercise trap) and `L1.15` (the dual intraday/delivery cost regime) were both satisfied by
+`L1.01` — the first by modelling exercise as a distinct taxable event on intrinsic value, the second
+by splitting `NSE-CNC` from `NSE-MIS` at the vocabulary level (`A.90`). Work done, credit unrecorded,
+and a later reader would have rebuilt them.
+
+**Entries never folded in at all.** `L11.99`, `L11.106`, `L11.107` and `L11.108` are four ticket
+preconditions that belong to this feature and that I had simply not looked at. That is slice
+thinking with a feature label on it: I was finishing the parts I had decided on rather than the
+parts the feature is made of.
+
+*The fix, and it is not just bookkeeping.* The four turn out to be one idea — **a trade can be
+uneconomic for reasons that have nothing to do with whether the signal is right** — so they build as
+one module, `tradeable_ticket_preconditions`, each check named so a refusal says WHICH economic fact
+killed it. All four run even after one fails, because an operator needs to know whether fixing one
+thing would help or whether the trade is dead in several independent ways at once.
+
+Two of them are genuinely load-bearing and would have been missed entirely:
+- `L11.106`, the denominator rule, refuses an option signal priced against its underlying rather
+  than its premium. That error understates every basis-point figure by roughly the ratio between
+  them — **in the flattering direction**, which is precisely why it must be caught rather than
+  noticed.
+- `L11.107`, the minimum ticket, encodes an inversion of the common instinct: a flat Rs 20 per order
+  is 0.31% of a Rs 13,000 ticket and **6.15% of a Rs 650 one**, so cheap far-OTM options are the
+  WORST scalping vehicle in the universe, not the safest. Derived from the signal's own claimed edge
+  rather than floored at a rupee value, and tested by showing the same ticket pass or fail purely on
+  what the signal claims.
+
+*The procedural lesson.* Building feature-by-feature is not achieved by grouping entries into a map;
+it is achieved by working THROUGH the map's list for the feature in hand. The map existed and I did
+not consult it while building. From here, every feature's entry list is checked off explicitly before
+that feature is called complete — and `A.94`'s note that some entries are already-built-but-unticked
+applies within a live feature too, not only to the historical reconciliation.
+
 **A.96 · 2026-08-12 · `B.06` resolved — the highest-leverage blocker in the plan was resting on a
 false premise, and the false premise is the more useful finding.** Operator asked me to decide and
 fix rather than escalate.

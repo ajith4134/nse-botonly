@@ -362,7 +362,13 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       priced-signal contract, wiring, `/costs`, then the adversarial review and the `R.05`
       real-data pass.*
 - [ ] **1.41** Realized-vs-modelled slippage tracker — `L1.07`
-- [ ] **1.42** STT options-sell rate change (0.15% from Apr 2026) + ITM auto-exercise STT trap — `L1.08`
+- [x] **1.42** STT options-sell rate change (0.15% from Apr 2026) + ITM auto-exercise STT trap — `L1.08`
+      · **delivered by `L1.01` and reconciled here (`A.97`)**, not built separately. Options STT is seeded
+      0.0005 -> 0.000625 -> 0.001 -> **0.0015 from 2026-04-01** with the boundary tested in both
+      directions; the exercise trap is modelled as a distinct taxable EVENT — 0.125% of INTRINSIC value
+      until 2026-04-01 then 0.15%, on the PURCHASER, with the basis dating from 2019 rather than 2024.
+      Pricing an exercise under the pre-2019 full-notional rule is the 121x error that makes a system
+      irrationally afraid of holding to expiry, and there is a test for it.
 - [ ] **1.43** Discrete option-lot sizing — `L1.09`
 - [ ] **1.44** Capital-based position sizing — `L1.10`
 - [ ] **1.45** P&L attribution by cost component — `L1.11`
@@ -370,7 +376,12 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **1.46** Cost homeostasis — `L1.12`
 - [ ] **1.47** Tax-lot record (STT/CTT/stamp/GST), exportable — `L1.13`
 - [ ] **1.48** Maker-order spread capture — `L1.14`
-- [ ] **1.49** Dual cost regime — `L1.15`
+- [x] **1.49** Dual cost regime — intraday vs delivery — `L1.15` · **delivered by `L1.01` and reconciled
+      here (`A.97`)**. `NSE-CNC` and `NSE-MIS` are separate chargeable segments precisely because the two
+      are materially different: delivery STT is 0.1% on BOTH legs against 0.025% sell-side intraday, stamp
+      duty 0.015% against 0.003%, and delivery alone carries the per-scrip depository debit. A carry
+      decision priced with intraday costs is wrong in the unsafe direction, so the segments were split at
+      the vocabulary level rather than left as a flag — see `A.90`. Tested on both legs.
 
 # PHASE 2 — VALIDATION, OPS FLOOR AND EXECUTION
 
@@ -639,7 +650,12 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **3.86** The instruction object — `L11.97`
 - [ ] **3.87** Targets are stated in BASIS POINTS OF THE TRADED INSTRUMENT'S TICKET — `L11.98`
       *(NOT A BUILD UNIT — MERGE -> `L11.106`, which states the same rule more fully. Recorded by `A.94`.)*
-- [ ] **3.88** Range-width precondition — `L11.99`
+- [ ] **3.88** Range-width precondition — `L11.99` · built in
+      `cost_gate/tradeable_ticket_preconditions.py`. The plan states it as `range_width > cost x 1.5`
+      and `A.12` records the 1.5 as a prior; it is NOT used as a number — the comparison is against the
+      required hurdle, which already carries the measured uncertainty margin, so a wide-uncertainty
+      instrument automatically needs a wider range without anyone choosing how much wider. *Closes with
+      feature F01.*
 - [ ] **3.89** Flat-regime dual playbook — `L11.100`
 - [ ] **3.90** Mechanism statement mandatory — `L11.101`
 - [ ] **3.91** Instructions are hypotheses, validated centrally — `L11.102`
@@ -647,9 +663,21 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       *(NOT A BUILD UNIT — MERGE -> `L11.117`. The decay half survives as a lifecycle state. Recorded by `A.94`.)*
 - [ ] **3.93** The 24-cell playbook matrix, populated — `L11.104`
 - [ ] **3.94** Instruction discovery (ultra) — `L11.105`
-- [ ] **3.95** The tradeable-unit denominator rule — `L11.106`
-- [ ] **3.96** Minimum-ticket precondition (the flat-brokerage gate) — `L11.107`
-- [ ] **3.97** Live-spread liquidity gate for options — `L11.108`
+- [ ] **3.95** The tradeable-unit denominator rule — `L11.106` · built. Refuses an option signal whose
+      reference price is at or above its strike, because that is the UNDERLYING rather than the premium
+      and every bps figure derived from it is understated by roughly the ratio between them — in the
+      flattering direction. Also absorbs `L11.98`, which states the same rule less fully. *Closes with
+      F01.*
+- [ ] **3.96** Minimum-ticket precondition (the flat-brokerage gate) — `L11.107` · built, and derived
+      rather than floored (`R.03`): the minimum ticket is whatever makes the flat charges bearable
+      against THIS signal's own claimed edge, so a signal claiming 500 bps can carry a far smaller ticket
+      than one claiming 20. Tested by showing the same ticket pass or fail purely on the claim. Encodes
+      the inversion worth remembering — cheap far-OTM options are the WORST scalping vehicle, not the
+      safest. *Closes with F01.*
+- [ ] **3.97** Live-spread liquidity gate for options — `L11.108` · built, reading the spread from the
+      BOOK via `L1.05`'s observer rather than from a model — which is the whole point, since a modelled
+      spread cannot tell an illiquid strike from a liquid one and that is the only case where the check
+      matters. *Closes with F01.*
 - [ ] **3.98** Per-segment play catalog — `L11.109`
 - [ ] **3.99** Profit-trail learning gate, one per holon — `L11.125`
 - [ ] **3.100** The exit problem stated honestly — `L11.126`
