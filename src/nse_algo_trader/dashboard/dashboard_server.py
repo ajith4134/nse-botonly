@@ -45,6 +45,11 @@ from nse_algo_trader.consolidated_feed.broker_reliability_store import (
 from nse_algo_trader.consolidated_feed.consolidated_feed_session_runner import (
     ConsolidatedFeedSessionRunner,
 )
+from nse_algo_trader.cost_gate.gate_decision_log import GateDecisionLog
+from nse_algo_trader.cost_gate.per_segment_edge_floor import (
+    EdgeFloorError,
+    SegmentEdgeFloorStore,
+)
 from nse_algo_trader.dashboard.clock_integrity_surface_renderer import (
     ClockIntegritySurfaceState,
     render_clock_integrity_page,
@@ -447,6 +452,20 @@ def build_dashboard_app() -> FastAPI:
         if not _is_authorised(request):
             return _unauthorised_html()
         rule_store = seeded_nse_market_rule_store()
+        # Read the floors and the logged verdicts the daily runner produced. Both are stored
+        # rather than recomputed on request: deriving a floor walks hundreds of real books, and
+        # a page that silently refits on every load would report a different number to two
+        # readers refreshing at once.
+        floor_store = SegmentEdgeFloorStore()
+        edge_floors = []
+        for segment in ChargeableSegment:
+            try:
+                edge_floors.append(floor_store.floor_for(segment))
+            except EdgeFloorError:
+                continue
+        decision_log = GateDecisionLog()
+        latest = decision_log.latest_session()
+        logged_decisions = decision_log.decisions_for(latest) if latest else ()
         state = build_transaction_cost_surface_state(
             NseTransactionCostEngine(rule_store),
             ChargeReconciliationLedger(),
@@ -454,6 +473,8 @@ def build_dashboard_app() -> FastAPI:
             priced_on=datetime.now(IST).date(),
             cost_bps_ceiling=TRANSACTION_COST_DISPLAY_CEILING_BPS,
             rule_store=rule_store,
+            edge_floors=edge_floors,
+            logged_decisions=logged_decisions,
         )
         response = HTMLResponse(render_transaction_cost_page(state))
         _remember_key(response, request)

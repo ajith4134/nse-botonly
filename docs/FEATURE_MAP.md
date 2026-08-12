@@ -221,8 +221,11 @@ feature does not close until every row is resolved and the four completion crite
       (median 36.8). Bounded per run like the backfill is, with the examined count reported so a
       truncation is visible rather than silent. A floor is a property of the market, so leaving it
       un-refreshed would turn it into a stale filter that rejects newly-viable trades invisibly.
-- [ ] **`R.23(c)` adversarial review** in a fresh subagent, run BEFORE the execution gate this
-      time. `L1.01` was signed off without one and the review then found 5 critical defects.
+- [x] **`R.23(c)` adversarial review** — DONE, run before the gate. Found **5 critical and 9
+      major**; all five criticals fixed and regression-tested, the nine majors recorded in
+      `BACKLOG.md` with their measurements (`A.98`). Four of the five criticals were protected by
+      a passing test that asserted the defect — the strongest argument yet for why this pass must
+      come from somewhere that did not write the assumptions.
 - [ ] **`R.05` real-data pass** at the strategy's own horizon — bar store, not depth-tape mids.
       `O.74` records why the first end-to-end run does NOT establish what it appears to.
 

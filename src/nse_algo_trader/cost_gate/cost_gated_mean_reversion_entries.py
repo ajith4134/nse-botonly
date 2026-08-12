@@ -77,6 +77,25 @@ class CostGatedEntry:
         return self.gate_decision.describe()
 
 
+_LARGEST_CREDIBLE_PRICE_RATIO = Decimal(10)
+"""How far the engine's last close may sit from the book's mid before the two are not the same
+number in the same units.
+
+A price moves; between the engine's last observation and this snapshot it may have moved a lot.
+It does not move by a factor of TEN intraday — but a rupees-versus-paise mix-up is a factor of a
+hundred, so any bound between the two separates the cases cleanly. Ten is the loose end of that
+range on purpose: this check exists to catch a unit error, not to second-guess a volatile
+instrument."""
+
+
+def _units_agree(engine_close: Decimal, book_mid: Decimal) -> bool:
+    """Whether the engine and the book are quoting the same instrument in the same units."""
+    if engine_close <= 0 or book_mid <= 0:
+        return False
+    ratio = engine_close / book_mid
+    return Decimal(1) / _LARGEST_CREDIBLE_PRICE_RATIO <= ratio <= _LARGEST_CREDIBLE_PRICE_RATIO
+
+
 _SIDE_BY_ACTION: dict[MeanReversionAction, TradeLeg] = {
     MeanReversionAction.ENTER_LONG: TradeLeg.BUY,
     MeanReversionAction.ENTER_SHORT: TradeLeg.SELL,
@@ -192,6 +211,19 @@ def evaluate_mean_reversion_entry(
             signal=None,
             gate_decision=None,
             skipped_reason="the engine is still immature; its dispersion is not yet defined",
+        )
+    latest_close = engine.latest_close()
+    if latest_close is None or not _units_agree(Decimal(str(latest_close)), Decimal(mid)):
+        return CostGatedEntry(
+            decision=decision,
+            signal=None,
+            gate_decision=None,
+            skipped_reason=(
+                f"the engine's last close ({latest_close}) and the book's mid ({mid}) are not "
+                f"the same instrument in the same units — feeding the engine rupees and pairing "
+                f"it with a paise book yields an edge wrong by a hundredfold, silently, and "
+                f"flips the verdict"
+            ),
         )
 
     try:

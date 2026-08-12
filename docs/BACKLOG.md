@@ -3644,3 +3644,52 @@ expiries; EXIDEIND + NUVAMA held 1 and left F&O ~35 trading days later). `DALBHA
   especially for the small cash trades where `L1.01` reports a cost near zero, so a breakeven from
   this engine is a FLOOR on what a trade must earn, never the whole hurdle. Anything quoting these
   numbers as "the cost of trading" before `L1.05` lands is understating it.
+
+## F01 adversarial review — MAJOR findings not yet fixed (`A.98`, 2026-08-12)
+
+All five CRITICAL findings are fixed and regression-tested. These nine majors are recorded
+rather than fixed, each with the measurement that found it, so none becomes a silent skip.
+
+- **M1 · deep-ITM calls are hard-vetoed.** `check_tradeable_unit_denominator` fails whenever
+  `reference_price >= strike`, which is true of any legitimate deep-ITM CALL (spot above ~2x
+  strike). A precondition failure is a VETO, so a real trade is recorded as economically
+  rejected. Puts are safe — a put premium is bounded by its strike. Fix needs the option right,
+  or a bound like `premium > strike + plausible_spot`.
+- **M2 · `_flat_charges_paise` is not flat on equity.** It takes every `PER_ORDER` line whether
+  or not the Rs 20 cap bound, so below the cap it returns the 0.03% brokerage — a constant 6 bps
+  at every ticket size, the exact opposite of the "explodes as the ticket shrinks" behaviour
+  `L11.107` exists to catch. Works correctly on options. Separately, NSE-CNC returns zero
+  because the engine emits no `PER_DEBIT_TRANSACTION` line, so the check short-circuits for the
+  whole delivery segment.
+- **M3 · UNPRICEABLE/VETO leaks in the second direction.** A malformed signal (wrong denominator)
+  and a too-weak `edge_basis` both return VETO with `hurdle=None` — nothing was priced, yet the
+  gate reports a judgement. The first direction is clean.
+- **M4 · integer half-up mid biases the two sides.** `mid = (bid + ask + 1) // 2` rounds to the
+  ask on every 1-paise-spread book (verified on all 47 real 1-tick books), understating buy-side
+  and overstating sell-side by a half-tick — median 0.43 bps, max 2.80 bps, on 2.0% of snapshots.
+  With a single populated ask level the buy anchor cost is exactly 0 and the fill is refused
+  while the sell side prices fine.
+- **M5 · the nightly step reads ~500x more data than it uses.** `read_instrument_window` pulls a
+  whole day per instrument and uses one snapshot. Measured 2.64 s/instrument, ~17.6 minutes for
+  one date. `MarketDepthTapeReader.book_at` would make it near-instant.
+- **M6 · two look-ahead leaks in the nightly step.** If `target` predates every captured session
+  it selects `sessions[0]` — a FUTURE book — and stores the floor stamped with `target`
+  (verified: target 2026-01-01 selects session 2026-08-11). And `price_round_trip` is called
+  without `known_as_of`, so a backfilled floor is priced with today's rates. Both violate the
+  point-in-time discipline the stores themselves implement correctly.
+- **M7 · the wired consumer can never emit an option signal.** `price_mean_reversion_decision`
+  never sets `strike_paise`, and `PricedSignal` refuses an option segment without one, so every
+  option decision returns `signal=None` — indistinguishable from a quiet day.
+- **M8 · `is_execution_censored` is computed, carried and never used.** No verdict or reason
+  branches on it, so a fully extrapolated estimate passes silently. Related trap:
+  `ExpectedFill.visible_walk.is_censored` is always `False` by construction, so a caller
+  inspecting the walk gets a reassuring answer at every size.
+- **M9 · `realised_fill_reconciler.py` is in the spec's module map and does not exist.** It is
+  `L1.07`'s seam; `gate_decision_log` now provides the join key, so the gap is narrower than it
+  was but the module is still absent.
+
+Minors also recorded there: `whole_book_quantity` cancels out of the impact algebra entirely;
+`_quantile` gives no robustness below n=20 (ceil(n x 0.05) = 1, so the "5% quantile" IS the
+minimum at the sample sizes the runner produces); the `hurdle > 0` filter in
+`derive_segment_floor` is silent; preconditions are reported at the proposed size and never
+re-evaluated after a RESIZE.

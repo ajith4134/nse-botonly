@@ -126,6 +126,17 @@ class IntradayMeanReversionEngine:
             return 0.0
         return (self._closes[-1] - mean_close) / dispersion
 
+    def latest_close(self) -> float | None:
+        """The most recent close observed, in whatever units it was fed in.
+
+        Exposed for one reason: a consumer that converts this engine's scale-free output into
+        money must be able to check that it and the engine are speaking the same units. The
+        deviation is dimensionless and the dispersion is not, so feeding rupees here and pairing
+        it with a paise price silently produces an edge wrong by a factor of a hundred — with no
+        exception, no warning, and a verdict that flips from veto to pass.
+        """
+        return self._closes[-1] if self._closes else None
+
     def rolling_dispersion(self) -> float | None:
         """The rolling standard deviation, in whatever units the closes were fed in.
 

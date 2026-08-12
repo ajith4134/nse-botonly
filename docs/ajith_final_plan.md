@@ -4096,6 +4096,57 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
 
+**A.98 · 2026-08-12 · F01's adversarial review, run BEFORE the gate this time — five criticals,
+and four of them were certified by my own tests.**
+
+`L1.01` was signed off without this review and a later one found 5 critical defects behind a green
+suite. So `F01`'s review ran before the execution gate rather than after. It found five more
+criticals, all reproduced against real books, and the pattern in them is worth more than the fixes.
+
+*C1 — the resize refused real trades and stated a falsehood as the reason.* The hurdle is **U-shaped
+in quantity**, not monotone: execution cost rises with size but STATUTORY cost per rupee FALLS, a
+flat per-order brokerage divided by a growing turnover. Measured, **35% of real instruments have
+their hurdle minimum above one unit**. The bisection tested one unit, and on failure returned "no
+size clears the hurdle ... not tradeable at any quantity" — refusing real tickets of Rs 2.6 lakh to
+Rs 20 lakh that demonstrably cleared at larger sizes. Replaced with a shape-agnostic geometric scan
+plus local refinement; verified on a book where the hurdle runs 12.63 -> 5.64 -> 53.79 bps and the
+gate now RESIZEs to 107,053 where it previously vetoed.
+
+*C2 — the half-spread was counted twice.* NSE's impact cost is measured against the MID, so crossing
+to the touch is already inside the walk. Adding `half_spread_bps` on top overstated by a **median
+1.52x, p95 2.30x, on 93.8% of 2,390 real books**. It also silently dropped the spec's piecewise
+branch: `research/220` §4 says an order inside the visible book is priced by ARITHMETIC, and the code
+extrapolated everywhere. Both fixed — inside the book the answer is now exact with zero interval
+width.
+
+*C3 — one ladder was priced twice instead of two ladders once.* A buy entry lifts asks; its exit
+hits bids. Doubling the entry side gave a median error of +0.6% that hid a p5 of **-29.7%** and
+**25.8% of books understated by more than 10%** — the direction that lets a losing trade through.
+Each leg is now priced against its own ladder.
+
+*C4 — a 100x unit error propagated to the verdict in silence.* The engine's deviation is scale-free
+and its dispersion is not, so feeding it rupees while pairing it with a paise book produced 2.38 bps
+instead of 237.94 — **veto instead of pass**, no exception, no warning. The engine now exposes its
+last close and the consumer refuses when the two are not the same instrument in the same units.
+
+*C5 — a landmine timed to fire exactly when `R.04`'s ladder advanced.* `exponent_range` clamped both
+ends into the published prior, so any fitted value outside it produced `lower > upper` and made every
+trade in that bucket UNPRICEABLE. This project's own measured book-walk exponent is **0.107**, far
+below the 0.4 prior floor — the first bucket ever fitted from real data would have tripped it. My
+first fix over-corrected and stopped the range narrowing at all; the second narrows inside the prior
+and widens outside it.
+
+*The pattern, which is the real finding.* **Four of the five criticals were protected by a passing
+test that asserted the defect.** `test_cost_per_rupee_rises_with_size_so_the_hurdle_does_too` named
+the false monotonicity premise in its own title and certified it. `test_the_expected_fill_is_the_
+spread_plus_the_impact_of_size` certified the double count. A test written from the same
+understanding as the code cannot catch an error in that understanding — it can only make the error
+harder to see, because a green suite reads as evidence. This is the strongest argument yet for
+`R.23(c)`: the adversarial pass is not a second opinion on the code, it is the first opinion on the
+ASSUMPTIONS, and it has to come from somewhere that did not write them.
+
+Nine MAJOR findings are recorded in `BACKLOG.md` rather than fixed, each with its measurement.
+
 **A.97 · 2026-08-12 · Caught building the SPINE of a feature and calling it the feature.**
 Operator asked directly whether I was still working in slices rather than feature-by-feature. The
 honest answer was "mostly feature, with one real slip", and the slip is worth recording because it

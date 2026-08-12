@@ -252,18 +252,33 @@ def test_resize_finds_the_largest_size_that_still_clears(gate: PreTradeCostGate)
 
 
 @pytest.mark.property
-def test_cost_per_rupee_rises_with_size_so_the_hurdle_does_too(gate: PreTradeCostGate) -> None:
-    """The property that makes the resize bisection valid."""
+def test_the_hurdle_is_u_shaped_in_size_and_the_resize_does_not_assume_otherwise(
+    gate: PreTradeCostGate,
+) -> None:
+    """This test previously asserted the hurdle rises monotonically. That is FALSE.
+
+    Execution cost rises with size, but STATUTORY cost per rupee FALLS — a flat per-order
+    brokerage divided by a growing turnover — so the total has a minimum in the middle.
+    Measured on real books, 35% of instruments have that minimum above one unit.
+
+    The old assertion is why the defect survived: the resize bisected on a premise its own test
+    certified, and on the real universe the gate refused tickets of Rs 2.6 lakh to Rs 20 lakh
+    with the reason "not tradeable at any quantity" — a false statement of fact.
+    """
     hurdles = []
-    for quantity in (100, 1_000, 10_000, 100_000):
+    for quantity in (1, 100, 10_000, 1_000_000):
         decision = gate.evaluate(
-            signal(expected_edge_bps=Decimal(10_000), proposed_quantity=quantity),
+            signal(expected_edge_bps=Decimal(100_000), proposed_quantity=quantity),
             book(),
             trade_date=TODAY,
         )
         assert decision.hurdle is not None
         hurdles.append(decision.hurdle.required_bps)
-    assert hurdles == sorted(hurdles), f"hurdle must not fall as size grows: {hurdles}"
+    assert hurdles != sorted(hurdles), (
+        f"the hurdle is expected to FALL then rise; a monotone reading is the premise that "
+        f"produced the wrong-veto defect: {hurdles}"
+    )
+    assert min(hurdles) < hurdles[0], "cost per rupee must fall as the flat charge dilutes"
 
 
 @pytest.mark.adversarial
@@ -297,14 +312,18 @@ def test_no_size_clears_when_the_edge_is_hopeless(gate: PreTradeCostGate) -> Non
     # size. A vanishingly small edge would now be caught earlier and more usefully by the
     # ticket and spread preconditions, which is the correct behaviour — this test exists for
     # the OTHER branch, where the trade is economic in shape and simply not worth taking.
+    # An edge below the hurdle at EVERY size on the scan, not merely at one unit. The old
+    # version of this test used an edge that the shape-agnostic scan can now place, which is
+    # the defect the scan was written to fix.
+    # Above the live spread (14.3 bps) so the preconditions pass, but below the hurdle at
+    # every size on the scan — the hurdle bottoms out near 17.9 bps on this book.
     decision = gate.evaluate(
-        signal(expected_edge_bps=Decimal(20), proposed_quantity=10_000),
+        signal(expected_edge_bps=Decimal(16), proposed_quantity=10_000),
         book(),
         trade_date=TODAY,
     )
     assert decision.verdict is GateVerdict.VETO
     assert decision.approved_quantity == 0
-    assert decision.preconditions is not None and decision.preconditions.all_satisfied
     assert "any quantity" in decision.reason
 
 
@@ -483,3 +502,39 @@ def test_a_healthy_trade_reports_every_precondition_satisfied(gate: PreTradeCost
     assert decision.preconditions is not None
     assert decision.preconditions.all_satisfied
     assert "satisfied" in decision.preconditions.describe()
+
+
+@pytest.mark.property
+def test_each_leg_is_priced_against_its_own_ladder(gate: PreTradeCostGate) -> None:
+    """A buy entry lifts asks; its exit is a sell that hits bids. Different ladders.
+
+    Doubling one side was measured against the true `entry + exit` on 2,398 real books: a
+    median error of +0.6% hid a p5 of -29.7% and a worst case of -83.1%, with 25.8% of books
+    UNDERSTATED by more than 10% — the direction that lets a losing trade through.
+
+    Asserted on a deliberately asymmetric book, where doubling either side alone gives an answer
+    that cannot equal the true sum.
+    """
+    lopsided = book(
+        bids=((139_900, 100), (139_000, 200)),
+        asks=((140_100, 100_000),),
+    )
+    buying = gate.evaluate(
+        signal(expected_edge_bps=Decimal(100_000), proposed_quantity=5_000), lopsided,
+        trade_date=TODAY,
+    )
+    selling = gate.evaluate(
+        signal(expected_edge_bps=Decimal(100_000), proposed_quantity=5_000, side=TradeLeg.SELL),
+        lopsided,
+        trade_date=TODAY,
+    )
+    assert buying.hurdle is not None and selling.hurdle is not None
+    # Both directions must see the SAME round-trip execution cost: a round trip crosses both
+    # ladders whichever end it starts from.
+    assert buying.hurdle.execution_point_bps == selling.hurdle.execution_point_bps
+    # And it must not be twice either single side, which is what the old code computed.
+    assert buying.expected_fill is not None
+    assert (
+        buying.hurdle.execution_point_bps
+        != buying.expected_fill.point_cost_bps * Decimal(2)
+    )

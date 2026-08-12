@@ -31,6 +31,7 @@ from nse_algo_trader.execution_fill.market_impact_estimator import (
     ImpactEstimateMaturity,
     MarketImpactError,
     estimate_impact_from_walk,
+    exact_impact_from_walk,
 )
 from nse_algo_trader.execution_fill.order_book_walk_calculator import (
     OrderBookWalk,
@@ -66,16 +67,29 @@ class ExpectedFill:
 
     @property
     def spread_cost_bps(self) -> Decimal:
-        """Half the quoted spread — what crossing costs against the mid, before size."""
+        """Half the quoted spread, REPORTED not added.
+
+        **It is not a separate term.** NSE's impact cost — which `order_book_walk_calculator`
+        implements and which anchors the impact estimate — is measured against the MID, so
+        crossing to the touch is already inside it. An order filling entirely at the best ask
+        costs exactly the half-spread, and the walk says so.
+
+        Adding this on top double-counted it. Measured against the exact walk on 2,390 real
+        uncensored books, the doubled version overstated by a median of 1.52x, p95 2.30x, and
+        overstated on 93.8% of them. The direction was conservative, so it lost no money
+        directly — it inflated every hurdle, every RESIZE boundary and every derived segment
+        floor instead.
+        """
         return self.spread.half_spread_bps
 
     @property
     def point_cost_bps(self) -> Decimal:
-        return self.spread_cost_bps + self.impact.point_bps
+        """Total expected cost against the decision mid, spread included via the walk."""
+        return self.impact.point_bps
 
     @property
     def lower_cost_bps(self) -> Decimal:
-        return self.spread_cost_bps + self.impact.lower_bps
+        return self.impact.lower_bps
 
     @property
     def upper_cost_bps(self) -> Decimal:
@@ -85,7 +99,7 @@ class ExpectedFill:
         money looks profitable in a backtest, so the pessimistic end is the decision-relevant
         one. The optimistic end exists to show how wide the uncertainty is, not to be used.
         """
-        return self.spread_cost_bps + self.impact.upper_bps
+        return self.impact.upper_bps
 
     @property
     def cost_interval_width_bps(self) -> Decimal:
@@ -167,14 +181,28 @@ class ExecutionFillModel:
                     f"{side.value} side; there is nothing to anchor an impact estimate to"
                 )
             anchor = walk_order_book(snapshot, side, visible_quantity)
-            impact = estimate_impact_from_walk(
-                anchor,
-                quantity,
-                bucket=self._bucket,
-                exponent_range=self._exponent_range,
-                maturity=self._maturity,
-                observation_count=self._observation_count,
-            )
+            if quantity <= visible_quantity:
+                # `research/220` §4: inside the visible book the cost is ARITHMETIC — walk the
+                # ladder and take the answer. Extrapolating from the anchor here replaced an
+                # exact number with an estimate, and the estimate was wrong: measured against
+                # the exact walk it overstated on 93.8% of real books.
+                exact = walk_order_book(snapshot, side, quantity)
+                impact = exact_impact_from_walk(
+                    exact,
+                    anchor,
+                    bucket=self._bucket,
+                    maturity=self._maturity,
+                    observation_count=self._observation_count,
+                )
+            else:
+                impact = estimate_impact_from_walk(
+                    anchor,
+                    quantity,
+                    bucket=self._bucket,
+                    exponent_range=self._exponent_range,
+                    maturity=self._maturity,
+                    observation_count=self._observation_count,
+                )
         except (OrderBookWalkError, QuotedSpreadError, MarketImpactError) as error:
             raise ExecutionFillError(
                 f"cannot price {quantity} of instrument {snapshot.instrument_token} at "

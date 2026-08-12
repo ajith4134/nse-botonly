@@ -179,6 +179,50 @@ def estimate_impact_from_walk(
     )
 
 
+def exact_impact_from_walk(
+    walk: OrderBookWalk,
+    anchor: OrderBookWalk,
+    *,
+    bucket: LiquidityBucket | None = None,
+    maturity: ImpactEstimateMaturity = ImpactEstimateMaturity.ANCHORED_PRIOR,
+    observation_count: int = 0,
+) -> ImpactEstimate:
+    """The cost of an order that fits INSIDE the visible book — measured, not estimated.
+
+    Zero interval width, deliberately: this is arithmetic. The ladder is known, the order
+    consumes a known part of it, and NSE's own impact-cost formula gives the answer exactly.
+    Reporting an interval here would manufacture uncertainty where none exists, and would let
+    the pessimistic end the gate refuses on drift above a number that is simply correct.
+
+    `anchor` is still required, because participation is reported against the whole book and
+    only the anchor walk carries the whole-book quantity.
+    """
+    if walk.is_censored:
+        raise MarketImpactError(
+            "a censored walk is a lower bound, not an exact cost; use "
+            "`estimate_impact_from_walk`, which extrapolates and says so"
+        )
+    if anchor.whole_book_quantity <= 0:
+        raise MarketImpactError("no whole-book quantity; participation is undefined")
+    cost = walk.impact_cost_bps
+    return ImpactEstimate(
+        quantity=walk.requested_quantity,
+        participation_of_whole_book=(
+            Decimal(walk.requested_quantity) / Decimal(anchor.whole_book_quantity)
+        ),
+        anchor_cost_bps=anchor.impact_cost_bps,
+        anchor_participation=(
+            Decimal(anchor.visible_quantity) / Decimal(anchor.whole_book_quantity)
+        ),
+        lower_bps=cost,
+        point_bps=cost,
+        upper_bps=cost,
+        maturity=maturity,
+        bucket=bucket,
+        observation_count=observation_count,
+    )
+
+
 def shrinkage_weight(
     own_observations: int, own_variance: Decimal, between_instrument_variance: Decimal
 ) -> Decimal:

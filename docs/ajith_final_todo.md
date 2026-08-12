@@ -323,11 +323,23 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       than the bars it was designed for, so this tests the plumbing on the wrong timescale and is
       NOT evidence that mean reversion lacks edge.*
 
-      *`L1.04` floor DONE and derived on the real universe; `/costs` surface DONE (`R.08`); floor
-      derivation wired as a daily-runner step (`R.06`). Still open: the adversarial review — now
-      RUNNING, deliberately before the execution gate rather than after, which is the specific
-      mistake `L1.01` made — and the `R.05` real-data pass over the bar store at the strategy's
-      own horizon per `O.74`.*
+      *`L1.04` floor DONE and derived on the real universe; `/costs` surface DONE and now FED by
+      the daily runner (`R.08`) — the nightly run logs real verdicts, 36 pass / 11 resize / 13
+      veto / 0 unpriceable over 60 real books; floor derivation wired as a daily-runner step
+      (`R.06`).*
+
+      *ADVERSARIAL REVIEW DONE (`A.98`), run before the execution gate rather than after —
+      **5 critical, 9 major**. All five criticals fixed and regression-tested: a resize that
+      refused real Rs 2.6-20 lakh tickets while stating "not tradeable at any quantity" as the
+      reason (the hurdle is U-shaped, not monotone — 35% of instruments); the half-spread counted
+      twice (median 1.52x overstatement on 2,390 real books); one ladder priced twice instead of
+      two ladders once (25.8% of books understated by >10%); a silent 100x unit error that flipped
+      veto to pass; and an inverting exponent range timed to fire exactly when `R.04`'s ladder
+      advanced. **Four of the five were protected by a passing test that asserted the defect.**
+      The nine majors are recorded in `BACKLOG.md` with their measurements.*
+
+      *Still open: the `R.05` real-data pass over the bar store at the strategy's own horizon per
+      `O.74` — the one remaining F01 completion criterion.*
 - [ ] **1.38** Per-segment minimum-edge floor — `L1.04` · built in
       `cost_gate/per_segment_edge_floor.py`, DERIVED from the real hurdle distribution rather than
       typed: the plan's ~6-8 / ~10-11 / ~25-30 bps figures appear nowhere in the code, and the floor

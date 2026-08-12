@@ -508,13 +508,39 @@ def test_a_bucket_outside_the_decile_range_is_refused() -> None:
 
 
 @pytest.mark.unit
-def test_the_expected_fill_is_the_spread_plus_the_impact_of_size() -> None:
-    """Two terms, two sources of evidence, joined only at the end."""
+def test_the_spread_is_inside_the_walk_and_is_not_added_twice() -> None:
+    """The defect this test used to assert.
+
+    It previously required `point == spread + impact`, which double-counted: NSE's impact cost
+    is measured against the MID, so crossing to the touch is already inside it. Measured against
+    the exact walk on 2,390 real uncensored books, the doubled version overstated by a median of
+    1.52x and overstated on 93.8% of them.
+    """
     model = ExecutionFillModel()
-    fill = model.price_fill(book(), TradeLeg.BUY, 700)
+    fill = model.price_fill(book(), TradeLeg.BUY, 100)
     assert fill.spread_cost_bps == Decimal(100)
-    assert fill.point_cost_bps == fill.spread_cost_bps + fill.impact.point_bps
+    # 100 units fill entirely at the best ask, so the true cost IS the half-spread — and the
+    # walk already says so without anything being added to it.
+    assert fill.point_cost_bps == Decimal(100)
+    assert fill.point_cost_bps == fill.impact.point_bps
     assert fill.lower_cost_bps <= fill.point_cost_bps <= fill.upper_cost_bps
+
+
+@pytest.mark.property
+def test_an_order_inside_the_visible_book_is_priced_exactly_not_estimated() -> None:
+    """`research/220` §4: inside the book the cost is arithmetic, so the interval has no width.
+
+    Manufacturing uncertainty here would let the pessimistic end a gate refuses on drift above
+    a number that is simply correct.
+    """
+    model = ExecutionFillModel()
+    snapshot = book()
+    for quantity in (1, 100, 300, 700):
+        fill = model.price_fill(snapshot, TradeLeg.BUY, quantity)
+        exact = walk_order_book(snapshot, TradeLeg.BUY, quantity)
+        assert not fill.is_censored
+        assert fill.point_cost_bps == exact.impact_cost_bps
+        assert fill.cost_interval_width_bps == 0
 
 
 @pytest.mark.property
@@ -620,6 +646,34 @@ def test_the_exponent_range_narrows_only_as_fills_accrue(tmp_path: Path) -> None
     assert widths == sorted(widths, reverse=True), f"range must not widen with evidence: {widths}"
     assert widths[0] == PLAUSIBLE_EXPONENT_RANGE[1] - PLAUSIBLE_EXPONENT_RANGE[0]
     assert widths[-1] < widths[0]
+
+
+@pytest.mark.adversarial
+@pytest.mark.parametrize("fitted", ["0.107", "0.9", "0.55"])
+def test_a_fitted_exponent_outside_the_prior_widens_the_range_rather_than_inverting_it(
+    tmp_path: Path, fitted: str
+) -> None:
+    """The landmine that fired exactly when the maturity ladder advanced.
+
+    Clamping both ends into the prior produced `lower > upper` for any fitted value outside it,
+    and every trade in that bucket became UNPRICEABLE. Not hypothetical: this project's own
+    measured book-walk exponent is 0.107, far below the 0.4 prior floor, so the FIRST bucket
+    fitted from real data would have tripped it.
+    """
+    store = ExecutionFillParameterStore(tmp_path / "fill.sqlite3")
+    bucket = LiquidityBucket(turnover_decile=3, tick_regime=TickRegime.SMALL_TICK)
+    store.record_bucket_parameter(
+        BucketImpactParameter(
+            bucket=bucket,
+            session_date=date(2026, 8, 12),
+            fitted_exponent=Decimal(fitted),
+            exponent_dispersion=Decimal("0.05"),
+            fill_observation_count=500,
+        )
+    )
+    lower, upper = store.bucket_parameter(bucket).exponent_range()
+    assert lower <= upper, "an inverted range makes every trade in the bucket unpriceable"
+    assert lower <= Decimal(fitted) <= upper, "the range must contain the value it was fitted to"
 
 
 @pytest.mark.unit

@@ -81,11 +81,18 @@ from nse_algo_trader.consolidated_feed.cross_broker_quote_tape import CrossBroke
 from nse_algo_trader.corporate_action_adjustment_engine import (
     CorporateActionAdjustmentEngine,
 )
+from nse_algo_trader.cost_gate.gate_decision_log import GateDecisionLog
 from nse_algo_trader.cost_gate.per_segment_edge_floor import (
     EdgeFloorError,
     SegmentEdgeFloor,
     SegmentEdgeFloorStore,
     derive_segment_floor,
+)
+from nse_algo_trader.cost_gate.pre_trade_cost_gate import PreTradeCostGate
+from nse_algo_trader.cost_gate.priced_signal import (
+    EdgeBasis,
+    PricedSignal,
+    PricedSignalError,
 )
 from nse_algo_trader.dashboard.dashboard_surface_screenshot_capture import (
     DEFAULT_BASE_URL,
@@ -127,6 +134,7 @@ from nse_algo_trader.kite_instrument_master import (
 )
 from nse_algo_trader.market_depth.market_depth_tape_store import MarketDepthTapeReader
 from nse_algo_trader.market_depth.order_book_snapshot_replay_engine import (
+    BookSnapshot,
     book_snapshots_from_table,
 )
 from nse_algo_trader.nse_ingest.atm_implied_volatility_adapter import (
@@ -213,6 +221,19 @@ actually examined is reported, so a truncation is visible rather than silent."""
 MINIMUM_SNAPSHOTS_FOR_A_USABLE_INSTRUMENT = 300
 """Below this an instrument barely quoted, and its hurdle says more about the capture than
 about the market."""
+
+MAXIMUM_GATE_PROBES_PER_RUN = 60
+"""How many books the nightly gate probe walks. Bounded like everything else here."""
+
+GATE_PROBE_EDGE_BPS = Decimal(25)
+"""The edge the nightly probe claims — a DIAGNOSTIC, not a strategy.
+
+Chosen to sit near the middle of the measured intraday hurdle distribution so the probe
+exercises PASS, RESIZE and VETO against real books rather than landing entirely on one. It is
+not a threshold, nothing is compared against it, and no signal is generated from it."""
+
+GATE_PROBE_SOURCE = "nightly_gate_probe"
+"""Tagged so these can never be mistaken for strategy decisions in the log."""
 
 LEGS_PER_ROUND_TRIP = Decimal(2)
 """Execution cost is paid entering and leaving, like the spread it is made of."""
@@ -991,6 +1012,7 @@ def _derive_per_segment_edge_floors(target: date) -> str:
     cost_engine = default_transaction_cost_engine()
     fill_model = ExecutionFillModel()
     hurdles: dict[ChargeableSegment, list[Decimal]] = {}
+    sampled: list[tuple[int, BookSnapshot, int, Decimal]] = []
     examined = 0
     for token in reader.instrument_tokens(session)[:MAXIMUM_INSTRUMENTS_PER_FLOOR_RUN]:
         table = reader.read_instrument_window(
@@ -1014,6 +1036,7 @@ def _derive_per_segment_edge_floors(target: date) -> str:
         if visible <= 0:
             continue
         quantity = max(1, visible // 2)
+        sampled.append((token, snapshot, quantity, Decimal(mid)))
         for segment in (ChargeableSegment.EQUITY_INTRADAY, ChargeableSegment.EQUITY_DELIVERY):
             try:
                 trade = TradeSpecification(
@@ -1032,6 +1055,7 @@ def _derive_per_segment_edge_floors(target: date) -> str:
                 continue
         examined += 1
 
+    _log_gate_decisions_for(target, sampled)
     store = SegmentEdgeFloorStore()
     derived: list[SegmentEdgeFloor] = []
     refused: list[str] = []
@@ -1051,6 +1075,44 @@ def _derive_per_segment_edge_floors(target: date) -> str:
     if not derived:
         raise RuntimeError(f"no segment floor could be derived from {examined} instruments")
     return f"{examined} instruments · {summary}"
+
+
+def _log_gate_decisions_for(
+    target: date, sampled: Sequence[tuple[int, BookSnapshot, int, Decimal]]
+) -> None:
+    """Run the gate over the sampled books and record every verdict.
+
+    Written down because a gate that decides and forgets cannot answer the only question anyone
+    asks of it — why a trade was not taken — and the book snapshot that justified the answer is
+    gone by the time the question arrives.
+
+    The edge used here is a DELIBERATELY OPTIMISTIC probe, not a strategy claim: it is the
+    segment's own median hurdle, so roughly half the universe should fail. The point is to
+    exercise every verdict against real books and give `/costs` real material, never to suggest
+    that any of these are trades worth taking. Nothing downstream consumes these as signals.
+    """
+    if not sampled:
+        return
+    gate = PreTradeCostGate(default_transaction_cost_engine(), ExecutionFillModel())
+    decisions = []
+    for token, snapshot, quantity, mid in sampled[:MAXIMUM_GATE_PROBES_PER_RUN]:
+        try:
+            probe = PricedSignal(
+                instrument_token=token,
+                trading_symbol=f"TOKEN-{token}",
+                segment=ChargeableSegment.EQUITY_INTRADAY,
+                side=TradeLeg.BUY,
+                decided_at=datetime.now(UTC),
+                reference_price_paise=mid,
+                expected_edge_bps=GATE_PROBE_EDGE_BPS,
+                proposed_quantity=quantity,
+                edge_basis=EdgeBasis.OPERATOR_ASSERTION,
+                source=GATE_PROBE_SOURCE,
+            )
+        except PricedSignalError:
+            continue
+        decisions.append(gate.evaluate(probe, snapshot, trade_date=target))
+    GateDecisionLog().record(decisions, session_date=target)
 
 
 def main() -> int:

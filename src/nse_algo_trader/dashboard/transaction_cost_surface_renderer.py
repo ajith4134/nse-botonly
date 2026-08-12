@@ -94,6 +94,7 @@ from enum import StrEnum
 from html import escape
 from itertools import pairwise
 
+from nse_algo_trader.cost_gate.gate_decision_log import LoggedGateDecision
 from nse_algo_trader.cost_gate.per_segment_edge_floor import SegmentEdgeFloor
 from nse_algo_trader.cost_gate.pre_trade_cost_gate import GateDecision, GateVerdict
 from nse_algo_trader.cost_gate.tradeable_ticket_preconditions import PreconditionName
@@ -742,6 +743,7 @@ def build_transaction_cost_surface_state(
     rule_store: PointInTimeMarketRuleStore | None = None,
     known_as_of: date | None = None,
     gate_decisions: Sequence[GateDecision] = (),
+    logged_decisions: Sequence[LoggedGateDecision] = (),
     edge_floors: Sequence[SegmentEdgeFloor] = (),
 ) -> TransactionCostSurfaceState:
     """Price every segment once, read the ledger once, and freeze the result.
@@ -790,8 +792,19 @@ def build_transaction_cost_surface_state(
         ledger_observation_count=ledger.observation_count(),
         hurdle_ladders=_hurdle_size_ladders(gate_decisions),
         edge_floor_rows=_edge_floor_rows(edge_floors),
-        verdict_census=_verdict_census(gate_decisions),
-        precondition_rows=_precondition_failure_rows(gate_decisions),
+        # Live decisions win when the caller has just taken them; otherwise the LOG supplies
+        # the same rows. One rendering path, two sources — the page cannot drift between them
+        # because there is only one set of fields to drift.
+        verdict_census=(
+            _verdict_census(gate_decisions)
+            if gate_decisions
+            else _census_from_logged(logged_decisions)
+        ),
+        precondition_rows=(
+            _precondition_failure_rows(gate_decisions)
+            if gate_decisions
+            else _precondition_rows_from_logged(logged_decisions)
+        ),
     )
 
 
@@ -2290,3 +2303,57 @@ page are the caller's stated assumptions, not measurements: they are parameters 
 <code>build_transaction_cost_surface_state</code> precisely so nobody can mistake a display
 choice for a fact.</footer>
 </body></html>"""
+
+
+def _census_from_logged(
+    decisions: Sequence[LoggedGateDecision],
+) -> GateVerdictCensus | None:
+    """The same census, rebuilt from the LOG rather than from live objects.
+
+    A decision on disk has outlived the book snapshot that justified it, so it cannot be
+    re-derived — which is exactly why it was written down. The counts are what survive, and
+    `UNPRICEABLE` is kept apart here for the same reason it is everywhere else.
+    """
+    if not decisions:
+        return None
+    counts = dict.fromkeys(GateVerdict, 0)
+    for decision in decisions:
+        counts[decision.verdict] += 1
+    return GateVerdictCensus(
+        pass_count=counts[GateVerdict.PASS],
+        resize_count=counts[GateVerdict.RESIZE],
+        veto_count=counts[GateVerdict.VETO],
+        unpriceable_count=counts[GateVerdict.UNPRICEABLE],
+    )
+
+
+def _precondition_rows_from_logged(
+    decisions: Sequence[LoggedGateDecision],
+) -> tuple[PreconditionFailureRow, ...]:
+    """Named failure counts from the log, with every name present even at zero.
+
+    Zeros are drawn rather than dropped: "nothing failed this check" and "this check was never
+    run" are different states, and a sparse table renders them identically.
+    """
+    if not decisions:
+        return ()
+    failure_counts = dict.fromkeys(PreconditionName, 0)
+    example_reasons: dict[PreconditionName, str] = {}
+    evaluated = sum(1 for decision in decisions if decision.is_judged)
+    for decision in decisions:
+        for raw_name in decision.failed_preconditions:
+            try:
+                name = PreconditionName(raw_name)
+            except ValueError:
+                continue
+            failure_counts[name] += 1
+            example_reasons.setdefault(name, decision.reason)
+    return tuple(
+        PreconditionFailureRow(
+            precondition_name=name.value,
+            failure_count=failure_counts[name],
+            evaluated_count=evaluated,
+            example_failure_reason=example_reasons.get(name, ""),
+        )
+        for name in PreconditionName
+    )

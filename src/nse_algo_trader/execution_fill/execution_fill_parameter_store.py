@@ -114,10 +114,25 @@ class BucketImpactParameter:
         )
         lower_prior, upper_prior = prior_range
         half_width = (upper_prior - lower_prior) / Decimal(2) * (Decimal(1) - weight)
-        return (
-            max(lower_prior, self.fitted_exponent - half_width),
-            min(upper_prior, self.fitted_exponent + half_width),
-        )
+        lower = self.fitted_exponent - half_width
+        upper = self.fitted_exponent + half_width
+        # Clamp toward the prior ONLY where doing so still contains the fitted value.
+        #
+        # Clamping both ends unconditionally inverted the interval the moment the evidence
+        # landed outside the prior, and every trade in that bucket became UNPRICEABLE. That is
+        # not hypothetical: this project's own measured book-walk exponent is 0.107, far below
+        # the 0.4 prior floor, so the FIRST bucket fitted from real data would have tripped it.
+        #
+        # Refusing to clamp at all is the opposite error — the range then never narrows for a
+        # fitted value sitting comfortably inside the prior, which is the normal case and the
+        # whole point of accruing evidence. So: evidence inside the prior narrows toward itself,
+        # evidence outside it widens the range to reach it, and the interval always contains
+        # what it was fitted to.
+        if lower_prior <= self.fitted_exponent:
+            lower = max(lower, lower_prior)
+        if upper_prior >= self.fitted_exponent:
+            upper = min(upper, upper_prior)
+        return (min(lower, self.fitted_exponent), max(upper, self.fitted_exponent))
 
 
 def _prior_variance(prior_range: tuple[Decimal, Decimal]) -> Decimal:
