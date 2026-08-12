@@ -80,13 +80,35 @@ _EQUITY_CASH_SEGMENTS = frozenset(
     {ChargeableSegment.EQUITY_DELIVERY, ChargeableSegment.EQUITY_INTRADAY}
 )
 
-OPTION_EXERCISE_SCOPE = RuleScope(segment="NFO-OPT-EXERCISE")
+_EXERCISE_SCOPE_BY_SEGMENT: dict[tuple[ChargeableSegment, bool], RuleScope] = {
+    (ChargeableSegment.EQUITY_OPTIONS, False): RuleScope(segment="NFO-OPT-EXERCISE"),
+    (ChargeableSegment.COMMODITY_OPTIONS, False): RuleScope(segment="MCX-OPT-EXERCISE"),
+    (ChargeableSegment.COMMODITY_OPTIONS, True): RuleScope(segment="MCX-OPT-EXERCISE-PHYSICAL"),
+}
 """Exercise is a different taxable EVENT, not a different rate on the same one.
 
-An option sold carries STT on the seller at a rate on premium; an option exercised carries STT
-on the PURCHASER at a different rate on intrinsic value. Reading the first where the second
+An option sold carries STT on the seller at a rate on premium; an option exercised carries the
+tax on the PURCHASER at a different rate on intrinsic value. Reading the first where the second
 applies is the error that makes a system irrationally afraid of holding to expiry.
+
+**Keyed by segment, and deliberately incomplete.** Currency options are absent because currency
+derivatives attract no transaction tax at all — the same structural absence the main table
+encodes, and an earlier version of this module reinstated it on the exercise path by applying
+one hardcoded EQUITY record to every segment. That charged an equity statute's rate to a
+commodity exercise and invented a tax on a currency one.
 """
+
+
+def exercise_rule_scope(
+    segment: ChargeableSegment, *, is_physically_settled: bool = False
+) -> RuleScope | None:
+    """The scope carrying this segment's exercise tax, or `None` when it has none.
+
+    Physical delivery is a separate scope rather than a flag on one record, because the two
+    carry different RATES on different bases and putting them in one scope would make them
+    conflicting claims about the same thing.
+    """
+    return _EXERCISE_SCOPE_BY_SEGMENT.get((segment, is_physically_settled))
 
 
 class ChargeComponent(StrEnum):

@@ -175,3 +175,66 @@ def test_residual_sign_says_which_way_the_model_is_wrong(
     assert reconciliation.mean_residual_paise == Decimal(0)
     assert observation("over", "1700", "1600").residual_paise > 0
     assert observation("under", "1600", "1700").residual_paise < 0
+
+
+# ------------------------------------------- regressions from the adversarial review (A.93)
+
+
+@pytest.mark.unit
+def test_the_actionable_subset_knows_the_brokers_rounding(tmp_path: Path) -> None:
+    """`drifting_components()` had no way to be told the rounding, so it reported rounding.
+
+    For the default broker — which rounds STT to the whole rupee — every reconciliation was
+    measured against a half-paisa band, so pure rounding residuals came back as evidence that
+    a statutory RATE was wrong. Two callers of the same ledger disagreed, because only the
+    dashboard passed the map.
+    """
+    ledger = ChargeReconciliationLedger(
+        tmp_path / "aware.sqlite3",
+        rounding_by_component={
+            ChargeComponent.SECURITIES_TRANSACTION_TAX: RoundingRule.NEAREST_RUPEE
+        },
+    )
+    ledger.record(
+        [
+            observation(f"order-{index}", "1700", str(1700 - (12 if index % 2 else 13)))
+            for index in range(20)
+        ]
+    )
+    assert ledger.reconcile()[0].verdict is ReconciliationVerdict.AGREES
+    assert ledger.drifting_components() == ()
+
+
+@pytest.mark.unit
+def test_two_identical_observations_do_not_decide_a_borderline_drift(tmp_path: Path) -> None:
+    """A zero-width interval from two samples is a claim the data cannot support.
+
+    An algorithm trading the same size repeatedly produces identical residuals by
+    construction, so the sample standard deviation is exactly zero and the confidence interval
+    collapsed — letting two orders establish a drift. The dispersion is now floored at the
+    billing granularity, which is the smallest spread the process itself can produce.
+    """
+    ledger = ChargeReconciliationLedger(tmp_path / "pair.sqlite3")
+    ledger.record([observation("a", "1001", "1000"), observation("b", "1001", "1000")])
+    borderline = ledger.reconcile()[0]
+    assert borderline.residual_dispersion_paise == Decimal(0)
+    assert borderline.confidence_half_width_paise > 0
+    assert borderline.verdict is ReconciliationVerdict.UNVERIFIED
+
+    # The same residual, once enough of it has accrued, IS drift.
+    ledger.record([observation(f"c{index}", "1001", "1000") for index in range(20)])
+    assert ledger.reconcile()[0].verdict is ReconciliationVerdict.DRIFTS
+
+
+@pytest.mark.unit
+def test_the_residual_statistics_are_exact(tmp_path: Path) -> None:
+    """Routing residuals through `float` lost the last bits of a value compared with `<=`."""
+    ledger = ChargeReconciliationLedger(tmp_path / "exact.sqlite3")
+    ledger.record(
+        [
+            observation("p", "1.1", "1"),
+            observation("q", "1.2", "1"),
+            observation("r", "1.3", "1"),
+        ]
+    )
+    assert ledger.reconcile()[0].mean_residual_paise == Decimal("0.2")

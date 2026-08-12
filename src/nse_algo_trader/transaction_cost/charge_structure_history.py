@@ -464,20 +464,77 @@ OPTION_EXERCISE_STRUCTURES: tuple[ChargeStructureRecord, ...] = (
         ),
         source_date=date(2019, 8, 1),
     ),
+    _structure(
+        ChargeComponent.COMMODITIES_TRANSACTION_TAX,
+        ChargeableSegment.COMMODITY_OPTIONS,
+        TaxableBase.OPTION_INTRINSIC_VALUE,
+        LegApplicability.BUY_ONLY,
+        _CTT_ERA_START,
+        source=(
+            "Finance Act 2013 s.117 CTT schedule — a CASH-SETTLED commodity option taken to "
+            "exercise is charged 0.125% of intrinsic value on the purchaser. A different "
+            "statute from the equity STT, and a different rate: pricing a commodity exercise "
+            "under the equity provision is wrong twice over"
+        ),
+        source_date=date(2013, 7, 1),
+        grade=EvidenceGrade.PRIMARY_CIRCULAR,
+    ),
+    _structure(
+        ChargeComponent.COMMODITIES_TRANSACTION_TAX,
+        ChargeableSegment.COMMODITY_OPTIONS,
+        TaxableBase.SETTLEMENT_VALUE,
+        LegApplicability.BUY_ONLY,
+        _CTT_ERA_START,
+        source=(
+            "Finance Act 2013 s.117 CTT schedule — a PHYSICALLY DELIVERED commodity option "
+            "exercise is charged 0.0001% of the SETTLEMENT PRICE, not of intrinsic value. "
+            "Aggregators routinely collapse this into the cash-settled row, which understates "
+            "a cash-settled exercise by more than a thousandfold"
+        ),
+        source_date=date(2013, 7, 1),
+        grade=EvidenceGrade.PRIMARY_CIRCULAR,
+    ),
 )
 """Exercise, held apart from the sale of an option because it is a different taxable event.
 
 Same component, same segment, opposite leg and a different base — which is exactly why it
 cannot live in the main table keyed by (component, segment): it would collide with the
 sell-side record and the conflict check would be right to reject it.
+
+**Currency options appear nowhere here**, matching their absence from the main transaction-tax
+table. That absence is the fact, and it has to survive on this path too.
 """
 
 
-def option_exercise_structure(as_of: date) -> ChargeStructureRecord:
-    """The exercise structure in force, or a refusal."""
-    matches = [record for record in OPTION_EXERCISE_STRUCTURES if record.covers_date(as_of)]
+def option_exercise_structure(
+    segment: ChargeableSegment, as_of: date, *, is_physically_settled: bool = False
+) -> ChargeStructureRecord:
+    """The exercise structure in force for THIS segment, or a refusal.
+
+    Physical settlement selects a different row rather than a different rate: a delivered
+    commodity option is taxed on the settlement price and a cash-settled one on intrinsic
+    value, so the two are different bases and only the caller knows which happened.
+    """
+    wanted_base = (
+        TaxableBase.SETTLEMENT_VALUE
+        if is_physically_settled
+        else TaxableBase.OPTION_INTRINSIC_VALUE
+    )
+    matches = [
+        record
+        for record in OPTION_EXERCISE_STRUCTURES
+        if record.segment is segment
+        and record.covers_date(as_of)
+        and (
+            record.taxable_base is wanted_base
+            or segment is not ChargeableSegment.COMMODITY_OPTIONS
+        )
+    ]
     if len(matches) != 1:
         raise ChargeStructureCoverageError(
-            f"{len(matches)} exercise structures cover {as_of}; expected exactly one"
+            f"{len(matches)} exercise structures cover {segment} at {as_of} "
+            f"(physically_settled={is_physically_settled}); expected exactly one. A segment "
+            f"with no exercise structure does not attract an exercise tax, and borrowing "
+            f"another segment's would apply the wrong statute"
         )
     return matches[0]

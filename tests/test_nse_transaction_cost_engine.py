@@ -56,6 +56,7 @@ from nse_algo_trader.transaction_cost.nse_transaction_cost_engine import (
     OptionRight,
     TradeSpecification,
     TradeSpecificationError,
+    _round_to,
     default_transaction_cost_engine,
 )
 from nse_algo_trader.transaction_cost.quantity_cost_economics import (
@@ -351,7 +352,7 @@ def test_an_exercised_option_is_taxed_on_intrinsic_value_and_on_the_buyer(
     ]
     assert len(tax_lines) == 1
     line = tax_lines[0]
-    assert line.leg is TradeLeg.BUY
+    assert line.leg is TradeLeg.SELL, "the exercise settles the position the buyer opened"
     assert line.taxable_base is TaxableBase.OPTION_INTRINSIC_VALUE
     # Intrinsic 24,200 - 24,000 = 200 rupees, x 65 = 13,000 rupees of base.
     assert line.taxable_amount_paise == Decimal(1_300_000)
@@ -359,17 +360,122 @@ def test_an_exercised_option_is_taxed_on_intrinsic_value_and_on_the_buyer(
 
 
 @pytest.mark.unit
+def test_an_exercise_is_settled_by_the_exchange_not_traded_out(
+    zerodha_engine: NseTransactionCostEngine,
+) -> None:
+    """No order is sent at exercise, so no order-driven charge may appear.
+
+    Pricing a full exit leg charged brokerage for an order that never existed and the SEBI
+    notional fee a second time — Rs 25.72 of phantom cost on a 75-lot NIFTY exercise.
+    """
+    exercised = zerodha_engine.price_round_trip(
+        option_trade(
+            is_option_exercise=True,
+            settlement_price_paise=Decimal(2_420_000),
+            option_right=OptionRight.CALL,
+        )
+    )
+    settlement_components = {line.component for line in exercised.exit.lines}
+    assert settlement_components == {ChargeComponent.SECURITIES_TRANSACTION_TAX}
+    for absent in (
+        ChargeComponent.BROKERAGE,
+        ChargeComponent.SEBI_TURNOVER_FEE,
+        ChargeComponent.EXCHANGE_TRANSACTION_CHARGE,
+        ChargeComponent.GOODS_AND_SERVICES_TAX,
+    ):
+        assert absent not in settlement_components
+
+
+@pytest.mark.unit
+def test_an_assigned_writer_pays_nothing_at_settlement_and_keeps_the_sale_tax(
+    zerodha_engine: NseTransactionCostEngine,
+) -> None:
+    """Two parties, one taxpayer. The writer already paid on the premium when they wrote it."""
+    assigned = zerodha_engine.price_round_trip(
+        option_trade(
+            is_short_first=True,
+            is_option_exercise=True,
+            settlement_price_paise=Decimal(2_420_000),
+            option_right=OptionRight.CALL,
+        )
+    )
+    assert assigned.exit.lines == ()
+    entry_tax = [
+        line
+        for line in assigned.entry.lines
+        if line.component is ChargeComponent.SECURITIES_TRANSACTION_TAX
+    ]
+    assert len(entry_tax) == 1, "the writer's sell-side premium STT must survive"
+    assert entry_tax[0].taxable_base is TaxableBase.OPTION_PREMIUM_TURNOVER
+
+
+@pytest.mark.adversarial
+def test_a_commodity_exercise_is_taxed_under_its_own_statute(
+    zerodha_engine: NseTransactionCostEngine,
+) -> None:
+    """CTT, not STT — a different Act, a different rate, and two settlement modes."""
+    def commodity_exercise(*, physical: bool) -> TradeSpecification:
+        return TradeSpecification(
+            segment=ChargeableSegment.COMMODITY_OPTIONS,
+            quantity=100,
+            entry_price_paise=Decimal(5_000),
+            exit_price_paise=Decimal(0),
+            trade_date=TODAY,
+            strike_paise=Decimal(700_000),
+            settlement_price_paise=Decimal(710_000),
+            option_right=OptionRight.CALL,
+            is_option_exercise=True,
+            is_physically_settled=physical,
+        )
+
+    cash_settled = zerodha_engine.price_round_trip(commodity_exercise(physical=False))
+    (cash_line,) = cash_settled.exit.lines
+    assert cash_line.component is ChargeComponent.COMMODITIES_TRANSACTION_TAX
+    assert cash_line.taxable_base is TaxableBase.OPTION_INTRINSIC_VALUE
+    assert cash_line.rate == Decimal("0.00125")
+
+    delivered = zerodha_engine.price_round_trip(commodity_exercise(physical=True))
+    (physical_line,) = delivered.exit.lines
+    assert physical_line.taxable_base is TaxableBase.SETTLEMENT_VALUE
+    assert physical_line.rate == Decimal("0.000001")
+    # The two differ by more than a thousandfold; collapsing them is the common error.
+    assert cash_line.exact_paise > physical_line.exact_paise * 10
+
+
+@pytest.mark.adversarial
+def test_a_currency_option_exercise_is_refused_rather_than_taxed(
+    zerodha_engine: NseTransactionCostEngine,
+) -> None:
+    """Currency derivatives attract no transaction tax — including on the exercise path."""
+    with pytest.raises(CostCoverageError):
+        zerodha_engine.price_round_trip(
+            TradeSpecification(
+                segment=ChargeableSegment.CURRENCY_OPTIONS,
+                quantity=1_000,
+                entry_price_paise=Decimal(50),
+                exit_price_paise=Decimal(0),
+                trade_date=TODAY,
+                strike_paise=Decimal(8_750),
+                settlement_price_paise=Decimal(8_800),
+                option_right=OptionRight.CALL,
+                is_option_exercise=True,
+            )
+        )
+
+
+@pytest.mark.unit
 def test_the_exercise_basis_changed_in_2019_not_2024() -> None:
     """`b28` recorded 2024; the basis moved five years earlier."""
-    assert option_exercise_structure(date(2019, 8, 31)).taxable_base is TaxableBase.SETTLEMENT_VALUE
+    equity = ChargeableSegment.EQUITY_OPTIONS
     assert (
-        option_exercise_structure(date(2019, 9, 1)).taxable_base
-        is TaxableBase.OPTION_INTRINSIC_VALUE
+        option_exercise_structure(equity, date(2019, 8, 31)).taxable_base
+        is TaxableBase.SETTLEMENT_VALUE
     )
-    assert (
-        option_exercise_structure(date(2024, 10, 1)).taxable_base
-        is TaxableBase.OPTION_INTRINSIC_VALUE
-    )
+    for as_of in (date(2019, 9, 1), date(2024, 10, 1)):
+        assert (
+            option_exercise_structure(equity, as_of).taxable_base
+            is TaxableBase.OPTION_INTRINSIC_VALUE
+        )
 
 
 @pytest.mark.unit
@@ -837,3 +943,113 @@ def test_capital_bounded_lots_floors_rather_than_rounds() -> None:
 @pytest.mark.adversarial
 def test_the_default_engine_builds_and_prices() -> None:
     assert default_transaction_cost_engine().price_round_trip(option_trade()).total_paise > 0
+
+
+# ------------------------------------------- regressions from the adversarial review (A.93)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("segment", "rupees_per_crore"),
+    [
+        (ChargeableSegment.EQUITY_INTRADAY, Decimal("306.99")),
+        (ChargeableSegment.EQUITY_FUTURES, Decimal("182.99")),
+        (ChargeableSegment.EQUITY_OPTIONS, Decimal("3552.99")),
+        (ChargeableSegment.CURRENCY_FUTURES, Decimal(35)),
+        (ChargeableSegment.CURRENCY_OPTIONS, Decimal(3110)),
+        # MCX publishes per LAKH: Rs 2.10 and Rs 41.80 are Rs 210 and Rs 4,180 per crore.
+        (ChargeableSegment.COMMODITY_FUTURES, Decimal(210)),
+        (ChargeableSegment.COMMODITY_OPTIONS, Decimal(4180)),
+    ],
+)
+def test_every_exchange_charge_matches_the_rupees_per_crore_its_own_citation_states(
+    rule_store: PointInTimeMarketRuleStore,
+    segment: ChargeableSegment,
+    rupees_per_crore: Decimal,
+) -> None:
+    """Two currency rates were seeded 100x and 10x below the figure in their own source string.
+
+    Nothing downstream could detect it: the record resolved, reported itself covered, and
+    carried a citation that contradicted its own value. This test reads the value and the
+    stated rupees-per-crore against each other for every segment.
+    """
+    resolved = rule_store.resolve(
+        RuleFamily.EXCHANGE_TRANSACTION_CHARGE, TODAY, scope=segment.rule_scope
+    )
+    assert resolved.as_decimal() * Decimal(10_000_000) == rupees_per_crore
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("exact_paise", "expected_billed"),
+    [(Decimal(150), Decimal(200)), (Decimal(250), Decimal(300)), (Decimal(1850), Decimal(1900))],
+)
+def test_a_half_rupee_charge_rounds_up_as_the_cited_rule_says(
+    exact_paise: Decimal, expected_billed: Decimal
+) -> None:
+    """`Decimal.quantize` defaults to banker's rounding; the cited rule is 'fifty paise up'.
+
+    Half-rupee STT is not exotic — intraday at 0.025% lands on it at every odd multiple of
+    Rs 2,000 of turnover — and banker's rounding billed Rs 2.50 as Rs 2.00.
+    """
+    assert _round_to(exact_paise, RoundingRule.NEAREST_RUPEE) == expected_billed
+
+
+@pytest.mark.property
+@pytest.mark.parametrize("price_paise", [Decimal(1_000), Decimal(15_000), Decimal(140_000)])
+def test_the_exact_cost_curve_never_rises(
+    zerodha_engine: NseTransactionCostEngine, price_paise: Decimal
+) -> None:
+    """The real invariant, with no tolerance to argue about.
+
+    Exact cost per rupee is (ad-valorem rates) + (flat charges / turnover), so it is strictly
+    decreasing in quantity. A rise here cannot be rounding — it means a schedule overlaps or a
+    flat charge is being scaled by quantity.
+    """
+    curve = cost_curve(
+        zerodha_engine,
+        cash_trade(entry_price_paise=price_paise, exit_price_paise=price_paise),
+        lot_size=1,
+        maximum_lots=120,
+    )
+    assert curve.largest_exact_cost_rise_bps == 0
+    assert curve.is_monotonically_cheaper
+
+
+@pytest.mark.property
+@pytest.mark.parametrize(
+    ("price_paise", "ceiling_bps"),
+    [
+        (Decimal(140_000), Decimal(5)),
+        (Decimal(140_000), Decimal(8)),
+        (Decimal(15_000), Decimal(10)),
+        (Decimal(1_000), Decimal(20)),
+    ],
+)
+def test_the_minimum_viable_quantity_agrees_with_a_brute_force_scan(
+    zerodha_engine: NseTransactionCostEngine, price_paise: Decimal, ceiling_bps: Decimal
+) -> None:
+    """Bisection must find the SAME answer an exhaustive scan does, not merely a clearing one.
+
+    Bisecting the BILLED cost produced three distinct wrong answers on real schedules — a
+    non-minimal quantity, a quantity in the wrong basin, and `None` where the true answer was
+    one lot whose charges all rounded away. The earlier tests missed all three because they
+    only checked that the answer cleared and that one lot smaller did not, which is exactly
+    the local check a rounding sawtooth defeats.
+    """
+    template = cash_trade(entry_price_paise=price_paise, exit_price_paise=price_paise)
+    maximum_lots = 400
+    solved = minimum_viable_quantity(
+        zerodha_engine,
+        template,
+        cost_bps_ceiling=ceiling_bps,
+        lot_size=1,
+        maximum_lots=maximum_lots,
+    )
+    scanned: int | None = None
+    for quantity in range(1, maximum_lots + 1):
+        priced = zerodha_engine.price_round_trip(replace(template, quantity=quantity))
+        if priced.exact_bps_of_turnover <= ceiling_bps:
+            scanned = quantity
+            break
+    assert solved == scanned

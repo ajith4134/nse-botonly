@@ -4082,6 +4082,38 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
 
+**A.92 · 2026-08-12 · `L1` is built in dependency order, not entry order: `L1.05`/`L1.06` move ahead
+of `L1.02`/`L1.03`/`L1.04`, and the two fill entries build as ONE engine.** Operator delegated the
+sequencing call (2026-08-12) with the instruction to follow the plan; this records what "follow the
+plan" resolves to when the plan's own order assumes something that does not exist.
+
+*Why the plan's order cannot be executed as written.* `L1.02` says "every signal must clear round-trip
+breakeven before it can become an order". Measured against the tree today: the only strategy module
+emits an action, a conviction in 0-1 and a unitless deviation — **no expected edge, no target, no stop,
+nothing convertible to basis points** (its own docstring says so) — and **no order, position, trade or
+fill type exists anywhere in `src/`**. Building the gate now means inventing a signal contract and
+wiring the verdict to nothing, which is a second consumer-queued slice stacked on `L1.01`'s. `R.06`
+exists to stop exactly that.
+
+*Why `L1.05`/`L1.06` instead.* They are buildable on real data TODAY — the `L0.20`-`L0.22` depth tape
+is real, captured and replayable (135,401 transitions) — so they need no invented input and produce no
+orphan. They are also the missing half of the cost picture: every breakeven `L1.01` currently produces
+is statutory-and-brokerage only, and on a small cash trade the spread is frequently the larger term. So
+`L1.02`, `L1.03` and `L1.04` are all *arithmetically premature* until this lands: a gate that vetoes on
+a hurdle missing its dominant component vetoes the wrong trades, and a "minimum edge floor" derived
+from cost alone is not the floor.
+
+*Why the two entries are ONE engine.* `L1.05` is specified as "expected execution price vs mid at the
+time of decision" and `L1.06` as "size-dependent impact, not a flat slippage constant". With a real
+five-level book, computing the expected execution price for a given size IS walking that book — the
+size dependence is not a second model bolted on, it is the same calculation with the size argument
+supplied. Splitting them would produce a size-blind model that `L1.06` then replaces wholesale, which
+is the thin-slice failure `R.07` names. They build together and both entries close together.
+
+*Order after this.* `L1.04` (per-segment floors, now derivable from a complete hurdle), then
+`L1.02`/`L1.03` when a signal carrying edge exists — which is `L4` work and its own interview. Nothing
+is dropped; the sequence is re-ordered by dependency and the plan entries keep their IDs.
+
 **A.91 · 2026-08-12 · `L1.01` built, and building it broke four things that were already passing.**
 Spec `docs/research/219`; the slice is `1.35` in the todo and closes `[~]`, not `[x]`, because
 `L1.02`'s gate — the consumer this engine exists for — is queued (`R.11`).

@@ -284,6 +284,31 @@ def commodities_transaction_tax_facts() -> tuple[MarketRuleRecord, ...]:
             source_date=date(2018, 4, 1),
             grade=EvidenceGrade.SECONDARY_TRIANGULATED,
         ),
+        # Exercise splits by HOW the contract settles, and the two differ by more than a
+        # thousandfold. Separate scopes because they are different rates on different bases,
+        # not rival claims about one thing.
+        _fact(
+            RuleFamily.COMMODITIES_TRANSACTION_TAX,
+            "0.00125",
+            date(2013, 7, 1),
+            scope=RuleScope(segment="MCX-OPT-EXERCISE"),
+            source=(
+                f"{_ctt_source} — a CASH-SETTLED commodity option taken to exercise is taxed "
+                "0.125% of intrinsic value on the purchaser"
+            ),
+            source_date=date(2013, 7, 1),
+        ),
+        _fact(
+            RuleFamily.COMMODITIES_TRANSACTION_TAX,
+            "0.000001",
+            date(2013, 7, 1),
+            scope=RuleScope(segment="MCX-OPT-EXERCISE-PHYSICAL"),
+            source=(
+                f"{_ctt_source} — a PHYSICALLY DELIVERED commodity option exercise is taxed "
+                "0.0001% of the settlement price on the purchaser"
+            ),
+            source_date=date(2013, 7, 1),
+        ),
     )
 
 
@@ -621,7 +646,7 @@ def exchange_transaction_charge_facts() -> tuple[MarketRuleRecord, ...]:
         ),
         _fact(
             RuleFamily.EXCHANGE_TRANSACTION_CHARGE,
-            "0.000000035",
+            "0.0000035",
             date(2024, 10, 1),
             scope=_CURRENCY_FUTURES,
             source="Broker tariff disclosures — currency futures Rs 35/crore of notional each side",
@@ -661,7 +686,7 @@ def exchange_transaction_charge_facts() -> tuple[MarketRuleRecord, ...]:
         ),
         _fact(
             RuleFamily.EXCHANGE_TRANSACTION_CHARGE,
-            "0.0000311",
+            "0.000311",
             date(2024, 10, 1),
             scope=_CURRENCY_OPTIONS,
             source=(

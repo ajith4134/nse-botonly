@@ -33,6 +33,9 @@ from nse_algo_trader.transaction_cost.nse_transaction_cost_engine import (
 
 _BASIS_POINTS = Decimal(10_000)
 
+_LEGS_PER_ROUND_TRIP = Decimal(2)
+"""A round trip rounds twice, so a rounding budget that allows for one leg is half a budget."""
+
 
 class QuantityEconomicsError(TransactionCostError):
     """The quantity question has no answer under these inputs."""
@@ -44,13 +47,28 @@ class CostAtQuantity:
 
     quantity: int
     round_trip_cost_paise: Decimal
+    exact_round_trip_cost_paise: Decimal
     turnover_paise: Decimal
 
     @property
     def cost_bps(self) -> Decimal:
+        """What the broker BILLS, per rupee of turnover. Not monotone — rounding sees to that."""
         if self.turnover_paise == 0:
             raise QuantityEconomicsError("cost in bps of a zero turnover is undefined")
         return self.round_trip_cost_paise / self.turnover_paise * _BASIS_POINTS
+
+    @property
+    def exact_cost_bps(self) -> Decimal:
+        """What the trade COSTS, per rupee of turnover — and this one is provably monotone.
+
+        Exact cost is (ad-valorem rates x turnover) + (flat charges), so cost per rupee is
+        (rates) + (flat / turnover): strictly decreasing in quantity, with no rounding step to
+        break it. Every search over quantity runs on this, and the billed figure is reported
+        alongside rather than searched over.
+        """
+        if self.turnover_paise == 0:
+            raise QuantityEconomicsError("cost in bps of a zero turnover is undefined")
+        return self.exact_round_trip_cost_paise / self.turnover_paise * _BASIS_POINTS
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +83,21 @@ class QuantityCostCurve:
     @property
     def cheapest(self) -> CostAtQuantity:
         return min(self.points, key=lambda point: point.cost_bps)
+
+    @property
+    def largest_exact_cost_rise_bps(self) -> Decimal:
+        """Any rise in the EXACT curve. Must be zero — it is arithmetically impossible.
+
+        This is the real invariant, and unlike the billed one it has no tolerance to argue
+        about. A non-zero value here means a schedule overlaps, a flat charge is being scaled
+        by quantity, or a rate is being applied twice — none of which rounding can produce.
+        """
+        rises = [
+            later.exact_cost_bps - earlier.exact_cost_bps
+            for earlier, later in pairwise(self.points)
+            if later.exact_cost_bps > earlier.exact_cost_bps
+        ]
+        return max(rises) if rises else Decimal(0)
 
     @property
     def largest_cost_rise_bps(self) -> Decimal:
@@ -94,20 +127,30 @@ class QuantityCostCurve:
 
     @property
     def rounding_explainable_rise_bps(self) -> Decimal:
-        """The largest rise a whole-rupee rounding step could account for, at the smallest size.
+        """The largest rise whole-rupee rounding could account for between ADJACENT points.
 
-        Derived from the curve's own turnover rather than declared: one rupee of rounding on
-        the smallest position, expressed in bps of that position's turnover.
+        Two legs may each round up to half a rupee against a step that rounds down, so the
+        budget is one rupee per leg, and it is expressed in bps of the SMALLER of the two
+        turnovers being compared — the point whose bps figure the rounding is inflating.
+
+        An earlier version used the turnover of the smallest position on the whole curve,
+        which for a long ladder is a budget dozens of times too generous: the guard reported
+        `True` on a curve that a brute-force scan showed was genuinely non-monotone.
         """
-        smallest = self.points[0]
-        if smallest.turnover_paise == 0:
-            return Decimal(0)
-        return PAISE_PER_RUPEE / smallest.turnover_paise * _BASIS_POINTS
+        budgets = [
+            _LEGS_PER_ROUND_TRIP * PAISE_PER_RUPEE / earlier.turnover_paise * _BASIS_POINTS
+            for earlier, later in pairwise(self.points)
+            if later.cost_bps > earlier.cost_bps and earlier.turnover_paise > 0
+        ]
+        return max(budgets) if budgets else Decimal(0)
 
     @property
     def is_monotonically_cheaper(self) -> bool:
-        """True when nothing bigger than rounding makes the curve rise."""
-        return self.largest_cost_rise_bps <= self.rounding_explainable_rise_bps
+        """True when the exact curve never rises and the billed one rises only by rounding."""
+        return (
+            self.largest_exact_cost_rise_bps == 0
+            and self.largest_cost_rise_bps <= self.rounding_explainable_rise_bps
+        )
 
 
 def _quantity_ladder(lot_size: int, maximum_lots: int) -> tuple[int, ...]:
@@ -142,6 +185,7 @@ def cost_curve(
             CostAtQuantity(
                 quantity=quantity,
                 round_trip_cost_paise=priced.total_paise,
+                exact_round_trip_cost_paise=priced.exact_total_paise,
                 turnover_paise=priced.entry_turnover_paise,
             )
         )
@@ -168,11 +212,15 @@ def minimum_viable_quantity(
     failure: it says this segment is closed to this account at this price, and the caller
     should be told that rather than handed the least-bad size.
 
-    Solved by bisection over LOTS rather than by scanning every size. Cost in bps is
-    non-increasing in quantity (a flat charge diluting over a larger base, plus a brokerage
-    percentage that only ever gives way to a cap), so the predicate "clears the ceiling" is
-    monotone and bisection is valid. `cost_curve().is_monotonically_cheaper` is the assertion
-    that keeps that assumption honest against a malformed schedule.
+    Solved by bisection over LOTS, against the EXACT cost rather than the billed one. That
+    distinction is what makes bisection valid: exact cost per rupee is (ad-valorem rates) +
+    (flat charges / turnover), strictly decreasing in quantity, whereas the billed figure has
+    a rounding sawtooth. Bisecting the billed figure produced three separate wrong answers on
+    real schedules — a non-minimal quantity, a quantity in the wrong basin entirely, and
+    `None` where the true answer was one lot whose charges all rounded away to a billed zero.
+
+    Using exact cost is also the conservative direction: exact is never below billed, so a
+    quantity that clears the ceiling here clears it on the contract note too.
     """
     if cost_bps_ceiling <= 0:
         raise QuantityEconomicsError(f"cost ceiling must be positive, got {cost_bps_ceiling}")
@@ -181,7 +229,7 @@ def minimum_viable_quantity(
         priced = engine.price_round_trip(
             replace(template, quantity=lot_size * lots), known_as_of=known_as_of
         )
-        return priced.total_bps_of_turnover <= cost_bps_ceiling
+        return priced.exact_bps_of_turnover <= cost_bps_ceiling
 
     if not clears(maximum_lots):
         return None
@@ -192,13 +240,6 @@ def minimum_viable_quantity(
             high = middle
         else:
             low = middle + 1
-    # Bisection is valid on a monotone predicate, and the curve is monotone only up to
-    # rounding: a broker rounding STT to the whole rupee can make one step cost a hundredth
-    # of a basis point MORE per rupee than the step below it. That is enough to leave
-    # bisection one lot high. So the answer is walked down while a smaller lot also clears —
-    # bounded by construction, since the walk stops the moment one does not.
-    while low > 1 and clears(low - 1):
-        low -= 1
     return lot_size * low
 
 

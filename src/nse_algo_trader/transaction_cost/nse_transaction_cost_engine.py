@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 
 from nse_algo_trader.deep_history.deep_history_bhavcopy_reader import PAISE_PER_RUPEE
@@ -45,14 +45,17 @@ from nse_algo_trader.transaction_cost.charge_structure_history import (
 )
 from nse_algo_trader.transaction_cost.chargeable_market_segments import (
     GST_BEARING_COMPONENTS,
-    OPTION_EXERCISE_SCOPE,
     ChargeableSegment,
     ChargeComponent,
     Depository,
     RoundingRule,
     TaxableBase,
     TradeLeg,
+    exercise_rule_scope,
 )
+
+_EXERCISE_BASES = frozenset({TaxableBase.OPTION_INTRINSIC_VALUE, TaxableBase.SETTLEMENT_VALUE})
+"""The bases that mean "this is the exercise event", so the exercise scope is the right one."""
 
 _PAISE_PER_RUPEE = Decimal(PAISE_PER_RUPEE)
 """Reused from `L0.34`'s reader rather than restated: one rupee is a hundred paise wherever
@@ -103,6 +106,7 @@ class TradeSpecification:
     is_short_first: bool = False
     is_option_exercise: bool = False
     settlement_price_paise: Decimal | None = None
+    is_physically_settled: bool = False
     orders_per_leg: int = 1
     depository: Depository | None = None
 
@@ -339,10 +343,18 @@ inheriting a claim that was never made about it.
 
 
 def _round_to(amount: Decimal, rule: RoundingRule) -> Decimal:
+    """Round HALF UP, because that is the rule the evidence actually states.
+
+    `Decimal.quantize` defaults to the context's `ROUND_HALF_EVEN` (banker's rounding), and
+    inheriting that default silently contradicted the only rounding fact this project has:
+    the broker's published practice is "nearest rupee, **50 paise and above rounds up**".
+    Under banker's rounding a Rs 2.50 STT bills as Rs 2.00, and half-rupee STT is not exotic —
+    intraday at 0.025% lands exactly on it at every odd multiple of Rs 2,000 of turnover.
+    """
     quantum = _ROUNDING_QUANTUM[rule]
     if quantum is None:
         return amount
-    return (amount / quantum).quantize(Decimal(1)) * quantum
+    return (amount / quantum).quantize(Decimal(1), rounding=ROUND_HALF_UP) * quantum
 
 
 class NseTransactionCostEngine:
@@ -393,8 +405,12 @@ class NseTransactionCostEngine:
         entry = self.price_leg(
             trade, trade.entry_leg, trade.entry_price_paise, known_as_of=known_as_of
         )
-        exit_leg = self.price_leg(
-            trade, trade.exit_leg, trade.exit_price_paise, known_as_of=known_as_of
+        exit_leg = (
+            self._price_exercise_settlement(trade, known_as_of=known_as_of)
+            if trade.is_option_exercise
+            else self.price_leg(
+                trade, trade.exit_leg, trade.exit_price_paise, known_as_of=known_as_of
+            )
         )
         return RoundTripCost(
             trade=trade,
@@ -429,6 +445,38 @@ class NseTransactionCostEngine:
             lines.append(self._gst_line(trade, leg, lines, gst_structure, schedule, known_as_of))
         return LegCost(leg=leg, price_paise=price_paise, lines=tuple(lines))
 
+    def _price_exercise_settlement(
+        self, trade: TradeSpecification, *, known_as_of: date | None
+    ) -> LegCost:
+        """What an exercise costs — which is NOT a second trade.
+
+        An exercised option is settled by the exchange. No order is sent, so there is no
+        brokerage, no exchange transaction charge, no SEBI turnover fee and no stamp duty on
+        the way out; pricing a full exit leg charges the SEBI notional fee twice and invents a
+        brokerage for an order that never existed.
+
+        Two parties, and only one of them pays. The HOLDER exercising is the purchaser and
+        owes the exercise tax on intrinsic value. The WRITER being assigned owes nothing at
+        settlement — they already paid the sell-side tax on the premium when they wrote it,
+        which the entry leg has priced. Filtering that entry-leg tax away and then charging
+        the writer the purchaser's tax, as an earlier version did, inverts both halves.
+        """
+        if trade.is_short_first:
+            return LegCost(leg=trade.exit_leg, price_paise=Decimal(0), lines=())
+        try:
+            structure = option_exercise_structure(
+                trade.segment,
+                trade.trade_date,
+                is_physically_settled=trade.is_physically_settled,
+            )
+        except ChargeStructureError as error:
+            raise CostCoverageError(str(error)) from error
+        schedule = self.schedule_for(trade.trade_date)
+        line = self._line_for(
+            trade, trade.exit_leg, Decimal(0), structure, schedule, known_as_of
+        )
+        return LegCost(leg=trade.exit_leg, price_paise=Decimal(0), lines=(line,))
+
     def _applicable_structures(
         self, trade: TradeSpecification, leg: TradeLeg
     ) -> tuple[ChargeStructureRecord, ...]:
@@ -437,18 +485,6 @@ class NseTransactionCostEngine:
         except ChargeStructureError as error:
             raise CostCoverageError(str(error)) from error
         applicable = [record for record in everything if record.leg.covers(leg)]
-        if trade.is_option_exercise:
-            applicable = [
-                record
-                for record in applicable
-                if record.component is not trade.segment.transaction_tax_component
-            ]
-            try:
-                exercise = option_exercise_structure(trade.trade_date)
-            except ChargeStructureError as error:
-                raise CostCoverageError(str(error)) from error
-            if exercise.leg.covers(leg):
-                applicable.append(exercise)
         if trade.segment is ChargeableSegment.EQUITY_DELIVERY and trade.depository is None:
             applicable = [
                 record
@@ -513,11 +549,17 @@ class NseTransactionCostEngine:
         if family is None:
             raise TransactionCostError(f"{structure.component} carries no rule family")
         scope = trade.segment.rule_scope
-        if (
-            trade.is_option_exercise
-            and structure.taxable_base is TaxableBase.OPTION_INTRINSIC_VALUE
-        ):
-            scope = OPTION_EXERCISE_SCOPE
+        if trade.is_option_exercise and structure.taxable_base in _EXERCISE_BASES:
+            exercise_scope = exercise_rule_scope(
+                trade.segment, is_physically_settled=trade.is_physically_settled
+            )
+            if exercise_scope is None:
+                raise CostCoverageError(
+                    f"{trade.segment} has no exercise tax scope — this segment does not "
+                    f"attract a transaction tax on exercise, and borrowing another segment's "
+                    f"would apply the wrong statute at the wrong rate"
+                )
+            scope = exercise_scope
         try:
             resolution = self._rules.resolve(
                 family, trade.trade_date, scope=scope, known_as_of=known_as_of

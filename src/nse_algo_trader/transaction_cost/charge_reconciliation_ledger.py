@@ -21,14 +21,14 @@ drift becomes distinguishable from rounding noise.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
-from statistics import NormalDist, fmean, stdev
+from statistics import NormalDist
 
 from nse_algo_trader.transaction_cost.chargeable_market_segments import (
     ChargeableSegment,
@@ -167,14 +167,38 @@ class ComponentReconciliation:
                 )
 
 
+def _sample_standard_deviation(values: Sequence[Decimal], mean: Decimal) -> Decimal:
+    """Exact sample standard deviation, Bessel-corrected, without touching `float`."""
+    if len(values) < _OBSERVATIONS_NEEDED_FOR_A_DISPERSION:
+        return Decimal(0)
+    squared = sum(((value - mean) ** 2 for value in values), Decimal(0))
+    return (squared / (len(values) - 1)).sqrt()
+
+
 class ChargeReconciliationLedger:
     """Accrues modelled-vs-billed residuals and reports what they support."""
 
     def __init__(
-        self, database_path: Path = DEFAULT_LEDGER_PATH, *, confidence: float = 0.95
+        self,
+        database_path: Path = DEFAULT_LEDGER_PATH,
+        *,
+        confidence: float = 0.95,
+        rounding_by_component: Mapping[ChargeComponent, RoundingRule] | None = None,
     ) -> None:
+        """`rounding_by_component` says what each component's billing granularity IS.
+
+        Held on the ledger rather than passed per call because it is a property of the broker
+        being reconciled against, and because the alternative was measured to fail: with the
+        map available only as a `reconcile()` argument, `drifting_components()` could not
+        supply it and defaulted to a half-paisa band for every component — so for the default
+        broker, which rounds STT to the whole rupee, it reported pure rounding as evidence
+        that a statutory RATE was wrong. Two callers of the same ledger disagreed.
+        """
         self._path = database_path
         self._confidence = confidence
+        self._rounding_by_component: Mapping[ChargeComponent, RoundingRule] = (
+            rounding_by_component or {}
+        )
         if not 0 < confidence < 1:
             raise ValueError(f"confidence must be strictly between 0 and 1, got {confidence}")
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -224,10 +248,14 @@ class ChargeReconciliationLedger:
         return int(row[0])
 
     def reconcile(
-        self, *, rounding_by_component: dict[ChargeComponent, RoundingRule] | None = None
+        self, *, rounding_by_component: Mapping[ChargeComponent, RoundingRule] | None = None
     ) -> tuple[ComponentReconciliation, ...]:
-        """One verdict per (broker, segment, component) with observations behind it."""
-        rounding = rounding_by_component or {}
+        """One verdict per (broker, segment, component) with observations behind it.
+
+        The per-call map overrides the ledger's own, for asking what the same residuals would
+        say under a different broker's rounding.
+        """
+        rounding = dict(self._rounding_by_component) | dict(rounding_by_component or {})
         with closing(self._connect()) as connection:
             rows = connection.execute(
                 "SELECT broker, segment, component, order_reference, modelled_paise, "
@@ -245,27 +273,49 @@ class ChargeReconciliationLedger:
         ]
         return tuple(results)
 
+    def _confidence_half_width(
+        self, count: int, dispersion: Decimal, key: tuple[str, str, str]
+    ) -> Decimal:
+        """The half-width of the interval around the mean residual.
+
+        With fewer than two observations there is no interval at all, so the answer is
+        infinite and every verdict is `UNVERIFIED`.
+
+        With a dispersion of exactly zero the naive interval is zero wide, which would let two
+        identical observations DECIDE that a component drifts. That case is not rare — an
+        algorithm trading the same size repeatedly produces identical residuals by
+        construction — and a zero-width interval from two samples is a statement the data
+        cannot support. So the dispersion is floored at the rounding granularity, which is the
+        smallest spread the billing process itself can produce, and the interval shrinks from
+        there as observations accrue.
+        """
+        if count < _OBSERVATIONS_NEEDED_FOR_A_DISPERSION:
+            return Decimal("Infinity")
+        floor = _ROUNDING_GRANULARITY_PAISE[self._rounding_for(key)]
+        return self.critical_value * max(dispersion, floor) / Decimal(count).sqrt()
+
+    def _rounding_for(self, key: tuple[str, str, str]) -> RoundingRule:
+        return self._rounding_by_component.get(
+            ChargeComponent(key[2]), RoundingRule.NEAREST_PAISA
+        )
+
     def _reconciliation_for(
         self,
         key: tuple[str, str, str],
         entries: Sequence[tuple[str, Decimal]],
-        rounding: dict[ChargeComponent, RoundingRule],
+        rounding: Mapping[ChargeComponent, RoundingRule],
     ) -> ComponentReconciliation:
         broker, segment_value, component_value = key
         component = ChargeComponent(component_value)
         residuals = [residual for _, residual in entries]
         count = len(residuals)
-        mean = Decimal(str(fmean(float(residual) for residual in residuals)))
-        dispersion = (
-            Decimal(str(stdev(float(residual) for residual in residuals)))
-            if count > 1
-            else Decimal(0)
-        )
-        half_width = (
-            self.critical_value * dispersion / Decimal(count).sqrt()
-            if count > 1
-            else Decimal("Infinity")
-        )
+        # Exact throughout. Routing these through `float` cost the last bits of a value the
+        # verdict then compares with `<=` against a band — measured: residuals of 0.1, 0.2
+        # and 0.3 gave a mean of 0.19999999999999998 rather than 0.2, which can flip
+        # AGREES/DRIFTS on a boundary case.
+        mean = sum(residuals, Decimal(0)) / count
+        dispersion = _sample_standard_deviation(residuals, mean)
+        half_width = self._confidence_half_width(count, dispersion, key)
         worst_order, worst_residual = max(entries, key=lambda entry: abs(entry[1]))
         granularity = _ROUNDING_GRANULARITY_PAISE[
             rounding.get(component, RoundingRule.NEAREST_PAISA)
@@ -283,10 +333,12 @@ class ChargeReconciliationLedger:
             explainable_by_rounding_paise=granularity,
         )
 
-    def drifting_components(self) -> tuple[ComponentReconciliation, ...]:
-        """Only the ones whose evidence says a rate is wrong — the actionable subset."""
+    def drifting_components(
+        self, *, rounding_by_component: Mapping[ChargeComponent, RoundingRule] | None = None
+    ) -> tuple[ComponentReconciliation, ...]:
+        """Only the ones whose evidence says a RATE is wrong — the actionable subset."""
         return tuple(
             reconciliation
-            for reconciliation in self.reconcile()
+            for reconciliation in self.reconcile(rounding_by_component=rounding_by_component)
             if reconciliation.verdict is ReconciliationVerdict.DRIFTS
         )
