@@ -8,6 +8,19 @@ Reconcile with the live task list at each session start.
 
 Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) · ⛔ blocked
 
+## `docs/SYSTEM_MAP.md` describes the PRE-RESET tree (2026-08-12) — 🔴 OPEN
+
+- 🔴 **SYSTEM_MAP is 285 KB of the system that was archived and deleted on 2026-08-10** (`A.26`). Its
+  `broker_sessions` section lists `refresh_kite_access_token.py`, `breeze_session_token_store.py` and
+  `angel_one_smartapi_session.py` — none of which exist in the rebuilt tree — while the five modules that
+  do exist are absent. Hand-patching it per slice would blend two different systems into one document
+  that describes neither, so it is being left alone deliberately rather than by omission.
+- **What is authoritative meanwhile:** `/wall`, which derives its 60-module inventory, tier, test pairing
+  and real-data coverage from a breadth-first walk of the actual import graph and test tree — nothing on
+  it is hand-typed. Rule H's intent (the map stays true to the server) is satisfied by the measured
+  surface; the prose map is not. Decide: regenerate SYSTEM_MAP from the import-graph extractor already
+  sketched at line 2716, or retire it in favour of `/wall`.
+
 ## Live depth capture (2026-08-12, first real full-session run) — 🟡 running, two open
 
 - 🟡 **`R.09` not satisfied: 1,420 of 9,890 cash instruments captured (14%).** Not a design choice — the
