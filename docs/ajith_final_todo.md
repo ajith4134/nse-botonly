@@ -259,13 +259,40 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **1.36** Pre-trade cost gate — `L1.02`
 - [ ] **1.37** Net-EV gate — `L1.03`
 - [ ] **1.38** Per-segment minimum-edge floor — `L1.04`
-- [ ] **1.39** Fill / slippage model — `L1.05`
-- [ ] **1.40** Market-impact fill model — `L1.06`
+- [ ] **1.39** Fill / slippage model — `L1.05` — *IN PROGRESS, and building as ONE engine with
+      `1.40` per `A.92`: with a real five-level book the size-dependence IS the calculation, so
+      splitting them would ship a size-blind model the second entry replaces wholesale.*
+- [ ] **1.40** Market-impact fill model — `L1.06` — *see `1.39`; the two close together.*
+
+      *(Both sit inside the feature **THE COST REALITY FILTER** — `A.93` — with `L1.01` (done),
+      `L1.02`, `L1.03`, `L1.04` and the minimal priced-signal contract the gate needs. The feature
+      lands when a real signal on real data is actually vetoed or resized by real modelled cost,
+      visible on `/costs`. No part of it ticks on its own: an entry is a unit of description, and
+      the deliverable is the capability.*
+
+      *Built so far, spec `docs/research/220`, 47 tests green: `order_book_walk_calculator`
+      (NSE's own impact-cost formula, with the CENSORING boundary made explicit),
+      `quoted_spread_observer` (deliberately unpooled — measured: shrinkage made the spread
+      estimate worse at every sample size down to n=5), `instrument_liquidity_buckets` (turnover
+      deciles x tick regime, derived from the distribution, never rupee thresholds), and
+      `market_impact_estimator` (the square-root curve ANCHORED to the book-walk's own cost at
+      visible depth, so the coefficient is derived from this instrument's data rather than
+      imported from a paper, and `sigma` cancels).*
+
+      *Measured on the real tape and driving the design: the visible five levels are a median
+      **0.3%** of the resting book; at 1e-3 of session volume **82.4%** of snapshots exhaust
+      them; and the walk SATURATES as it does — reproduced live at 5.527 bps for both 1,000 and
+      100,000 units. A naive book-walk reports a comfortable number exactly where cost runs away.*
+
+      *Still to build in this feature: the combined fill model + parameter store, `L1.03` net-EV,
+      `L1.02` gate, `L1.04` floor, the priced-signal contract, wiring, `/costs`, then the
+      adversarial review and the `R.05` real-data pass.*
 - [ ] **1.41** Realized-vs-modelled slippage tracker — `L1.07`
 - [ ] **1.42** STT options-sell rate change (0.15% from Apr 2026) + ITM auto-exercise STT trap — `L1.08`
 - [ ] **1.43** Discrete option-lot sizing — `L1.09`
 - [ ] **1.44** Capital-based position sizing — `L1.10`
 - [ ] **1.45** P&L attribution by cost component — `L1.11`
+      *(NOT A BUILD UNIT — MERGE -> `L13.15`. One engine + one panel, catalogued twice. Recorded by `A.94`.)*
 - [ ] **1.46** Cost homeostasis — `L1.12`
 - [ ] **1.47** Tax-lot record (STT/CTT/stamp/GST), exportable — `L1.13`
 - [ ] **1.48** Maker-order spread capture — `L1.14`
@@ -302,14 +329,17 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **2.22** Prequential forecast scorer — `L2.22`
 - [ ] **2.23** Prediction-labelled trade tables — `L2.23`
 - [ ] **2.24** Minimum-backtest-length + holdout custodian wiring into the live loop — `L2.24`
+      *(NOT A BUILD UNIT — MERGE -> `L2.02` + `L2.05`. Wiring into the live loop, not a second custodian. Recorded by `A.94`.)*
 - [ ] **2.25** Skill-vs-luck court — `L2.25`
 - [ ] **2.26** Random-control arm — `L2.26`
 - [ ] **2.27** Shadow-rejected arm — `L2.27`
 - [ ] **2.28** Per-trade pre-mortem — `L2.28`
 - [ ] **2.29** World-model scoreboard + profit provenance — `L2.29`
 - [ ] **2.30** Holdout custodian + minimum-backtest-length for the *option* families specifically — `L2.30`
+      *(NOT A BUILD UNIT — MERGE -> `L2.02` + `L2.05`. Parameterisation for option families. Recorded by `A.94`.)*
 - [ ] **2.31** Verification cockpit — `L2.31`
-- [ ] **2.32** Execution-grounded quality gates — `L2.32`
+- [x] **2.32** Execution-grounded quality gates — `L2.32` — *DUPLICATE of `0.7`, which is already
+      satisfied by the Stop hook running ruff + mypy + pytest. Ticked to match (`A.94`).*
 
 **— L3 —**
 
@@ -348,7 +378,9 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       `RandomizedDelaySec=600`. Enabled and active; next firing verified. `[~]` until a full run has
       been observed end to end.*
 - [x] **2.59** Systemd service management for the dashboard — `L3.27` · user unit + linger, `Restart=always`, crash-recovery verified by `kill -9` (`A.62`)
-- [ ] **2.60** Kite-decoupled architecture guard — `L3.28`
+- [ ] **2.60** Kite-decoupled architecture guard — `L3.29` — *renumbered from `L3.28`, which the
+      catalogue used for TWO different entries: this guard and the systemd timer at `2.59a`. Any
+      audit keyed on the ID reported one of them as done when only the other was (`A.94`).*
 
 **— L7 —**
 
@@ -365,7 +397,9 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **2.71** CVaR / tail-risk with stress scenarios — `L7.11`
 - [ ] **2.72** Real-time portfolio VaR including Greeks — `L7.12`
 - [ ] **2.73** Pre-trade cost gate as a risk control (see L1.02) — `L7.13`
+      *(NOT A BUILD UNIT — DROP -> `L1.02`. The plan's own text says "(see L1.02)". Not a second gate. Recorded by `A.94`.)*
 - [ ] **2.74** Indian trading cost model integrated into the risk decision — `L7.14`
+      *(NOT A BUILD UNIT — DROP -> `L1.01` + `L3.05`. "Cost model integrated into the risk decision" is wiring. Recorded by `A.94`.)*
 
 **— L9 —**
 
@@ -379,13 +413,18 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **2.82** Smart order routing across brokers — `L9.08`
 - [ ] **2.83** Reinforcement-learning execution agent — `L9.09`
 - [ ] **2.84** Broker state reconciler in the execution path — `L9.10`
+      *(NOT A BUILD UNIT — MERGE -> `L3.03`. "...in the execution path" is placement, not a component. Recorded by `A.94`.)*
 - [ ] **2.85** Order-intent WAL in the execution path — `L9.11`
+      *(NOT A BUILD UNIT — MERGE -> `L3.02`. Same. Recorded by `A.94`.)*
 - [ ] **2.86** MIS → CNC position conversion — `L9.12`
 - [ ] **2.87** T+1 settlement awareness — `L9.13`
 
 **— L12 —**
 
 - [ ] **2.88** SEBI Feb-2025 retail-algo framework compliance — `L12.14`
+      *(NOT A BUILD UNIT — MERGE -> `L3.06` + `L3.19` + `L9.01`. Compliance here is the union of the
+      rate limiter, Algo-ID tagging and broker-as-principal routing; no separate module exists.
+      Recorded by `A.94`.)*
 
 # PHASE 3 — THE FIRST HOLON (cash-intraday, whole)
 
@@ -400,10 +439,15 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **3.4** Candlestick pattern library — `L4.04`
 - [ ] **3.5** Chart-pattern library — `L4.05`
 - [ ] **3.6** Average Directional Index + trend-strength gauge — `L4.06`
-- [ ] **3.7** Name — `L4.07`
+- [ ] **3.7** Session strategy regime gate — `L4.07` — *title repaired; the generator emitted the
+      literal word "Name" (`A.94`).*
 - [ ] **3.8** VPIN order-flow toxicity (Bulk Volume Classification) — `L4.08`
-- [ ] **3.9** Order-flow imbalance (depth-weighted, never L1 — `L4.09`
-- [ ] **3.10** Microprice (Stoikov) — `L4.10`
+- [x] **3.9** Order-flow imbalance (depth-weighted, never L1) — `L4.09` · multi-level
+      Cont-Kukanov-Stoikov OFI, already implemented inside `order_book_snapshot_replay_engine` and
+      surfaced at `/microstructure`. *Tick reconciled by `A.94` — do not rebuild.*
+- [x] **3.10** Microprice (Stoikov) — `L4.10` · `micro_price_paise()` in
+      `order_book_snapshot_replay_engine`, consumed by `quoted_spread_observer` (`L1.05`).
+      *Tick reconciled by `A.94` — do not rebuild.*
 - [ ] **3.11** Kyle's lambda — `L4.11`
 - [ ] **3.12** Volume profile — `L4.12`
 - [ ] **3.13** Market breadth — `L4.13`
@@ -433,7 +477,10 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **3.34** ORB champion-challenger auto-tuning — `L5.02`
 - [ ] **3.35** Scheduled champion-challenger auto-re-evaluation — `L5.03`
 - [ ] **3.36** Per-market-regime champion — `L5.04`
-- [ ] **3.37** Intraday mean-reversion family — `L5.05`
+- [~] **3.37** Intraday mean-reversion family — `L5.05` · `strategy/intraday_mean_reversion_engine.py`
+      exists and is consumed by the `/regime` read model. `[~]` not `[x]`: it emits action + conviction
+      with NO expected edge, so it cannot yet clear a cost gate — completed inside feature **F01**,
+      which gives it a priced signal. *Reconciled by `A.94`.*
 - [ ] **3.38** VWAP reversion (±2σ, skipped when ADX > 25) — `L5.06`
 - [ ] **3.39** VWAP trend / pullback — `L5.07`
 - [ ] **3.40** Momentum / relative-strength ranking — `L5.08`
@@ -448,6 +495,7 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **3.49** Event-driven family — `L5.17`
 - [ ] **3.50** Sector rotation — `L5.18`
 - [ ] **3.51** The four regime engines as one committed set — `L5.19`
+      *(NOT A BUILD UNIT — MERGE -> F11/F12. `A.08`'s arming policy, already in the brain's arm/disarm. Recorded by `A.94`.)*
 - [ ] **3.52** Intraday tradable cash-universe filter — `L5.20`
 - [ ] **3.53** Cash focus set — derived from the cost floor, capped by executable capacity; no fixed N — `L5.21`
 - [ ] **3.53a** Cash filter families, all four (activity · volatility+range · extremes+events · relative-strength+structure) — `L5.21a`
@@ -490,12 +538,17 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 
 **— L11 —**
 
-- [ ] **3.67** Regime classifier — `L11.01`
-- [ ] **3.68** HMM / Markov-switching regime model — `L11.02`
-- [ ] **3.69** Soft regime *weighting* rather than hard switching — `L11.03`
+- [x] **3.67** Regime classifier — `L11.01` · trend-strength classifier, built 2026-08-11 in
+      `regime/trend_strength_regime_classifier.py`; live consumer is the mean-reversion engine and
+      the `/regime` surface. *Tick reconciled by `A.94` — it was built and never ticked.*
+- [x] **3.68** HMM / Markov-switching regime model — `L11.02` · filtered Markov-switching model in
+      `regime/markov_switching_regime_model.py`. *Tick reconciled by `A.94`.*
+- [x] **3.69** Soft regime *weighting* rather than hard switching — `L11.03` · soft log-linear pooling
+      with arm/disarm in `regime/soft_regime_weighting_brain.py`. *Tick reconciled by `A.94`.*
 - [ ] **3.70** Non-stationary bandit router (discounted / sliding-window Thompson) — `L11.04`
 - [ ] **3.71** Meta-model over the experiment ledger — `L11.05`
-- [ ] **3.72** Historical session market-regime classifier — `L11.06`
+- [x] **3.72** Historical session market-regime classifier — `L11.06` · `regime/market_regime_state.py`
+      plus the session-phase classifier. *Tick reconciled by `A.94`.*
 - [ ] **3.73** Regime-conditional model bank — `L11.07`
 - [ ] **3.74** Qlib DDG-DA drift adaptation as the router reference — `L11.08`
 - [ ] **3.75** BULL agent — `L11.09`
@@ -511,11 +564,13 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **3.85** Playbook instruction engine — `L11.96`
 - [ ] **3.86** The instruction object — `L11.97`
 - [ ] **3.87** Targets are stated in BASIS POINTS OF THE TRADED INSTRUMENT'S TICKET — `L11.98`
+      *(NOT A BUILD UNIT — MERGE -> `L11.106`, which states the same rule more fully. Recorded by `A.94`.)*
 - [ ] **3.88** Range-width precondition — `L11.99`
 - [ ] **3.89** Flat-regime dual playbook — `L11.100`
 - [ ] **3.90** Mechanism statement mandatory — `L11.101`
 - [ ] **3.91** Instructions are hypotheses, validated centrally — `L11.102`
 - [ ] **3.92** Instruction decay and retirement — `L11.103`
+      *(NOT A BUILD UNIT — MERGE -> `L11.117`. The decay half survives as a lifecycle state. Recorded by `A.94`.)*
 - [ ] **3.93** The 24-cell playbook matrix, populated — `L11.104`
 - [ ] **3.94** Instruction discovery (ultra) — `L11.105`
 - [ ] **3.95** The tradeable-unit denominator rule — `L11.106`
@@ -538,6 +593,8 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **3.109** Bot anatomy contract — `L14.01`
 - [ ] **3.110** Holonic nesting topology — `L14.02`
 - [ ] **3.111** Shared-acquisition / owned-interpretation rule — `L14.03`
+      *(NOT A BUILD UNIT — MERGE -> `L14.34`, the three-data-tier refinement the plan says supersedes
+      the blunt global form. Recorded by `A.94`.)*
 - [ ] **3.112** Inter-bot protocol — `L14.04`
 - [ ] **3.113** Autonomy ladder — `L14.05`
 - [ ] **3.114** CLASS A — `L14.22`
@@ -568,6 +625,8 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **4.6** Prequential learning + provenance-separable memory (§53 slice 3) — `L5.44`
 - [ ] **4.7** Session/regime replay curriculum store — `L5.45`
 - [ ] **4.8** HFT / latency arbitrage — `L5.46`
+      *(**DISPROVED — NEVER BUILD.** `D.02`: proven closed from a retail cloud VM by this project's own
+      prior build. Encoded as guard X.A2. Recorded by `A.94`.)*
 
 **— L10 —**
 
@@ -712,6 +771,7 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **6.6** Pod paper lifecycle engine — `L5.30`
 - [ ] **6.7** Trade-quality floor + per-trade evidence card — `L5.31`
 - [ ] **6.8** Profit-trail gating + MFE/MAE excursion tracking — `L5.32`
+      *(NOT A BUILD UNIT — DROP -> `L11.125`. The plan: "a static gate, now a learning organ". Recorded by `A.94`.)*
 - [ ] **6.9** Proportionate entry gates — `L5.33`
 - [ ] **6.10** Unobservability must not hard-veto — `L5.34`
 - [ ] **6.11** Adaptive arm selector + posterior store — `L5.35`
@@ -728,6 +788,7 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **6.19** Variance-risk-premium richness engine — `L6.05`
 - [ ] **6.20** IV-rank shrinkage estimator — `L6.06`
 - [ ] **6.21** Regime → profit-engine map — `L6.07`
+      *(NOT A BUILD UNIT — DROP -> `L11.96`, which the plan says supersedes it. Recorded by `A.94`.)*
 - [ ] **6.22** Option opportunity scorer — `L6.08`
 - [ ] **6.23** Terminal-distribution model — `L6.09`
 - [ ] **6.24** Structure payoff optimizer — `L6.10`
@@ -768,9 +829,13 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **6.56** LLM-risk entry gate at all four entry sites, calibration-gated so it only earns authority as it proves itself — `L7.17`
 - [ ] **6.57** Per-trade pre-mortem CVaR sizing consumer — `L7.18`
 - [ ] **6.58** Power budgets — `L7.19`
+      *(NOT A BUILD UNIT — MERGE -> `L12.12`. The plan writes "(see L7.19)" on it. Build once, under L12. Recorded by `A.94`.)*
 - [ ] **6.59** Instrumental-convergence limiter — `L7.20`
+      *(NOT A BUILD UNIT — MERGE -> `L12.09`. Same duplicate pair. Recorded by `A.94`.)*
 - [ ] **6.60** Scalable oversight — `L7.21`
+      *(NOT A BUILD UNIT — MERGE -> `L12.08`. Same duplicate pair. Recorded by `A.94`.)*
 - [ ] **6.61** Market-data integrity defense — `L7.22`
+      *(NOT A BUILD UNIT — MERGE -> `L12.13`. Same duplicate pair. Recorded by `A.94`.)*
 
 **— L8 —**
 
@@ -788,6 +853,7 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **6.73** Regime-conditional allocation — `L8.12`
 - [ ] **6.74** Meta-strategy allocator — `L8.13`
 - [ ] **6.75** Portfolio supervisor over the three segment bots — `L8.14`
+      *(NOT A BUILD UNIT — MERGE -> `L14.10` + `L14.21a`. Scoped to a superseded three-bot topology. Recorded by `A.94`.)*
 - [ ] **6.76** Multi-objective arbitration — `L8.15`
 - [ ] **6.77** Goal-priority scheduler — `L8.16`
 - [ ] **6.78** Paper-trading ledger — `L8.17`
@@ -965,7 +1031,7 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **8.7** Alignment tripwires wired at all four entry sites — `L12.21`
 - [ ] **8.8** Value-drift monitor — `L12.22`
 - [ ] **8.9** Explicit utility function — `L12.23`
-- [ ] **8.10** Automated backup + disaster-recovery runbook — the prior build had none until the 2026-08-10 archive — `L3.22`
+- [ ] **8.10** *(DUPLICATE of `2.54`, same `L3.22`. One runbook, not two — see `A.94`.)*
 - [ ] **8.11** Scale live capital as the track record earns it, across the full capital range — `A.23`
 - [ ] **8.12** ⭐ **MILESTONE — first real rupee traded on a graduated instruction**
 

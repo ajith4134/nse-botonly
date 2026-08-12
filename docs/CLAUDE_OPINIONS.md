@@ -1295,3 +1295,47 @@ scale: eleven other seeded families have still never been checked by a consumer,
 rather than fixed it. The tempting general rule — "every fact needs an arithmetic cross-check" — is not
 achievable for families like expiry weekday where no independent total exists to reconcile against. For
 those the honest answer may be that coverage is all we get, and the dashboard should say so differently.
+
+## O.73 · 2026-08-12 · Hunting for OSS packages has not paid; hunting for FACTS has paid every time
+
+**Opinion.** The operator asked whether I should stop the OSS/GitHub sourcing sweeps and just build
+everything bespoke. My answer is **yes for code, no for facts**, and the two have been getting bundled
+together under one rule when their measured value could not be more different.
+
+**Reasoning, from this session's own numbers.** Two full mechanical sourcing passes ran today, ~35
+candidates installed and executed on this host, across the cost engine and the fill model. Result:
+**zero vendored, zero depended on, one deferred** (`hftbacktest`, and only for a maker-order concern
+two slices away). Both passes ended in the same sentence — "bespoke is mechanically justified". That
+is not bad luck. It is structural: exact-`Decimal` integer-paise money, point-in-time provenance with
+refusal, NSE-specific statute, and an aarch64/glibc-2.34 host together exclude essentially the whole
+ecosystem. Across five slices now, the sourcing verdict has been "build it" every single time.
+
+The FACT research in the same session is the opposite story. It caught the SEBI turnover fee being
+charged on notional rather than premium (which `research/164` and `b28` both had wrong), the
+exercised-option STT basis moving in 2019 rather than 2024, two seeded rates that contradicted their
+own citations by 100x and 10x, and — for the fill model — that the `average_traded_price` field looks
+usable and carries 1,012–5,684 bps of rounding noise, that Kyle's lambda is not estimable from this
+tape (R² 0.001), and that 82% of snapshots exhaust the visible book at 1e-3 of session volume. **Not
+one of those was derivable from my memory, and every one of them would have been silently expensive.**
+
+So the distinction I would draw is not "research vs no research". It is: **I can write any code this
+project needs, but I cannot know what the exchange charges.** Code I get wrong fails a test. A rate I
+get wrong from memory produces a plausible number forever.
+
+Three things I would keep regardless of the sourcing decision: (1) heavyweight numerical libraries
+already depended on — scipy, statsmodels, duckdb, polars, pyarrow — because "build everything" must
+never mean reimplementing a solver or a Parquet reader; (2) `R.17`'s mechanical-evidence standard for
+the rare occasions something IS evaluated, since README-based rejection is how a stale library gets
+adopted; (3) a cheap check of what the venv already has, which costs almost nothing.
+
+**Confidence: measured** on the sourcing verdicts — 35 candidates, installed and run, zero adopted,
+and I have the failure lines. **Measured** on the fact-research value — each finding was verified
+against a primary source or reproduced on real data. **Reasoned** on the generalisation to future
+slices: five slices is a consistent pattern but it is not proof, and the next slice could be the one
+where a mature library fits.
+
+**What would change my mind.** A slice whose problem is a well-solved commodity — a numerical solver,
+a statistical estimator, a wire-format parser, an ML model — where the ecosystem is mature and
+NSE-specificity does not bite. For those the search is cheap and the payoff is real, and I should
+still run it. What I would stop is the reflexive 30-candidate sweep on problems that are obviously
+bespoke by construction, which is most of what this project builds.

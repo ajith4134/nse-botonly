@@ -399,7 +399,7 @@ the one bot-walling host is never hit at the same second daily. ⟨IV⟩ · base
 BUILT `A.62` · `deploy/nse-dashboard.service` — USER unit + linger, `Restart=always`, burst-capped.
 *Supersedes its own "journald logging" clause: measured on this host, `journalctl --user` captures
 nothing from user units, so journald alone would hide every crash.*
-**L3.28**  Kite-decoupled architecture guard — a test that fails if `kiteconnect` is imported anywhere
+**L3.29**  Kite-decoupled architecture guard — a test that fails if `kiteconnect` is imported anywhere
 outside the broker seam. Everything except live trading runs broker-independent. ⟨IV⟩ · adv · archived ·
 `kite_decoupled_architecture.md`
 
@@ -4020,7 +4020,7 @@ sequencing decision for the todo file.
 
 **A.25 · Broker scope: Kite for execution, multi-broker for data.** Zerodha Kite is the single execution
 path; the data layer stays swappable across Kite / Upstox / Angel One / Breeze for redundancy and gap-fill.
-Preserves the Kite-decoupled architecture guard (L3.28): nothing outside the broker seam imports
+Preserves the Kite-decoupled architecture guard (L3.29): nothing outside the broker seam imports
 `kiteconnect`, so the dashboard and every non-trading feature run broker-independent.
 
 **A.26 · The three survivors of the reset.** Everything else was archived and deleted; these were kept
@@ -4081,6 +4081,99 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
+
+**A.94 · 2026-08-12 · The catalogue was mapped into 41 deliverable FEATURES, and the audit of it
+found a defect that had been reporting built work as unbuilt and unbuilt work as built.**
+Map at `docs/FEATURE_MAP.md`, which is now the BUILD document; this file and the todo remain the
+catalogue. Follows directly from `A.93`, which made a feature rather than an entry the unit of work.
+
+*The arithmetic, stated so nothing can hide.* 599 distinct entry IDs describing **600** capabilities;
+42 closed; **557 outstanding, all 557 placed, none unplaced and none placed twice**. Of those, ~40
+are NOT their own build unit — exact duplicates, entries the plan itself marks superseded,
+declarations that are not deliverables, three policies that are one test each, and one disproved
+item. Real delivery surface: **~515 entries across 41 features**.
+
+*The defect.* **`L3.28` was used for TWO different entries** — "scheduled daily operations, systemd
+USER timer" (built, `A.61`) and "Kite-decoupled architecture guard" (not built) — and the todo
+carried the collision forward as `2.59a` and `2.60`. Any coverage audit keyed on the ID reported one
+as done when only the other was. The guard is **renumbered `L3.29`**. Also repaired: todo `3.7` was
+titled with the literal word "Name" (a generator bug; it is `L4.07`), and two task pairs were exact
+duplicates of each other (`2.54`/`8.10`, `0.7`/`2.32`).
+
+*Seven entries were BUILT and never ticked* — `L11.01`, `L11.02`, `L11.03`, `L11.06` (the `regime/`
+package, 2026-08-11), `L5.05` (the mean-reversion engine), and `L4.09`/`L4.10` (multi-level
+Cont-Kukanov-Stoikov OFI and the Stoikov micro-price, already inside
+`order_book_snapshot_replay_engine`). Reconciled rather than rebuilt. `L5.05` reconciles to `[~]`,
+not `[x]`: it emits action and conviction with no expected edge, so it cannot clear a cost gate —
+and giving it one is part of the feature now in flight.
+
+*The ordering consequence, which is the point of the exercise.* Four features — the cost filter, the
+ORDER PATH, sizing/risk, and the loop — stand between here and end-to-end paper trading: **~56
+entries against the plan's own ordering, which reaches a paper trade after roughly 200.** The
+difference is almost entirely that the order path is pulled ~90 entries forward. There is no order,
+position, trade or fill type anywhere in `src/`, so building `L2`'s 32 validation entries first
+would produce 32 more consumer-queued fragments — the exact failure `A.93` was written to stop.
+
+Two orderings deliberately invert the plan and are recorded as decisions rather than drift: the
+**exit organ (`L11.125`) builds BEFORE the BULL/BEAR pair**, because an exit generates a complete
+counterfactual for free and that data exists only if paper records post-exit paths from the first
+session — retrofitting loses it permanently. And **market-closed simulation builds AFTER the proving
+ground**, because the curriculum targets highest uncertainty and only the proving ground measures
+uncertainty; building simulation first is precisely how 97% of replay experience once went to the
+losing strategy and 0% to the only winner.
+
+*Two blockers worth naming here.* `L6.30` SPAN margin is the **highest-leverage blocker in the plan**
+— it cascades into option book risk, the structure optimiser and the capital allocator's margin
+constraint, and NSE's calculation page 403'd during research. And todo `0.5` — **the leaked GitHub
+PAT is still live** (`B.10`), unrelated to any feature and overdue.
+
+**A.93 · 2026-08-12 · Two operator directions that change HOW everything after this is built:
+build feature-by-feature rather than entry-by-entry, and stop hunting for OSS packages.**
+
+*Direction 1 — the unit of work is a FEATURE, not a plan entry.* The operator's observation is that
+we have been implementing thin parts. That is exactly right, and the plan itself predicted it:
+`A.24` records that this file is a **CATALOG, not a build plan**. Its entries are units of
+*description*, and I had been treating them as units of *delivery*. The evidence from today is
+unambiguous — `L1.01` shipped `[~]` because its consumer does not exist; `L1.02`, `L1.03` and
+`L1.04` are all blocked on a signal and an order path that the reset deleted; and I had already
+merged `L1.05` and `L1.06` into one engine (`A.92`) because splitting them produced a size-blind
+model the second entry would have replaced wholesale. Three separate symptoms, one cause.
+
+**New rule of delivery: a feature is a capability that is USABLE the moment it lands** — it has a
+real consumer, it changes behaviour, and it is visible on the dashboard. Plan entries become a
+checklist INSIDE a feature rather than the thing being built. One spec, one research pass, one
+adversarial review, one real-data pass per FEATURE, instead of one per fragment. `R.18` is
+unchanged in intent: still one thing at a time, but the thing is now whole.
+
+*What that makes the current feature.* **THE COST REALITY FILTER** — the capability "no signal
+reaches capital without clearing what it actually costs to trade". It contains `L1.01` (done),
+`L1.05`+`L1.06` (fill and impact, spec at `research/220`), `L1.03` (net-EV), `L1.02` (the gate),
+`L1.04` (the per-segment floor derived from the finished hurdle), and the minimal priced-signal
+contract the gate needs — built as PART of the feature rather than as a seventh orphan. It lands
+when a real signal on real data is actually vetoed or resized by real modelled cost, and that is
+visible on `/costs`.
+
+*Direction 2 — stop the OSS package sweeps; keep the fact research.* Measured basis in `O.73`: two
+full mechanical sourcing passes today, ~35 candidates installed and executed, **zero vendored, zero
+depended on, one deferred**, both concluding "bespoke is mechanically justified" — the fifth
+consecutive slice to conclude that. The exclusion is structural (exact-Decimal paise, point-in-time
+provenance with refusal, NSE statute, aarch64/glibc-2.34), not incidental.
+
+**What changes:** no more reflexive multi-candidate sweeps. Build bespoke by default. **What does
+NOT change, and I argued for this rather than simply accepting the instruction:** research into
+FACTS stays at full strength. The same session's fact research caught the SEBI fee being charged on
+notional rather than premium, the exercise-STT basis moving in 2019 rather than 2024, two seeded
+rates contradicting their own citations by 100x and 10x, and the `average_traded_price` rounding
+trap worth 1,012-5,684 bps. None of that was derivable from memory. I can write any code this
+project needs; I cannot know what the exchange charges. `R.17`'s mechanical-evidence standard also
+stands for the rare occasion something IS evaluated, and the heavyweight libraries already in use
+(scipy, statsmodels, duckdb, polars, pyarrow) are unaffected — "build everything" must never mean
+reimplementing a solver or a Parquet reader. The one exception where a search still earns its keep
+is a genuine commodity problem: a numerical solver, a statistical estimator, a wire-format parser,
+an ML model.
+
+*supersedes:* the routine half of `R.17` (the sweep), not its evidence standard; and the working
+assumption that a plan entry is a deliverable.
 
 **A.92 · 2026-08-12 · `L1` is built in dependency order, not entry order: `L1.05`/`L1.06` move ahead
 of `L1.02`/`L1.03`/`L1.04`, and the two fill entries build as ONE engine.** Operator delegated the
