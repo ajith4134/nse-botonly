@@ -1142,3 +1142,53 @@ against 281 normally, concentrated in six minutes. Correcting it moved the resol
 numbers deserve the query, and my current answer is: any statistic that a DESIGN DECISION rests on. The
 "crossed implies stale" reading justified refusing 1.2% of the tape, which is exactly the kind of claim
 that should have had to show its rows.
+
+## O.67 · 2026-08-12 · A wrong answer that type-checks is worse than a crash, and only an independent witness catches it
+
+**Opinion.** Loading 33 years of bhavcopy produced two failures on the same run. One was a NULL date that
+hit a NOT NULL constraint and stopped the load — loud, immediate, trivially diagnosed. The other was
+`cash_2020-07-13.csv.zip` writing its dates as `13-Jul-20`, which `%Y` parses as the year 20 AD: 2,001
+rows loaded as `0020-07-13` with no exception, no null, and no test failure anywhere. I would rather have
+ten of the first than one of the second, and the only thing that caught it was comparing the parsed date
+against the file's own NAME — evidence that does not come from the file's contents.
+
+**Reasoning.** A format list can never close this class. Every date format I add makes the parser accept
+MORE inputs, and the failure here was acceptance, not rejection: the answer was well-formed, in range,
+and wrong. What distinguishes a correct parse from a plausible one is agreement with an independent
+witness, and archives usually have one — a filename, a manifest, a sibling file, a checksum. This project
+already relies on the same move elsewhere: `L0.32` brackets the host clock against NTP because the feed
+alone cannot say whether it is late, and `L0.33` needs three brokers because two cannot say which is
+noisy.
+
+**Confidence: measured.** Both defects reproduced on real files; the invariant catches both and now has a
+test each. I have NOT measured how many other rows across 193 million disagree with their file's name —
+the reload will say, and that number is itself a data-quality finding.
+
+**What would change my mind.** A large disagreement count, which would mean the invariant is too strict
+(a file legitimately carrying a prior session's rows — a correction file, say) rather than the data being
+wrong. Then the rule becomes "quarantine and report" rather than "quarantine silently", which is what it
+already does; what would change is whether those rows are recoverable rather than discarded.
+
+## O.68 · 2026-08-12 · A test that checks half a pipeline certifies half a pipeline
+
+**Opinion.** The differential oracle for `L0.34` was the best idea in that slice — two readers, one
+obviously correct and slow, one fast, checked against each other on real files — and it still let two
+entire trading sessions disappear. Not because the idea was wrong, but because I applied only the FIRST of
+the fast path's three filtering stages before comparing. The readers diverged in the second stage. The
+test passed, I signed off, and the store reported itself complete while missing 33,389 rows.
+
+**Reasoning.** A differential test's guarantee is exactly as wide as the code path it exercises, and mine
+was narrower than the code it was named after. Worse, the narrowing was invisible: the test looked
+complete, it used real files, and it compared cell-for-cell. What it did not do was run what the loader
+actually runs. The general form — the one I want to remember — is that comparing two implementations only
+proves anything about the stages you put on BOTH sides of the comparison.
+
+**Confidence: measured.** The extended test, running all three stages, failed immediately on the two files
+that had been silently lost, and on the five-dump 2003 file. The same test with one stage had passed on
+six files for two full load cycles.
+
+**What would change my mind.** Nothing about the diagnosis. The open question is how to make the omission
+visible rather than relying on care: the honest answer is that the loader should expose ONE function that
+does all of its filtering, so a test physically cannot apply a subset of it. I have not done that — the
+three stages are still separately callable, and the test now calls all three by discipline rather than by
+construction. That is a weaker guarantee than it looks, and it is recorded as such.

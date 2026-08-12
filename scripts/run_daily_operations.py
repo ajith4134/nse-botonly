@@ -89,6 +89,9 @@ from nse_algo_trader.dashboard.dashboard_surface_screenshot_capture import (
     read_access_token,
     summarise_capture,
 )
+from nse_algo_trader.deep_history.deep_history_archive_loader import (
+    DeepHistoryArchiveLoader,
+)
 from nse_algo_trader.historical_bars.angel_one_historical_bar_source import (
     AngelOneHistoricalBarSource,
 )
@@ -841,6 +844,28 @@ def _consolidate_broker_feeds() -> str:
     )
 
 
+def _load_new_archive_days() -> str:
+    """`L0.34`: fold any newly fetched bhavcopy files into the deep-history store.
+
+    Incremental by construction — the loader skips files already recorded — so this is a
+    few seconds on a normal day and only the first run pays for 33 years. It runs AFTER the
+    ingest steps, so the day fetched this morning is loaded this morning.
+    """
+    with DeepHistoryArchiveLoader() as loader:
+        report = loader.load()
+        if not report.files_loaded:
+            spans = ", ".join(
+                f"{c.market} {c.earliest}..{c.latest} ({c.rows:,} rows)"
+                for c in loader.coverage()
+            )
+            return f"up to date · {spans or 'nothing loaded yet'}"
+        return (
+            f"{report.files_loaded:,} new file(s) · {report.rows_written:,} rows · "
+            f"{report.rows_quarantined:,} quarantined · "
+            f"{len(report.files_unreadable)} unreadable · {report.seconds:.1f}s"
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -887,6 +912,7 @@ def main() -> int:
     _run_step(report, "bar store", _report_bar_store)
     _run_step(report, "clock integrity", _assess_clock_integrity)
     _run_step(report, "consolidated feed", _consolidate_broker_feeds)
+    _run_step(report, "deep history", _load_new_archive_days)
     # Last: the surface should be photographed AFTER the run has changed the state
     # it displays, so the capture shows the day that just happened.
     _run_step(report, "dashboard surfaces", _capture_dashboard_surfaces)

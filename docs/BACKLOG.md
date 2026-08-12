@@ -8,6 +8,26 @@ Reconcile with the live task list at each session start.
 
 Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) · ⛔ blocked
 
+## `L0.34` deep history (2026-08-12, `A.88`) — 🟡 loaded, four open
+
+- 🔴 **The bulk loader counts quarantined rows but does not record WHY.** The row-wise
+  reference reader keeps a reason and the raw row per rejection; the vectorised path returns
+  only a count, so `/history` can show 76,443 refusals but not their breakdown. Carrying the
+  reason through the polars path is the fix.
+- 🔴 **One DuckDB transaction per file — 14,314 commits for one load.** It works (33.6 min,
+  96,120 rows/s) but the store came out 4.6 GB against a 2.8 GB compressed source, which is
+  the fragmentation that shape produces. Batching inserts across files would cut both the
+  runtime and the size; a `CHECKPOINT` after the load would reclaim space.
+- 🔴 **Corporate-action adjustment is not yet applied on read.** The engine exists
+  (`CorporateActionAdjustmentEngine`) and the loader deliberately stores RAW rows, but
+  nothing joins the two yet, so a 33-year price series is unadjusted for splits and bonuses.
+  This is the next slice and the one that makes the history usable for backtests.
+- 🔴 **Nothing consumes the store yet beyond `/history`.** `R.06` is met by the surface and
+  the daily-runner step; the named queued consumers are the point-in-time universe engine
+  and `1.5`'s de-listing acceptance criteria, which is why this was pulled forward.
+- ℹ️ **`B.04` stays open.** This is daily bhavcopy only; deep INTRADAY history remains unfree.
+  Narrow `B.04`'s wording rather than ticking it.
+
 ## `L0.33` consolidated multi-broker feed (2026-08-12, `A.84`/`A.85`) — 🟡 built + reviewed, four open
 
 - 🟢 **CLOSED 2026-08-12 — Upstox is the third feed** (`A.86`). The `UPSTOX_ACCESS_TOKEN` is indeed

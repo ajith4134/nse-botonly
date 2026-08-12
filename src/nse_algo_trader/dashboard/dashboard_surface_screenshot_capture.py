@@ -29,7 +29,16 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8080"
 ACCESS_TOKEN_PATH = Path("~/.nse_algo_trader/dashboard_access_token.txt").expanduser()
 DEFAULT_OUTPUT_ROOT = Path("~/nse_archive/dashboard_screenshots").expanduser()
 
-ROUTES = ("/wall", "/regime", "/manifest", "/microstructure", "/rules", "/clock", "/feed")
+ROUTES = (
+    "/wall",
+    "/regime",
+    "/manifest",
+    "/microstructure",
+    "/rules",
+    "/clock",
+    "/feed",
+    "/history",
+)
 
 PAGE_LOAD_TIMEOUT_MILLISECONDS = 120_000
 """Raised from playwright's 30 s default because a real surface crossed it.

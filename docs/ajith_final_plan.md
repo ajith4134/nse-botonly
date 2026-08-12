@@ -2664,6 +2664,101 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.89 · 2026-08-12 · `L0.34`'s adversarial review found that the load I had just signed off was
+missing two entire trading sessions, and the differential test could not have seen it.** Six defects, all
+reproduced against the real archive and the loaded store. This entry exists because the sign-off in
+`A.88` was WRONG, not merely incomplete.
+
+**SEV-1 — 33,389 rows absent from a store that reported itself complete.** polars parses `%Y` through
+chrono, which accepts a TWO-DIGIT year, so `14-May-12` became `0012-05-14` while the reference reader
+(whose format list had gained `%d-%b-%y`) read 2012 correctly. `_only_rows_dated` — the invariant added in
+`A.87` to catch exactly this class — then discarded every row in the file, and `_write` recorded it as
+loaded with `row_count=0`. `fo_2012-05-14` (31,388 rows) and `cash_2020-07-13` (2,001) vanished, `/history`
+displayed both markets as **complete**, and the losses appeared only inside an undifferentiated quarantine
+total. The differential test missed it because it applied `_without_impossible_bars` but NOT
+`_only_rows_dated` — it compared the two readers UPSTREAM of the step where they diverged. A test that
+checks half a pipeline certifies half a pipeline.
+
+**SEV-3 — 90,655 duplicate rows.** Some 2002-2007 F&O files are several dumps concatenated —
+`fo_2003-04-23` holds five embedded header rows, so every contract was stored six times — and **3,180
+identity groups disagreed on the close**, which is ambiguous history rather than redundancy.
+
+**SEV-3 — ~30,800 legitimate 1990s rows were being discarded.** 30,851 cash rows in 1995-96 tripped the
+impossible-bar rule and **99.8% of them have `OPEN == PREVCLOSE`**: those files put the previous close in
+the open field when there was no opening trade. The rule threw away a valid high, low, close, quantity and
+turnover to punish one field — 552 of 965 rows on 1996-05-20 alone.
+
+**SEV-2 — the two readers disagreed numerically.** polars ROUNDED where the reference TRUNCATES
+(`int(Decimal(...))`), and `CONTRACTS` is fractional in 39 real F&O files (`1.5`, `6.66`), so the stored
+quantity differed from the read one across 79 measured row-instances.
+
+**SEV-2 — one bad row could abort the whole run.** The load loop caught three exception types; a NULL in a
+NOT NULL column raised `duckdb.ConstraintException` and a missing column raised polars'
+`ColumnNotFoundError`, either of which killed a 26-minute load the comment promised it would survive.
+Related: the impossible-bar predicate keyed off `open_paise` alone, so a row with OPEN present but
+HIGH/LOW missing made it NULL and was silently dropped under the wrong reason.
+
+**Verified after the fixes, by querying the store:** `fo_2012-05-14` 31,372 rows, `cash_2020-07-13` 2,001,
+files recorded with zero rows **0**, duplicate excess rows **0**, rows dated before 1990 **0**. The
+differential test now runs the ENTIRE fast pipeline and covers both lost sessions and the five-dump file.
+
+**Clean bills the review could not break:** variant resolution across all 14,314 files including the
+`OPTIONTYPE` window; four of the six trailing-comma files cell-for-cell identical; the lakh conversion;
+int64/HUGEINT overflow (max 8.7e15, no row above 2^53); and cell-wise equality on 175 further sampled
+files spanning 1994-2026.
+
+**A.88 · 2026-08-12 · `L0.34`'s load half built, and 193,678,322 rows of NSE history are queryable
+for the first time.** The acquisition half was already done — 14,314 files, 2.8 GB, with a manifest
+recording 433 cash and 370 F&O dates as legitimately absent — and nothing had ever read them: the
+bitemporal bar store held 78 bars, and the only code touching the archive read the newest file to rank
+liquidity. Spec `docs/research/218`.
+
+*Five formats, four of them undocumented here before this slice.* An exhaustive header scan of all 14,314
+files (not a sample) found cash legacy v1 (1994-11-03 to 2011-06-21), cash legacy v2 adding `TOTALTRADES`
+and `ISIN` (2011-06-22), F&O legacy, and UDiFF for both markets from 2024-07-08. The fetcher knew only
+the UDiFF cutover. Worse, the F&O files **alternate day by day** between naming a column `OPTION_TYP` and
+`OPTIONTYPE` across 871 files between 2003-05-14 and 2008-02-05, so a date-branching loader is wrong on
+roughly half of them — which is why every file is identified by its HEADER and never by its date.
+
+*The measured result.* **CORRECTED 2026-08-12 after `A.89`'s review — the first figures below were wrong
+and are left visible.** ~~14,314 files, zero unreadable, 193,678,322 rows in 2,015 s (96,120 rows/s),
+76,443 quarantined~~ — that load was silently MISSING two entire trading sessions. The verified figures:
+14,314 files, zero unreadable, **193,624,250 rows** in 1,565 s (**123,722 rows/s**), 130,515 quarantined.
+Cash: 11,765,044 rows, 1994-11-03 to 2026-08-10, 8,852 symbols. F&O: 181,859,206 rows, 2000-06-12 onward,
+585 underlyings. The row count FELL because 90,655 duplicates were removed while 33,389 lost rows and
+~30,800 wrongly-discarded 1990s rows were recovered. The store answers a point-in-time universe query for
+2005-06-30 (837 symbols) in 26 ms and RELIANCE's whole 10,689-row cash history in 34 ms; its first close is
+Rs 396.00 on 1994-11-03.
+
+*Two readers, deliberately.* The row-wise reference reader expresses every hazard in readable Python with
+a test each and runs at 7,400 rows/s — seven hours for the archive. The vectorised polars path runs a
+hundred times faster, and a differential test asserts on REAL files spanning every variant that the two
+produce identical rows. The oracle earned itself immediately: its first run found three disagreements, one
+of which was the fast path not applying the quarantine rule at all.
+
+*DuckDB was measured, not assumed.* On 390,235 real rows it loads in 1.22 s and answers a cross-sectional
+GROUP BY in 6.6 ms against SQLite's 205 ms — 31x — and that cross-section IS what a point-in-time backtest
+asks for. SQLite wins single-key lookups (0.49 ms vs 3.15 ms) and that is not the access pattern. No
+library exists for the consolidation itself; `pandas-market-calendars` is adopted for the NSE calendar
+because `exchange_calendars` has no NSE at all.
+
+*Four defects, each found by RUNNING it rather than by testing it.* (1) `cash_2020-07-13.csv.zip` writes
+its dates as `13-Jul-20`, which `%Y` parses as the year 20 AD — 2,001 rows loaded as `0020-07-13` with no
+exception and no null. A well-formed answer, thirty centuries wrong, and no list of date formats can ever
+catch that class because the failure is ACCEPTANCE. The fix is an independent witness: every row's date
+must agree with the date in its own file's NAME. (2) `fo_2002-02-14.csv.zip` carries a second header row
+1,853 lines in — a file can be two dumps concatenated. (3) My own: a frame emptied by that new check, then
+indexed at row zero. (4) DuckDB takes an exclusive per-file lock, so `/history` would have failed for the
+whole duration of any load; it now opens read-only and returns a visible 503 rather than an empty page.
+
+*And one design correction the data forced.* The first validator called `OPEN=HIGH=LOW=0` an impossible
+bar. **83.2% of F&O rows across the archive are exactly that** — untraded contracts whose close is the
+exchange's settlement mark and whose open interest is a real position. Quarantining them would have
+discarded almost the entire derivative history; they now load with null OHLC and keep both.
+
+*Stored RAW.* Corporate actions are applied on READ, because a split restated into storage cannot be
+un-restated when the action table is later corrected — and NSE revises its own.
+
 **A.87 · 2026-08-12 · The third broker made a data defect visible that two had hidden, and it was the
 exchange's price band wearing a broker's clothes.** With Kite and Angel One alone, 1.2% of groups showed
 a crossed synthetic touch and "one book is stale" was a defensible reading. Adding Upstox pushed it to

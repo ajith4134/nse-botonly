@@ -21,6 +21,7 @@ import pkgutil
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from html import escape
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -49,6 +50,11 @@ from nse_algo_trader.dashboard.clock_integrity_surface_renderer import (
 from nse_algo_trader.dashboard.consolidated_feed_surface_renderer import (
     ConsolidatedFeedSurfaceState,
     render_consolidated_feed_page,
+)
+from nse_algo_trader.dashboard.deep_history_surface_renderer import (
+    DeepHistoryMarketCoverage,
+    DeepHistorySurfaceState,
+    render_deep_history_page,
 )
 from nse_algo_trader.dashboard.market_rule_coverage_surface_renderer import (
     render_market_rule_coverage_page,
@@ -183,6 +189,10 @@ SURFACED_MODULES: frozenset[str] = frozenset(
         "nse_algo_trader.consolidated_feed.consolidated_feed_engine",
         "nse_algo_trader.consolidated_feed.consolidated_feed_session_runner",
         "nse_algo_trader.dashboard.consolidated_feed_surface_renderer",
+        "nse_algo_trader.deep_history.bhavcopy_variant_resolver",
+        "nse_algo_trader.deep_history.deep_history_bhavcopy_reader",
+        "nse_algo_trader.deep_history.deep_history_archive_loader",
+        "nse_algo_trader.dashboard.deep_history_surface_renderer",
     }
 )
 """Modules that genuinely have a panel today. Declaring this is safe precisely BECAUSE
@@ -412,6 +422,49 @@ def build_dashboard_app() -> FastAPI:
                 )
             )
         )
+        _remember_key(response, request)
+        return response
+
+    @app.get("/history", response_class=HTMLResponse)
+    def deep_history_surface(request: Request) -> HTMLResponse:
+        """`L0.34`'s surface: how much of 33 years is actually queryable, and what was refused."""
+        if not _is_authorised(request):
+            return _unauthorised_html()
+        from nse_algo_trader.deep_history.deep_history_archive_loader import (
+            DeepHistoryArchiveLoader,
+        )
+
+        try:
+            loader = DeepHistoryArchiveLoader(read_only=True)
+        except Exception as failure:  # noqa: BLE001 - a load in progress holds the lock
+            # Fail VISIBLY rather than render an empty page that looks like an empty
+            # archive: DuckDB is single-writer, so a load in progress locks this out.
+            return HTMLResponse(
+                f"<h1>Deep history is being loaded</h1><p>{escape(str(failure))}</p>",
+                status_code=503,
+            )
+        with loader:
+            archive_counts = loader.archive_file_counts()
+            coverage = [
+                DeepHistoryMarketCoverage(
+                    market=entry.market,
+                    files=entry.files,
+                    rows=entry.rows,
+                    earliest=entry.earliest.isoformat() if entry.earliest else "—",
+                    latest=entry.latest.isoformat() if entry.latest else "—",
+                    distinct_symbols=entry.distinct_symbols,
+                    archive_files=archive_counts.get(entry.market, 0),
+                )
+                for entry in loader.coverage()
+            ]
+            state = DeepHistorySurfaceState(
+                coverage=coverage,
+                rows_per_year=loader.rows_per_year(),
+                quarantine_by_reason=(("all reasons", loader.quarantined_total()),),
+                total_rows=sum(entry.rows for entry in coverage),
+                total_quarantined=loader.quarantined_total(),
+            )
+        response = HTMLResponse(render_deep_history_page(state))
         _remember_key(response, request)
         return response
 

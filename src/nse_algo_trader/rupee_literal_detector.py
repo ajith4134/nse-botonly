@@ -72,6 +72,11 @@ SOURCED_CONSTANT_REASONS: dict[str, str] = {
     "MINIMUM_SUPPORTED_CAPITAL_RUPEES": "operator-declared supported envelope (A.23)",
     "MAXIMUM_SUPPORTED_CAPITAL_RUPEES": "operator-declared supported envelope (A.23)",
     "_PAISE": "1 rupee = 100 paise — a property of INR itself, not a policy choice",
+    "PAISE_PER_RUPEE": "the same INR property, named for the conversion it performs",
+    "RUPEES_PER_LAKH": (
+        "1 lakh = 100,000 — a unit of the Indian numbering system, and the conversion "
+        "legacy F&O bhavcopy requires because it reports traded value in lakhs (`L0.34`)"
+    ),
 }
 
 # Values carrying no policy: identity elements and the empty allocation.
