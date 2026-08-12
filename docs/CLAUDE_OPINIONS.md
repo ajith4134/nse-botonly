@@ -1339,3 +1339,39 @@ a statistical estimator, a wire-format parser, an ML model — where the ecosyst
 NSE-specificity does not bite. For those the search is cheap and the payoff is real, and I should
 still run it. What I would stop is the reflexive 30-candidate sweep on problems that are obviously
 bespoke by construction, which is most of what this project builds.
+
+## O.74 · 2026-08-12 · The gate works, and the first thing it did was veto everything
+
+**Opinion.** The `L1` cost filter is now wired end to end — strategy decision, priced claim,
+modelled hurdle, verdict — and on its first run over 120 real instruments from the depth tape it
+vetoed **every single signal the strategy produced** (17 of 17; the other 103 instruments produced
+no signal at all). Claimed edges came in at 0.0–3.1 bps against hurdles of 13–68 bps. That is a
+real result about the pipeline and a **non-result about the strategy**, and the two must not be
+confused.
+
+**Reasoning.** What is genuinely established is that the path functions and that the gate changes
+behaviour: before this, nothing in the system could stop a trade on cost grounds, and now the
+default outcome is refusal. That is the correct default. It is also the SEBI finding in miniature —
+70% of intraday traders lose and loss-makers spend 57% of their losses on costs — arriving as an
+engineering fact rather than a quotation.
+
+What is NOT established is that intraday mean reversion has no edge. In this probe I fed the engine
+**mid-price snapshots seconds apart** as its closes, because that is what the depth tape holds. The
+engine is designed for a bar series; over seconds, the deviations it measures are genuinely tiny, so
+the edges it claims are tiny, so of course they lose to a 13-bps hurdle. **I tested the plumbing on
+the wrong timescale and got a number that looks like a verdict on the strategy.** A fair test needs
+the engine fed the bars it was built for, from `L0.03`'s bar store, over a horizon where a
+mean-reversion move is measured in tens of basis points rather than tenths.
+
+**Confidence: measured** that the path runs and that these 17 signals were vetoed for these stated
+reasons — I ran it and have the per-decision arithmetic. **Reasoned** that the timescale mismatch
+explains the tiny edges; the alternative explanation, that the strategy simply has no edge at any
+horizon, is not excluded by this run and would be a much bigger claim. **Judgement only** on which
+is more likely, and I would not act on that judgement either way.
+
+**What would change my mind.** Running the same path with daily or minute bars from the bar store
+rather than depth-tape mids. If edges remain an order of magnitude under the hurdle at the horizon
+the strategy was designed for, that IS a finding about the strategy, and the right response is not
+to loosen the gate but to record that this family does not clear costs on this universe — which is
+exactly the kind of conclusion `L2`'s gatekeeper exists to reach, and exactly the kind that a system
+without a cost gate never reaches at all.

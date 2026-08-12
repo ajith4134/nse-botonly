@@ -126,6 +126,25 @@ class IntradayMeanReversionEngine:
             return 0.0
         return (self._closes[-1] - mean_close) / dispersion
 
+    def rolling_dispersion(self) -> float | None:
+        """The rolling standard deviation, in whatever units the closes were fed in.
+
+        Exposed because a scale-free deviation cannot be priced. `_current_deviation` divides
+        by this to become comparable across instruments, and anything that needs to turn the
+        signal into MONEY — the `L1.02` cost gate, above all — has to multiply it back. The
+        engine already computes it; keeping it private forced its only real consumer to
+        re-derive it from the same closes and risk deriving it differently.
+
+        Returns `None` before the rolling window is full, matching `_current_deviation`.
+        """
+        if len(self._closes) < self._rolling_window:
+            return None
+        mean_close = sum(self._closes) / len(self._closes)
+        variance = sum((value - mean_close) ** 2 for value in self._closes) / (
+            len(self._closes) - 1
+        )
+        return math.sqrt(max(0.0, variance))
+
     def deviation_band(self) -> float | None:
         """The instrument's own extreme-deviation level, or None while immature."""
         if not self.is_mature:

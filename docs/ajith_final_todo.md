@@ -303,9 +303,23 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       refuses the slab era. (3) **RESIZE is a solve**, bisecting the same engines for the largest
       size that still clears, so a resized signal has been priced rather than estimated.*
 
-      *Still open in this feature: wire the gate to the mean-reversion engine (`R.06` — it is an
-      orphan until then), `L1.04` floor derived from this hurdle, the `/costs` surface, the
-      adversarial review, and the `R.05` real-data pass.*
+      *WIRED (`R.06` closed on the gate): `cost_gate/cost_gated_mean_reversion_entries.py` runs
+      the full path — strategy decision, priced claim, modelled hurdle, verdict. `L5.05` gained
+      `rolling_dispersion()`, completing its interface: its deviation is scale-free by design and
+      therefore unpriceable until multiplied back by the dispersion it is measured in. The regime
+      veto runs BEFORE costing, asserted by test, so an extreme deviation in a trending tape
+      cannot talk its way past the brain by being cheap. 11 further tests.*
+
+      *First real-tape run of the whole path, 120 instruments: 103 produced no signal, and **all
+      17 that did were VETOED** — claimed edges 0.0-3.1 bps against hurdles of 13-68 bps. The gate
+      changes behaviour, which is the whole point of `L1`. **Read `O.74` before drawing a
+      conclusion about the strategy:** the engine was fed depth-tape mids seconds apart rather
+      than the bars it was designed for, so this tests the plumbing on the wrong timescale and is
+      NOT evidence that mean reversion lacks edge.*
+
+      *Still open in this feature: `L1.04` floor derived from this hurdle, the `/costs` surface,
+      the adversarial review, and the `R.05` real-data pass over the bar store at the strategy's
+      own horizon.*
 - [ ] **1.38** Per-segment minimum-edge floor — `L1.04`
 - [ ] **1.39** Fill / slippage model — `L1.05` — *IN PROGRESS, and building as ONE engine with
       `1.40` per `A.92`: with a real five-level book the size-dependence IS the calculation, so
