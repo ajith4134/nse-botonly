@@ -276,8 +276,36 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       the intrinsic-value basis dating from 2019, not 2024. R.05 passed on the real tape: 3,416 real
       symbols priced, and the option breakeven steps on the real statutory dates and is flat between
       them. `[~]` not `[x]` per `R.11` — the primary consumer, `L1.02`'s gate, is still queued
-- [ ] **1.36** Pre-trade cost gate — `L1.02`
-- [ ] **1.37** Net-EV gate — `L1.03`
+- [ ] **1.36** Pre-trade cost gate — `L1.02` — *IN PROGRESS, built with `1.37` as ONE decision:
+      "does this clear cost" and "does it clear cost by enough" are the same comparison against
+      different hurdles, and splitting them would ship a gate whose answer the next entry
+      immediately replaces.*
+- [ ] **1.37** Net-EV gate — `L1.03` — *see `1.36`; the two close together.*
+
+      *(Both inside feature **THE COST REALITY FILTER** — `A.93`. Nothing here ticks until a real
+      signal on real data is actually vetoed or resized by real modelled cost, visible on
+      `/costs`.)*
+
+      *Built: `cost_gate/priced_signal.py` — the contract the whole tree was missing. Every gate
+      above `L1` needs expected edge in bps, and the only strategy module emits action +
+      conviction + a unitless deviation. `PricedSignal` demands an edge AND an `EdgeBasis` naming
+      how it was arrived at, so the claim stays attributable and falsifiable; the mean-reversion
+      adapter is labelled `STRATEGY_HYPOTHESIS`, not fact. `cost_gate/pre_trade_cost_gate.py` —
+      PASS / RESIZE / VETO / UNPRICEABLE over the two cost engines. 17 tests.*
+
+      *Three decisions worth finding again later: (1) **no 1.5x multiplier anywhere.** `R.03`
+      forbids the magic number and `A.12` calls it a prior, so the gate requires edge to clear the
+      PESSIMISTIC end of the measured cost interval instead — the margin comes free and scales
+      itself (measured: 1.2 bps of uncertainty at 500 units, **18.1 bps at 5,000**, one rule, no
+      constant that has to be wrong for one of them). (2) **`UNPRICEABLE` is not `VETO`** — a veto
+      is a judgement, unpriceable is the absence of one, and conflating them turns a data outage
+      into a flood of confident rejections. Pre-2024 dates come back unpriceable, since `L0.31`
+      refuses the slab era. (3) **RESIZE is a solve**, bisecting the same engines for the largest
+      size that still clears, so a resized signal has been priced rather than estimated.*
+
+      *Still open in this feature: wire the gate to the mean-reversion engine (`R.06` — it is an
+      orphan until then), `L1.04` floor derived from this hurdle, the `/costs` surface, the
+      adversarial review, and the `R.05` real-data pass.*
 - [ ] **1.38** Per-segment minimum-edge floor — `L1.04`
 - [ ] **1.39** Fill / slippage model — `L1.05` — *IN PROGRESS, and building as ONE engine with
       `1.40` per `A.92`: with a real five-level book the size-dependence IS the calculation, so
