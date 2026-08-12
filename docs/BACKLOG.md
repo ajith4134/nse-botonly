@@ -10,20 +10,31 @@ Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) ·
 
 ## `L0.33` consolidated multi-broker feed (2026-08-12, `A.84`/`A.85`) — 🟡 built + reviewed, four open
 
-- ⛔ **Only two brokers are reachable, so per-source noise is UNIDENTIFIABLE.** `var(a-b)` is one number
-  shared by both; the three-cornered hat needs three independent feeds. Upstox's stored token returns
-  `UDAPI100050 Invalid token` (a TOTP secret and PIN are in `.env`, so an unattended login may be
-  buildable), ICICI Breeze needs a browser login, and `L0.18` Fyers / `L0.19` Groww remain blocked from
-  `A.78`. A third feed turns the fusion from liquidity-weighted into precision-weighted — the single
-  highest-value unblock in this slice.
+- 🟢 **CLOSED 2026-08-12 — Upstox is the third feed** (`A.86`). The `UPSTOX_ACCESS_TOKEN` is indeed
+  expired, but `UPSTOX_ANALYTICS_TOKEN` returns HTTP 200 with full depth; the blocker was recorded after
+  testing one of the two. `UpstoxQuotePoller` is wired into the capture and all 60 captured instruments
+  are addressable by all three brokers. Re-test command:
+  `curl -s -H "Authorization: Bearer $UPSTOX_ANALYTICS_TOKEN" 'https://api.upstox.com/v2/market-quote/ltp?instrument_key=NSE_EQ|INE002A01018'`
+- ⛔ **ICICI Breeze / Fyers / Groww remain blocked.** Breeze and Fyers need one interactive browser
+  login; Groww needs the ₹499/mo subscription (`A.78`). A fourth and fifth feed would tighten the
+  three-cornered hat further but nothing is waiting on them.
 - 🔴 **The capture is bounded by Angel One's rate limit, not by the universe (`R.09`).** 50 instruments
   per request at ~1/second caps a 2-second sweep at ~67 instruments; the full universe needs the
   websocket feeds both brokers offer, which is a separate slice. The ENGINE is universe-agnostic.
 - 🔴 **Routing consumer queued.** `rank_brokers` produces the per-instrument best source (Kite 54/67,
   Angel One 13/67 on 2026-08-12); its consumer is the live execution path, which does not exist. `R.06`
   is met today by the admissibility gate the microstructure replay actually reads.
-- 🔴 **With two sources, divergence is a property of the PAIR.** Both brokers are marked inadmissible for
-  a diverging instrument because nothing in the data says which one is wrong. A third feed fixes this too.
+- 🟡 **With three sources, per-source noise is now identifiable for two of them** (`angel_one` 0.074
+  bps², `kite` 0.342 bps²; `upstox` sits below the estimator's resolution and is reported as
+  unidentifiable). Upstox contributed only the last 6 minutes of 2026-08-12, so its estimate should firm
+  up over a full session — worth re-checking after the next one.
+- 🔴 **`rank_brokers` is blind to sample size.** On 2026-08-12 Upstox "won" 57 of 67 instruments on 69
+  comparisons each while Kite won 11 on 1,823 — the score is a mean, so a source present for six minutes
+  outranks one present all session. The ranking needs a confidence term (or a minimum comparison count)
+  before its queued consumer, the execution path, could act on it. Surfaced on `/feed` as a caveat today.
+- 🔴 **The three-broker capture polls sequentially**, so a 3-way group carries ~133 ms of skew against
+  ~82 ms for a 2-way one. Concurrent polling (one thread per broker) would cut that and is a
+  straightforward improvement to the recorder, not the engine.
 - ℹ️ **Mean freshness reads ~6.5 s for both brokers**, which is the same illiquidity artefact `L0.32`
   found: `exchange_time` is the instrument's last TRADE, so a quiet name reports its own inactivity as
   feed lag. Worth splitting by traded-in-the-last-minute before the number is used for anything.

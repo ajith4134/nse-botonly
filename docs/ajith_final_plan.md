@@ -2664,6 +2664,70 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.87 · 2026-08-12 · The third broker made a data defect visible that two had hidden, and it was the
+exchange's price band wearing a broker's clothes.** With Kite and Angel One alone, 1.2% of groups showed
+a crossed synthetic touch and "one book is stale" was a defensible reading. Adding Upstox pushed it to
+10-44%, which no feed is, and the number was implausible enough to investigate rather than accept.
+
+*What it actually was.* 25,761 captured rows have a bid ABOVE their own ask — 10.07% of Kite's rows and
+10.07% of Angel One's, the identical rate on two independent brokers, which is what proved it was the
+data rather than a parser. Their shape names them: **bid at last +3.03%, ask at last -2.95%, with 40,407
+shares at the touch against a normal 281**, concentrated in the last six minutes of the session (63% of
+rows in those minutes, under 1% in 50 of the other 59). Those are the orders resting at NSE's +/-3%
+dynamic price band, surfacing as top-of-book when the real touch thins out near the close.
+
+*The fix needs no threshold, which is why it is the right one.* A quote whose bid exceeds its own ask is
+internally impossible, so `has_valid_book` is a fact about that observation and nothing else. An invalid
+book contributes no midpoint, no spread, and no side to the synthetic touch — but its LAST TRADED PRICE
+is still a genuine print, so the observation is kept rather than discarded. Treating these as a touch
+published the midpoint of an impossible book; treating them as a cross blamed a broker for the exchange's
+own band.
+
+*Measured consequence on the same session:* resolved **86.29% -> 95.97%**, refusals 13,552 -> **332**
+(0.27%), crossed 14,478 -> 1,229, inadmissible instrument-sessions 24 -> 11.
+
+*A second correction in the same investigation.* Before this was understood, "crossed implies stale" was
+already too strong on its own terms: Kite quoting [377.20, 377.25] and Angel [377.30, 377.45] a fraction
+of a second later is a moving market, not a fault. A cross is now evidence of staleness only when it
+exceeds what those books and this instrument's own measured dispersion explain — and the instrument's
+scale is a streaming p99 rather than a mean, because the brokers agree exactly 92.5% of the time and a
+multiple of a mean dominated by zeros is still zero (measured: it moved the resolved rate by 0.02 points).
+
+*What the third feed bought, beyond the defect it exposed.* Per-source noise is now IDENTIFIABLE for the
+first time: `angel_one` 0.074 bps^2 and `kite` 0.342 bps^2 by the three-cornered hat, with `upstox` below
+the estimator's resolution and reported as such rather than floored. The fusion can finally weight by
+measured precision instead of liquidity alone.
+
+**A.86 · 2026-08-12 · Two of the three open blockers closed by measuring instead of believing — and
+closing the first one found that chrony's own upstream is wrong by 6.7 ms.**
+
+*`L0.32`'s "no NTP majority" was a sample-frame problem, not a network one.* The frame was three servers
+(the OCI metadata service plus two public), and the local one disagreed with Cloudflare by 7.8 ms with
+round trips under 2 ms — brackets far too tight to overlap, so two servers with one vote each produced no
+majority and the engine refused, correctly and forever. Probing ten candidates showed **all ten reachable
+from this host**, so the frame is now seven, chosen for provider independence rather than latency.
+Marzullo then returns a five-server consensus: **host - UTC = -7.32 ms +/- 0.013 ms**, agreed by Google,
+Cloudflare, `in.pool.ntp.org`, Microsoft and Ubuntu — and it names **169.254.169.254 a FALSETICKER**.
+That server is the one chrony on this host is disciplined by, so the host faithfully tracks a clock five
+independent stratum-1/2 sources say is ~7 ms out. The timestamp-correction path (`corrected()`, the
+recorder's session-window gate) is available for the first time.
+
+*`L0.33`'s "Upstox blocked on an expired token" was my own error, and worth recording as one.* The
+stored `UPSTOX_ACCESS_TOKEN` does return `UDAPI100050 Invalid token` — but `UPSTOX_ANALYTICS_TOKEN`, in
+the same `.env`, returns HTTP 200 with a full depth quote. I tested one, concluded "blocked", and wrote
+it into BACKLOG as a blocker for a future session to unpick. The check that caught it was trying the
+other name, which cost one command. **A blocker should not be recorded until every credential that could
+serve has actually been tried.**
+
+*Consequence: the three-cornered hat becomes usable.* With two brokers, per-source noise is
+unidentifiable — `var(a-b)` is one number shared by both — and the engine correctly refused to claim
+precision weighting. `UpstoxQuotePoller` is the third independent feed (rupee floats, flat depth lists,
+epoch-MILLISECOND stamps — a third convention, hence a third converter), addressed by `NSE_EQ|<ISIN>`
+from Upstox's published master: 2,464 NSE equities, and all 60 captured instruments are addressable by
+all three brokers. The capture no longer excludes an instrument that only some brokers list, because the
+engine handles a missing source per group and excluding them narrowed the universe to the most
+restrictive broker.
+
 **A.85 · 2026-08-12 · `L0.33` built, and the adversarial pass found a defect that had been
 silently corrupting a third of the measurements.** Spec `docs/research/217`; decisions `A.84`. The
 engine aligns each broker's quotes into windows that can describe the same market state, fuses them by

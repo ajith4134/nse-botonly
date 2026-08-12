@@ -47,6 +47,7 @@ from nse_algo_trader.consolidated_feed.broker_quote_pollers import (
     BrokerQuotePoller,
     KiteQuotePoller,
     PolledInstrument,
+    UpstoxQuotePoller,
 )
 from nse_algo_trader.consolidated_feed.cross_broker_quote_tape import CrossBrokerQuoteTape
 
@@ -112,6 +113,7 @@ def build_instrument_set(
     as a permanent one-sided disagreement, so it is excluded here and counted.
     """
     angel_token_by_symbol = _angel_equity_tokens()
+    upstox_key_by_symbol = _upstox_instrument_keys()
     kite_instruments = {
         row["tradingsymbol"]: row
         for row in kite.instruments("NSE")
@@ -124,7 +126,10 @@ def build_instrument_set(
         symbols = symbols + tail[-illiquid_tail:]
     instruments, unaddressable = [], 0
     for symbol in symbols:
-        if symbol not in kite_instruments or symbol not in angel_token_by_symbol:
+        # An instrument only SOME brokers can address is still worth capturing: the engine
+        # handles a missing source per group, and excluding it entirely would silently
+        # narrow the universe to whatever the most restrictive broker happens to list.
+        if symbol not in kite_instruments:
             unaddressable += 1
             continue
         instruments.append(
@@ -132,12 +137,41 @@ def build_instrument_set(
                 trading_symbol=symbol,
                 exchange="NSE",
                 kite_symbol=f"NSE:{symbol}",
-                angel_symbol_token=angel_token_by_symbol[symbol],
+                angel_symbol_token=angel_token_by_symbol.get(symbol),
                 angel_trading_symbol=f"{symbol}-EQ",
+                upstox_instrument_key=upstox_key_by_symbol.get(symbol),
             )
         )
-    log(f"{len(instruments)} instruments addressable by both brokers, {unaddressable} not")
+    addressable_by_all = sum(
+        1
+        for instrument in instruments
+        if instrument.angel_symbol_token and instrument.upstox_instrument_key
+    )
+    log(
+        f"{len(instruments)} instruments, {addressable_by_all} addressable by ALL three "
+        f"brokers, {unaddressable} not quotable by Kite at all"
+    )
     return instruments
+
+
+def _upstox_instrument_keys() -> dict[str, str]:
+    """Upstox's published NSE master, trading symbol -> `NSE_EQ|<ISIN>` key."""
+    import gzip
+    import json
+
+    import requests
+
+    response = requests.get(
+        "https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz", timeout=120
+    )
+    response.raise_for_status()
+    keys = {
+        str(row["trading_symbol"]): str(row["instrument_key"])
+        for row in json.loads(gzip.decompress(response.content))
+        if row.get("segment") == "NSE_EQ" and row.get("instrument_type") == "EQ"
+    }
+    log(f"Upstox instrument master: {len(keys)} NSE equities")
+    return keys
 
 
 def _angel_equity_tokens() -> dict[str, str]:
@@ -173,6 +207,16 @@ def build_pollers() -> list[BrokerQuotePoller]:
         client = SmartConnect(api_key=os.environ["ANGEL_ONE_API_KEY"])
         client.setAccessToken(session.jwt_token)
         pollers.append(AngelOneQuotePoller(client))
+    upstox_token = os.environ.get("UPSTOX_ANALYTICS_TOKEN") or os.environ.get(
+        "UPSTOX_ACCESS_TOKEN", ""
+    )
+    if not upstox_token:
+        log("UPSTOX UNAVAILABLE — no token in the environment")
+    else:
+        import requests
+
+        pollers.append(UpstoxQuotePoller(upstox_token, requests.Session()))
+    log(f"{len(pollers)} brokers available: {', '.join(p.broker for p in pollers)}")
     return pollers
 
 

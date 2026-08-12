@@ -234,9 +234,11 @@ independent feeds — with two, the engine weights by liquidity alone and says s
 </div>
 
 <footer>A consolidated price is only better than its best source if the engine knows which
-source that is, and with two feeds it cannot: `var(a-b)` is one number shared by both. That
-is an identifiability limit, not a missing feature, and it is why the noise column reads
-"unidentifiable" until a third broker is reachable. Refusals are the point of the crossed and
-inadmissible counts — a page showing only prices would hide exactly the days worth knowing
-about.</footer>
+source that is, and that needs THREE feeds: with two, `var(a-b)` is one number shared by both
+and no amount of data separates them. A noise column reading "unidentifiable" therefore means
+either fewer than three sources or a source quieter than the estimator can resolve — never a
+missing measurement quietly rounded to zero. Read "best on" against the comparison count
+beside it: a broker that answered for six minutes and one that answered all session are not
+comparable on wins alone. Refusals are the point of the crossed and inadmissible counts — a
+page showing only prices would hide exactly the days worth knowing about.</footer>
 </body></html>"""

@@ -613,8 +613,14 @@ def test_a_wide_book_cannot_license_its_own_disagreement() -> None:
     assert consolidated.consensus_paise is None
 
 
-def test_a_single_source_crossing_its_own_book_publishes_nothing() -> None:
-    """A midpoint of an impossible book is not a price."""
+def test_a_single_source_with_an_impossible_book_publishes_its_trade_not_its_midpoint() -> None:
+    """A midpoint of an impossible book is not a price — but the last trade still is.
+
+    This test previously demanded a refusal, and the real data corrected it: a self-crossed
+    quote is a price-band artefact whose BOOK is unusable while its last traded price is a
+    genuine print. Refusing outright discarded a real observation; publishing the midpoint
+    would have invented one.
+    """
     engine = _engine()
     group = engine.align(
         [
@@ -623,9 +629,10 @@ def test_a_single_source_crossing_its_own_book_publishes_nothing() -> None:
         ]
     )[0]
     consolidated = engine.consolidate(group)
-    assert consolidated.resolution is FeedResolution.UNRESOLVED
-    assert consolidated.is_crossed
-    assert consolidated.consensus_paise is None
+    assert consolidated.resolution is FeedResolution.SINGLE_SOURCE
+    assert not consolidated.is_crossed  # the artefact never reaches the synthetic touch
+    assert consolidated.consensus_paise == pytest.approx(10_025.0)  # the trade, not the book
+    assert consolidated.synthetic_best_bid_paise is None
 
 
 def test_a_second_sweep_starts_a_new_group_instead_of_losing_a_quote() -> None:
@@ -736,3 +743,74 @@ def test_the_decomposition_normalises_unsorted_pair_keys() -> None:
     }
     variances = three_cornered_hat_variances(unsorted_keys, minimum_observations=30)
     assert any(value is not None for value in variances.values())
+
+
+def test_a_one_tick_cross_between_brokers_is_polling_skew_not_staleness() -> None:
+    """Measured on the real three-broker session, and it changed the design.
+
+    Kite quoting [377.20, 377.25] and Angel [377.30, 377.45] a fraction of a second later
+    is a moving market: Angel's bid sits one tick above Kite's ask because the price moved
+    between the two polls. Calling that "one book is stale" put 10-44% of a session in the
+    refused bucket, which no feed is. A cross is evidence of staleness only when it is
+    LARGER than what these books explain.
+    """
+    engine = _engine()
+    group = engine.align(
+        [
+            _observation("kite", bid_paise=37_720, ask_paise=37_725, last_paise=37_720),
+            _observation("angel_one", bid_paise=37_730, ask_paise=37_745, last_paise=37_730),
+        ]
+    )[0]
+    consolidated = engine.consolidate(group)
+    assert consolidated.is_crossed  # the fact is still reported
+    assert consolidated.resolution is FeedResolution.RESOLVED  # but it is not a refusal
+    assert consolidated.consensus_paise is not None
+    assert "polling skew" in consolidated.reason
+
+
+def test_a_cross_far_beyond_the_books_is_still_refused() -> None:
+    """The other side of the same rule: a real stale book must still be caught."""
+    engine = _engine()
+    group = engine.align(
+        [
+            _observation("kite", bid_paise=37_720, ask_paise=37_725, last_paise=37_720),
+            _observation("angel_one", bid_paise=39_000, ask_paise=39_020, last_paise=39_010),
+        ]
+    )[0]
+    consolidated = engine.consolidate(group)
+    assert consolidated.is_crossed
+    assert consolidated.resolution is FeedResolution.UNRESOLVED
+    assert consolidated.consensus_paise is None
+    assert "stale" in consolidated.reason
+
+
+def test_a_self_crossed_quote_is_a_price_band_artefact_not_a_book() -> None:
+    """Measured on the real session: 25,761 rows, 10.1% of BOTH brokers identically.
+
+    Their shape is unmistakable — bid at last +3.03%, ask at last -2.95%, 40,407 shares at
+    the touch against a normal 281. Those are the orders resting at the exchange's +/-3%
+    dynamic price band, surfacing as top-of-book when the real touch thins out near the
+    close. No threshold is needed to reject them: a bid above its own ask is impossible.
+    """
+    band_artefact = _observation(
+        "kite", bid_paise=136_030, ask_paise=131_410, last_paise=132_050
+    )
+    assert not band_artefact.has_valid_book
+    assert band_artefact.midpoint_paise is None
+    assert band_artefact.is_usable  # its LAST PRICE is still a real trade
+
+
+def test_a_band_artefact_does_not_poison_the_synthetic_touch() -> None:
+    engine = _engine()
+    group = engine.align(
+        [
+            _observation("kite", bid_paise=136_030, ask_paise=131_410, last_paise=132_050),
+            _observation("angel_one", bid_paise=132_040, ask_paise=132_060, last_paise=132_050),
+        ]
+    )[0]
+    consolidated = engine.consolidate(group)
+    # The valid book alone defines the touch; the artefact contributes only its last price.
+    assert consolidated.synthetic_best_bid_paise == 132_040
+    assert consolidated.synthetic_best_ask_paise == 132_060
+    assert not consolidated.is_crossed
+    assert consolidated.resolution is FeedResolution.RESOLVED

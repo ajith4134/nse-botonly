@@ -1095,3 +1095,50 @@ reported rate by a factor rather than a margin.
 banning `round()` near a comparison would be mostly noise. The cheaper discipline is the one that caught
 it here: measure the rate on real data and ask whether the number is plausible — a 0% frozen rate on a
 feed known to freeze should have been as loud as an exception.
+
+
+## O.65 · 2026-08-12 · A blocker is a claim about the world and deserves the same evidence as a finding
+
+**Opinion.** I recorded "Upstox blocked on an expired token" in BACKLOG after testing ONE of the two
+Upstox tokens in `.env`. The other one works and returns full depth. The cost was not the minute it took
+to discover — it was that the blocker had already propagated into a plan entry, a spec section, a commit
+message and a sign-off, each of which stated as fact that this host could reach only two brokers. Under
+`R.17` an OSS rejection needs mechanical evidence; a BLOCKER needs exactly the same standard and I have
+been holding it to a lower one.
+
+**Reasoning.** A blocker is load-bearing in a way a finding is not: it stops work, it justifies scope
+reduction, and it survives in the record until someone deliberately re-tests it. `A.78` re-tested two
+inherited blockers this week and found one of them stale for a similar reason. The asymmetry is that
+confirming a blocker costs one command and believing one costs a session.
+
+**Confidence: measured.** One command distinguished "blocked" from "working" here, and the same pattern
+appeared in `A.78`.
+
+**What would change my mind.** Nothing about the standard. The open question is the mechanic: the honest
+version is that every recorded blocker names the exact command that demonstrates it, so re-testing is
+mechanical rather than archaeological. I have started doing that in BACKLOG entries and should apply it
+retroactively to the ones already there.
+
+
+## O.66 · 2026-08-12 · An implausible number is a finding; a plausible one is an assumption
+
+**Opinion.** With two brokers, 1.2% of groups showed a crossed touch and I wrote "one book is stale" into
+a spec, a plan entry and a commit message without checking a single row. The third broker pushed the same
+statistic to 10-44%, which was too implausible to write down, so I looked — and the cause turned out to
+be NSE's ±3% price band, which had been producing the 1.2% as well. The lesson is not "check your
+numbers"; it is that a number small enough to be plausible gets no scrutiny, so the plausible range is
+exactly where wrong explanations survive.
+
+**Reasoning.** Both readings were consistent with the two-broker data. What distinguished them was one
+query — the shape of the offending rows — which I only ran when the number became embarrassing. The
+identical 10.07% rate on two independent brokers was the tell, and it was available from the first
+session; nothing about the third feed made it more discoverable, only more urgent.
+
+**Confidence: measured.** 25,761 rows, bid at last +3.03% and ask at −2.95%, 40,407 shares at the touch
+against 281 normally, concentrated in six minutes. Correcting it moved the resolved rate from 86.29% to
+95.97%.
+
+**What would change my mind.** Nothing about the diagnosis. The practical question is which plausible
+numbers deserve the query, and my current answer is: any statistic that a DESIGN DECISION rests on. The
+"crossed implies stale" reading justified refusing 1.2% of the tape, which is exactly the kind of claim
+that should have had to show its rows.

@@ -44,6 +44,7 @@ class PolledInstrument:
     kite_symbol: str
     angel_symbol_token: str | None = None
     angel_trading_symbol: str | None = None
+    upstox_instrument_key: str | None = None
 
 
 class BrokerQuotePoller(Protocol):
@@ -241,6 +242,139 @@ class AngelOneQuotePoller:
             total_sell_quantity=_as_int(row.get("totSellQuan")),
             volume_traded=_as_int(row.get("tradeVolume")),
         )
+
+
+class UpstoxQuotePoller:
+    """Upstox `market-quote/quotes` — full depth, addressed by `NSE_EQ|<ISIN>`.
+
+    The THIRD feed, and the one that changes what the engine can know: with two brokers the
+    per-source noise variances are unidentifiable (`var(a-b)` is one number shared by both),
+    and the three-cornered hat needs three. Upstox was recorded as blocked on an expired
+    token until 2026-08-12, when the stored ANALYTICS token turned out to be live — the
+    trading token had expired and the two were being confused.
+
+    Prices arrive as rupee floats and depth is a flat `buy`/`sell` list, like Kite's; the
+    timestamp is epoch MILLISECONDS, unlike either of the others.
+    """
+
+    broker = "upstox"
+    instruments_per_request = 100
+    """Upstox documents 500 instrument keys per request; 100 keeps the URL well inside
+    server limits, since the keys go in the query string rather than a body."""
+
+    def __init__(self, access_token: str, session: Any) -> None:
+        self._access_token = access_token
+        self._session = session
+
+    def poll(
+        self, instruments: Sequence[PolledInstrument]
+    ) -> list[BrokerQuoteObservation]:
+        requested_at = now_utc()
+        addressable = [
+            instrument for instrument in instruments if instrument.upstox_instrument_key
+        ]
+        observations = [
+            _observation_with_failure(
+                self.broker, instrument, requested_at, "no Upstox instrument key"
+            )
+            for instrument in instruments
+            if not instrument.upstox_instrument_key
+        ]
+        if not addressable:
+            return observations
+        try:
+            response = self._session.get(
+                "https://api.upstox.com/v2/market-quote/quotes",
+                params={
+                    "instrument_key": ",".join(
+                        str(instrument.upstox_instrument_key) for instrument in addressable
+                    )
+                },
+                headers={
+                    "Authorization": f"Bearer {self._access_token}",
+                    "Accept": "application/json",
+                },
+                timeout=20,
+            )
+            response.raise_for_status()
+            payload = response.json().get("data") or {}
+        except Exception as failure:  # noqa: BLE001 - a broker outage is data, not a crash
+            return observations + [
+                _observation_with_failure(
+                    self.broker, instrument, requested_at, f"{type(failure).__name__}: {failure}"
+                )
+                for instrument in addressable
+            ]
+        received_at = now_utc()
+        # Upstox keys its RESPONSE by `EXCHANGE:SYMBOL` while the REQUEST is by
+        # `EXCHANGE_SEGMENT|ISIN`, so the reply is matched back through the echoed
+        # `instrument_token` rather than by reconstructing a key from the symbol.
+        by_key = {
+            str(row.get("instrument_token")): row for row in payload.values() if row
+        }
+        for instrument in addressable:
+            row = by_key.get(str(instrument.upstox_instrument_key))
+            if row is None:
+                observations.append(
+                    _observation_with_failure(
+                        self.broker, instrument, requested_at, "instrument absent from response"
+                    )
+                )
+                continue
+            observations.append(
+                self._observation_from_row(instrument, row, requested_at, received_at)
+            )
+        return observations
+
+    def _observation_from_row(
+        self,
+        instrument: PolledInstrument,
+        row: dict[str, Any],
+        requested_at: datetime,
+        received_at: datetime,
+    ) -> BrokerQuoteObservation:
+        depth = row.get("depth") or {}
+        bids = depth.get("buy") or []
+        asks = depth.get("sell") or []
+        best_bid = bids[0] if bids else {}
+        best_ask = asks[0] if asks else {}
+        return BrokerQuoteObservation(
+            broker=self.broker,
+            trading_symbol=instrument.trading_symbol,
+            exchange=instrument.exchange,
+            requested_at=requested_at,
+            received_at=received_at,
+            exchange_time=_epoch_milliseconds_to_utc(row.get("last_trade_time")),
+            last_price_paise=rupees_to_paise(row.get("last_price")),
+            best_bid_paise=rupees_to_paise(best_bid.get("price")),
+            best_ask_paise=rupees_to_paise(best_ask.get("price")),
+            best_bid_quantity=_as_int(best_bid.get("quantity")),
+            best_ask_quantity=_as_int(best_ask.get("quantity")),
+            total_buy_quantity=_as_int(row.get("total_buy_quantity")),
+            total_sell_quantity=_as_int(row.get("total_sell_quantity")),
+            volume_traded=_as_int(row.get("volume")),
+        )
+
+
+def _epoch_milliseconds_to_utc(value: Any) -> datetime | None:
+    """Upstox stamps in epoch MILLISECONDS — a third convention, hence a third converter.
+
+    Zero and the SDK's other empty values mean absent, exactly as epoch 0 does on the Kite
+    depth tape; kept as `None` so a missing stamp never becomes 1970.
+    """
+    if value in (None, "", 0):
+        return None
+    try:
+        seconds = float(value) / 1000.0
+    except (TypeError, ValueError):
+        return None
+    if seconds < ABSENT_STAMP_EPOCH_SECONDS:
+        return None
+    return datetime.fromtimestamp(seconds, tz=UTC)
+
+
+ABSENT_STAMP_EPOCH_SECONDS = 1_600_000_000.0
+"""Any stamp older than 2020-09 is a zero value dressed as a timestamp, not a quote."""
 
 
 def _as_int(value: Any) -> int | None:

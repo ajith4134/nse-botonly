@@ -242,3 +242,27 @@ when maturity masking left different triplets available to different sources.
 **One malformed group can no longer cost a session's learning:** the observation boundary refuses naive
 timestamps, and the session runner counts a failed group rather than letting it escape and discard the
 uncommitted transaction holding tens of thousands of comparisons.
+
+
+## 13. What the third broker changed (2026-08-12, `A.86`/`A.87`)
+
+Upstox joined as the third feed the same afternoon (the blocker was an untested credential, not an
+expired one — `A.86`). Two things followed immediately.
+
+**Per-source noise became identifiable.** `angel_one` 0.074 bps², `kite` 0.342 bps², `upstox` below the
+estimator's resolution and reported as `unidentifiable` rather than floored to a number. §11's
+identifiability limit is closed for two of three sources.
+
+**A data defect two brokers had hidden.** Crossed synthetic touches went from 1.2% to 10-44%, which
+prompted an investigation rather than an acceptance, and the cause was NSE's ±3% dynamic price band: on
+25,761 rows (10.07% of Kite's and 10.07% of Angel One's — the identical rate is what proved it was the
+data) the top of book is a band order at last +3.03% / −2.95% with 40,407 shares against a normal 281.
+`BrokerQuoteObservation.has_valid_book` now rejects a quote whose bid exceeds its own ask — impossible by
+construction, so no threshold is involved — while keeping its last traded price, which is a real print.
+
+**Measured on the same tape:** resolved 86.29% → **95.97%**, refusals 13,552 → **332**, crossed 14,478 →
+1,229, inadmissible instrument-sessions 24 → 11.
+
+**And a softened claim.** "Crossed implies one book is stale" was too strong even before the band
+artefact: two brokers polled ~100 ms apart in a moving stock cross legitimately. A cross is now evidence
+of staleness only beyond what the books and the instrument's own p99 dispersion explain.

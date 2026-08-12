@@ -49,6 +49,8 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from enum import Enum
 
+from river import stats
+
 from nse_algo_trader.consolidated_feed.broker_reliability_store import (
     MINIMUM_OBSERVATIONS_FOR_A_PRECISION_ESTIMATE,
     PAIR_VARIANCE_DECAY,
@@ -82,6 +84,15 @@ chance, which a quantile cut is not."""
 MOSTLY_FROZEN_RATE = 0.5
 """A broker that failed to move on more than half the occasions the others did is not slow,
 it is stuck — and a stuck quote must not be admitted as microstructure evidence."""
+
+INSTRUMENT_DISPERSION_QUANTILE = 0.99
+"""What counts as an extreme disagreement FOR THIS INSTRUMENT: its own hundredth-percentile
+dispersion. A quantile is a definition of extremity rather than a threshold, and the value
+it resolves to differs by orders of magnitude between a Rs 20 share and a Rs 3,000 one."""
+
+MINIMUM_SAMPLES_FOR_A_DISPERSION_QUANTILE = round(1 / (1 - INSTRUMENT_DISPERSION_QUANTILE))
+"""Arithmetic: a 1-in-100 quantile needs ~100 observations before it means anything. Below
+this the instrument contributes no scale and the books alone decide (`R.04`)."""
 
 DISAGREEMENT_SIGMAS_ALLOWED = 3.0
 """How many standard deviations of these brokers' OWN historical disagreement count as
@@ -238,6 +249,18 @@ class ConsolidatedFeedEngine:
         self._store = reliability_store or BrokerReliabilityStore()
         self._comparable_window = comparable_window
         self._last_price_by_broker_symbol: dict[tuple[str, str], float] = {}
+        # **How much THIS instrument's brokers normally differ, learned online.** A pooled
+        # scale cannot serve: two brokers polled 100 ms apart differ by more on a fast mover
+        # than on a quiet one, purely because the price moved between the polls, and judging
+        # both against one number put 11% of a real session in the refused bucket.
+        #
+        # A high QUANTILE, not a mean: the brokers agree exactly 92.5% of the time, so the
+        # mean dispersion is dominated by zeros and a multiple of it is still nearly zero —
+        # measured, on the first attempt at this, which moved the resolved rate by 0.02
+        # points. The same streaming P-square estimator the depth classifier uses for
+        # staleness, for the same reason: "unusual for this instrument" is a quantile.
+        self._dispersion_quantile_by_symbol: dict[str, stats.Quantile] = {}
+        self._dispersion_samples_by_symbol: dict[str, int] = {}
 
     @property
     def reliability_store(self) -> BrokerReliabilityStore:
@@ -379,22 +402,6 @@ class ConsolidatedFeedEngine:
                     )
                 ),
             )
-        if crossed:
-            return self._quote(
-                group,
-                FeedResolution.UNRESOLVED,
-                None,
-                best_bid,
-                best_ask,
-                is_crossed=True,
-                median=median,
-                dispersion=dispersion,
-                brokers=group.brokers,
-                reason=(
-                    "the synthetic touch is crossed: one broker's bid is above another's "
-                    "ask, which means at least one book is stale rather than merely different"
-                ),
-            )
         if tolerance is None:
             return self._quote(
                 group,
@@ -409,6 +416,49 @@ class ConsolidatedFeedEngine:
                 reason=(
                     "no book to derive a spread from and no learned disagreement scale yet "
                     "— this group is not judgeable, which is not the same as agreeing"
+                ),
+            )
+        if crossed:
+            # **A crossed synthetic touch is not automatically a stale feed, and the third
+            # broker is what made that visible.** With two sources 1.2% of groups crossed and
+            # "one book is stale" was a defensible reading; at three it reached 10-44%, which
+            # no feed is. Inspecting them showed the truth: Kite quoting [377.20, 377.25] and
+            # Angel [377.30, 377.45] a fraction of a second later is a moving market, not a
+            # fault — the review's explanation (1), polling skew, wearing explanation (3)'s
+            # clothes. A cross is only evidence of staleness when it is LARGER than the
+            # disagreement these brokers normally show on this instrument.
+            cross_magnitude = float((best_bid or 0) - (best_ask or 0))
+            if tolerance is not None and cross_magnitude > tolerance:
+                return self._quote(
+                    group,
+                    FeedResolution.UNRESOLVED,
+                    None,
+                    best_bid,
+                    best_ask,
+                    is_crossed=True,
+                    median=median,
+                    dispersion=dispersion,
+                    brokers=group.brokers,
+                    reason=(
+                        f"the synthetic touch is crossed by {cross_magnitude:.0f} paise, "
+                        f"beyond the {tolerance:.0f} paise these books explain — at least "
+                        f"one of them is stale rather than merely a moment older"
+                    ),
+                )
+            consensus, weight_note = self._weighted_consensus(usable, prices)
+            return self._quote(
+                group,
+                FeedResolution.RESOLVED,
+                consensus,
+                best_bid,
+                best_ask,
+                is_crossed=True,
+                median=median,
+                dispersion=dispersion,
+                brokers=group.brokers,
+                reason=(
+                    f"crossed by {cross_magnitude:.0f} paise, within what polling skew and "
+                    f"these books explain — {weight_note}"
                 ),
             )
         if dispersion > tolerance:
@@ -491,6 +541,35 @@ class ConsolidatedFeedEngine:
             minimum_observations=MINIMUM_OBSERVATIONS_FOR_A_PRECISION_ESTIMATE,
         )
 
+    def _learned_instrument_scale(
+        self, observations: Sequence[BrokerQuoteObservation]
+    ) -> float | None:
+        """This instrument's own extreme dispersion, or `None` while immature."""
+        if not observations:
+            return None
+        symbol = observations[0].trading_symbol
+        if (
+            self._dispersion_samples_by_symbol.get(symbol, 0)
+            < MINIMUM_SAMPLES_FOR_A_DISPERSION_QUANTILE
+        ):
+            return None
+        estimator = self._dispersion_quantile_by_symbol.get(symbol)
+        if estimator is None:
+            return None
+        learned = estimator.get()  # type: ignore[no-untyped-call]
+        return None if learned is None else float(learned)
+
+    def _remember_instrument_dispersion(self, symbol: str, dispersion: float) -> None:
+        """Fold one group's dispersion into the instrument's own extremity estimate."""
+        estimator = self._dispersion_quantile_by_symbol.get(symbol)
+        if estimator is None:
+            estimator = stats.Quantile(INSTRUMENT_DISPERSION_QUANTILE)
+            self._dispersion_quantile_by_symbol[symbol] = estimator
+        estimator.update(float(dispersion))  # type: ignore[no-untyped-call]
+        self._dispersion_samples_by_symbol[symbol] = (
+            self._dispersion_samples_by_symbol.get(symbol, 0) + 1
+        )
+
     @staticmethod
     def _liquidity(observation: BrokerQuoteObservation) -> float:
         """Size at the touch, the mean of the two sides, floored at one share.
@@ -519,8 +598,10 @@ class ConsolidatedFeedEngine:
         observations: Sequence[BrokerQuoteObservation],
     ) -> tuple[int | None, int | None, bool]:
         """Best bid anywhere, best ask anywhere, and whether they cross."""
-        bids = [o.best_bid_paise for o in observations if o.best_bid_paise]
-        asks = [o.best_ask_paise for o in observations if o.best_ask_paise]
+        # Only quotes whose OWN two sides are consistent contribute to the synthetic touch;
+        # a self-crossed quote is a price-band artefact, not a reachable price.
+        bids = [o.best_bid_paise for o in observations if o.has_valid_book and o.best_bid_paise]
+        asks = [o.best_ask_paise for o in observations if o.has_valid_book and o.best_ask_paise]
         best_bid = max(bids) if bids else None
         best_ask = min(asks) if asks else None
         crossed = best_bid is not None and best_ask is not None and best_bid > best_ask
@@ -547,10 +628,11 @@ class ConsolidatedFeedEngine:
         rather than as agreement or disagreement.
         """
         spreads = [
-            observation.best_ask_paise - observation.best_bid_paise
+            (observation.best_ask_paise or 0) - (observation.best_bid_paise or 0)
             for observation in observations
-            if observation.best_ask_paise is not None and observation.best_bid_paise is not None
+            if observation.has_valid_book
         ]
+        instrument_scale = self._learned_instrument_scale(observations)
         if spreads:
             # **The NARROWEST book sets the tolerance.** Using the widest let a stale broker
             # license its own error: adversarial review published a 7.5% disagreement as
@@ -560,7 +642,12 @@ class ConsolidatedFeedEngine:
             # It also makes the refusal REACHABLE: against the widest spread, any uncrossed
             # pair was inside tolerance by construction, and 797 of 797 refusals on the real
             # session came from the crossed test with none from dispersion.
-            return max(float(min(spreads)) * DIVERGENCE_TICKS_ALLOWED, 1.0)
+            spread_bound = max(float(min(spreads)) * DIVERGENCE_TICKS_ALLOWED, 1.0)
+            # The instrument's own learned dispersion is taken when it is WIDER: the spread
+            # says what the market is indifferent to at an instant, the learned scale says
+            # what these brokers routinely differ by across the poll gap, and refusing on
+            # the smaller of the two calls ordinary movement a fault.
+            return max(spread_bound, instrument_scale or 0.0)
         pair_variances = self._store.pair_difference_variances()
         brokers = {observation.broker for observation in observations}
         relevant = [
@@ -572,11 +659,12 @@ class ConsolidatedFeedEngine:
             and variance > 0.0
         ]
         if relevant:
-            # The learned scale is in bps; the group's own price turns it back into paise.
+            # The learned pair scale is in bps; the group's own price turns it back to paise.
             prices = [self._reference_price(observation) for observation in observations]
             scale = float(statistics.fmean(prices)) if prices else 0.0
-            return DISAGREEMENT_SIGMAS_ALLOWED * math.sqrt(max(relevant)) * scale / 10_000.0
-        return None
+            pooled = DISAGREEMENT_SIGMAS_ALLOWED * math.sqrt(max(relevant)) * scale / 10_000.0
+            return max(pooled, instrument_scale or 0.0)
+        return instrument_scale
 
     @staticmethod
     def _quote(
@@ -641,6 +729,8 @@ class ConsolidatedFeedEngine:
         # measurements are commensurable, so a session's ~45,000 comparisons genuinely
         # sharpen one estimate instead of averaging incompatible ones.
         scale = float(statistics.fmean(prices.values())) or 1.0
+        if len(prices) > 1:
+            self._remember_instrument_dispersion(group.trading_symbol, dispersion)
         ordered_brokers = sorted(prices)
         for index, broker_a in enumerate(ordered_brokers):
             for broker_b in ordered_brokers[index + 1 :]:

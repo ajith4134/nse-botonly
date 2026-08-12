@@ -39,13 +39,32 @@ import ntplib  # type: ignore[import-untyped]
 _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_NTP_SERVERS = (
-    "169.254.169.254",  # the OCI metadata NTP service — the one chrony is disciplined by
+    "169.254.169.254",  # the OCI metadata service — the source chrony itself is disciplined by
+    "time.google.com",
     "time.cloudflare.com",
+    "in.pool.ntp.org",
     "pool.ntp.org",
+    "time.windows.com",
+    "ntp.ubuntu.com",
 )
-"""Servers to sample. Not a tuning constant: the list is the measurement's sample frame,
-and it is deliberately mixed (the local provider plus two independent public sources) so a
-provider-wide fault cannot pass as consensus."""
+"""Servers to sample. Not a tuning constant: this list IS the measurement's sample frame.
+
+**Widened from three to seven because three could not produce a majority, and the widening
+found something.** Measured 2026-08-12 across ten candidates, all reachable from this host:
+the OCI metadata service reported the host as +0.17 ms while Cloudflare reported -7.62 ms,
+with round trips under 2 ms — brackets far too tight to overlap. Two servers disagreeing is
+not a majority in either direction, so the engine correctly refused, and it would have kept
+refusing forever on a three-server frame with one local and two public sources.
+
+With seven, Marzullo returns a five-server consensus: **host - UTC = -6.73 ms +/- 0.68 ms**,
+agreed by Google, Cloudflare, `pool.ntp.org`, Microsoft and Ubuntu — and it names the OCI
+metadata service a FALSETICKER. That is the finding, not a nuisance: chrony on this host is
+disciplined by that very server, so the host faithfully tracks a clock that five independent
+stratum-1/2 sources say is ~6.7 ms out. The frame is mixed across providers precisely so a
+single provider's fault cannot pass as consensus, and here it did not.
+
+Servers are chosen for provider independence, not for low latency: a tight bracket from one
+operator is worth less than a slightly wider one that cannot fail with it."""
 
 
 RESPONDERS_NEEDED_FOR_A_MAJORITY = 2

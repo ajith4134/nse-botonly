@@ -119,18 +119,39 @@ class BrokerQuoteObservation:
         return (self.received_at - self.requested_at).total_seconds()
 
     @property
-    def midpoint_paise(self) -> float | None:
-        """The touch midpoint, or `None` when either side is missing.
+    def has_valid_book(self) -> bool:
+        """Whether this quote's own two sides can both be true at once.
 
-        Used rather than the last traded price wherever both exist: a last price is a
-        historical fact that can be seconds old on an illiquid name, while the midpoint is
-        what the book says right now.
+        **A quote whose bid exceeds its own ask is not a book**, and no threshold is needed
+        to say so — it is internally impossible. Measured on the 2026-08-12 capture: 25,761
+        such rows, 10.1% of both Kite's and Angel One's (the identical rate on two
+        independent brokers is what showed it was the DATA, not a parser). Their shape gives
+        them away: the bid sits at last +3.03% and the ask at last -2.95%, with 40,407 shares
+        at the touch against a normal 281. Those are the resting orders parked at the +/-3%
+        dynamic price band, surfacing as top-of-book when the real touch is thin near the
+        close. Treating them as a touch published a midpoint of an impossible book; treating
+        them as a cross blamed a broker for the exchange's own band.
         """
-        if self.best_bid_paise is None or self.best_ask_paise is None:
+        return (
+            self.best_bid_paise is not None
+            and self.best_ask_paise is not None
+            and self.best_bid_paise > 0
+            and self.best_ask_paise > 0
+            and self.best_bid_paise <= self.best_ask_paise
+        )
+
+    @property
+    def midpoint_paise(self) -> float | None:
+        """The touch midpoint, or `None` when there is no valid book.
+
+        Used rather than the last traded price wherever a real book exists: a last price is
+        a historical fact that can be seconds old on an illiquid name, while the midpoint is
+        what the book says right now. When the book is invalid the caller falls back to the
+        last price, which is still a real trade.
+        """
+        if not self.has_valid_book:
             return None
-        if self.best_bid_paise <= 0 or self.best_ask_paise <= 0:
-            return None
-        return (self.best_bid_paise + self.best_ask_paise) / 2.0
+        return (float(self.best_bid_paise or 0) + float(self.best_ask_paise or 0)) / 2.0
 
 
 class CrossBrokerQuoteTape:
