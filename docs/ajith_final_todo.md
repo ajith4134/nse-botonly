@@ -41,7 +41,27 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [x] **0.2** Reset to docs-only; retain Kite TOTP login, Claude subscription provider, 3,481 closed trades, market-data store — `A.26`
 - [x] **0.3** Python 3.12 venv; ARM64 stack verified by function (LightGBM trains, CVXPY solves, TA-Lib imports) — `B.09`
 - [x] **0.4** Reclaim disk — 43 GB free — `B.09`
-- [ ] **0.5** **Revoke the leaked GitHub PAT**; reissue via `gh auth login` — `B.10` ⚠️ *operator action*
+- [ ] **0.5** **Revoke the leaked GitHub PAT** — `B.10` ⚠️ *operator action, and the ONLY part of
+      this that cannot be automated: GitHub publishes no API to revoke a classic PAT, so it is a
+      web-UI action.* **Audited 2026-08-12 (`A.95`) — exposure is bounded but the scopes are not.**
+      The working tree, all **231 commits** and every git remote are CLEAN — the token is not in
+      this repository. It lives only in `~/.config/gh/hosts.yml` at mode 0600. Both project repos
+      are PRIVATE and the account has no organisations.
+      **What makes it urgent anyway:** it is a *classic* PAT carrying `repo`, `admin:org`,
+      `admin:enterprise`, `delete_repo`, `workflow`, `admin:public_key`, `write:packages`, `gist`
+      and `user` — reach over **10 private and 4 public repositories**, with the power to delete
+      any of them and to inject CI workflows. The blast radius is the entire account, not this
+      project.
+      **Do this:** (1) revoke at https://github.com/settings/tokens ; (2) replace with a
+      FINE-GRAINED token scoped to `nse-botonly` and `nse-algo-trader-archive-2026-08-10` only,
+      with `Contents: read and write` and nothing else — that is everything this project uses and
+      it removes essentially all of the blast radius permanently; (3) `gh auth login` with it.
+- [x] **0.6** Committed-credential guard — `L3.30` · a dependency-free detector for every
+      credential shape this project holds, wired into the Stop hook over the TRACKED tree and
+      available over full history with `--include-history`. Findings name their blast radius. 23
+      tests, including two `R.05` tests that assert THIS repository and its whole history are
+      clean — so the `B.10` audit result is pinned and cannot silently stop being true.
+      *The half of `B.10` that was actually in my control (`A.95`).*
 - [x] **0.6** Repo skeleton — `src/nse_algo_trader` package, `pyproject.toml` with ruff (security, naming, datetime-awareness, blind-except bans) + strict mypy + pytest markers naming the R.23 test kinds; installed editable
 - [x] **0.7** Execution gate — the Stop hook now runs **ruff + mypy + pytest** and blocks the turn on any failure (`L2.32`, R.23 step 6)
 - [x] **0.7a** Rupee-literal detector — ***now actually wired*** via `scripts/check_no_hardcoded_money.py` into the Stop gate over `src/` + `scripts/`; firing proven with a planted violation (`A.43`, `O.30`). Was an orphan invoked only by its own test — AST guard failing the build on hardcoded money; enforces `R.03` mechanically — `L2.31a` *(retro-listed 2026-08-10: built earlier but had no plan entry or task, so it was an untracked orphan)*
@@ -1116,7 +1136,12 @@ cannot be rediscovered as a fresh idea in six months.*
 - [ ] **X.B3** Fyers and Groww — `B.03`
 - [ ] **X.B4** Deep intraday NSE history is largely not free; the realistic free ceiling was researched (r/74, r/77) and it is… — `B.04`
 - [ ] **X.B5** India VIX history + per-name IV backfill needed for the IV-rank shrinkage prior — `B.05`
-- [ ] **X.B6** SPAN margin mechanics — `B.06`
+- [x] **X.B6** SPAN margin mechanics — `B.06` — **RESOLVED 2026-08-12 (`A.96`)**, and it was the
+      highest-leverage blocker in the plan: `L6.30` gated option book risk (`L6.31`), the structure
+      optimizer (`L6.12`-`L6.23`) and the capital allocator's margin constraint. The published
+      risk-parameter archive goes back to **2008** and the offline computation agrees with the live
+      broker to ±8%. Data path and the ±8% calibration requirement recorded in `research/61` and
+      `A.96`; the engine itself is built with **F19/F20**, not now.
 - [ ] **X.B7** Per-source API endpoints, rate limits and free-vs-paid for data targets 2–9 were never freshly verified (the… — `B.07`
 - [ ] **X.B8** GIFT Nifty data source and licence unverified, as are global-index and ADR free feeds — `B.08`
 - [x] **X.B9** RESOLVED 2026-08-10. Environment settled and verified end to end — `B.09`

@@ -373,13 +373,34 @@ with a dated chain (Jan-2020 → Jan-2021 → Sep-2021 → Mar-2022, e.g. NCL/CO
 "2% ELM on short options at expiry" figure sometimes cited for Oct-2024 is Grade-C
 snippet-only and needs the actual SEBI circular before use.
 
-**Confirmed blocker — historical daily SPAN files:** no public deep archive of daily SPAN
+> ### ⛔ CORRECTED 2026-08-12 — THIS PARAGRAPH WAS WRONG (`A.96`)
+>
+> The claim below — that no public deep archive of daily SPAN files exists — is **false**, and
+> the workaround it recommends is unnecessary. Measured: every probe from **2008-01-01 to
+> today** returns HTTP 200 at
+> `https://nsearchives.nseindia.com/archives/nsccl/span/nsccl.{YYYYMMDD}.s.zip` — no cookie, no
+> auth, no 403, a plain browser user-agent is enough. Today's file is 9.4 MB zipped, 49 MB of
+> XML, **133,274 option contracts each carrying its 16-scenario risk array**, 237 underlyings.
+> Intraday snapshots exist too (`.i1` … `.i5`).
+>
+> **Why the original conclusion was reached, and the lesson:** the research followed NSE's
+> official SPAN *page*, which is a React shell whose only download link points at the member
+> login wall `ims.connect2nsccl.com` — so the data looked gated. It is served publicly from the
+> archive host the whole time. **A login wall on the documented path is not evidence that the
+> data is private.** The same fetcher headers this repo already uses for other NSE endpoints
+> reach it unchanged.
+>
+> Point-in-time margin for any backtest date since 2008 is therefore RECOVERABLE DIRECTLY,
+> rather than reconstructed from a dated rule table. The algorithmic-reconstruction workaround
+> below is retired.
+
+~~**Confirmed blocker — historical daily SPAN files:** no public deep archive of daily SPAN
 risk-parameter (`.spn`) files was found. NSE Clearing download pages timed out on fetch;
 only current-day utilities and third-party parsers exist (GitHub `nse-span-risk-parser`,
 PyPI `marginism`), none with historical backfill. **Recommended workaround: don't try to
 source historical SPAN files — recompute point-in-time margins algorithmically** from a
 dated rule-parameter table (VaR%/ELM%/scan-range/MPOR/peak-phase, keyed by circular
-effective date) applied to the historical price/volatility series we already have. ICCL
+effective date) applied to the historical price/volatility series we already have.~~ ICCL
 (BSE's clearing corp) reportedly has a date-range risk-parameter portal — an unexplored
 lead for a follow-up pass.
 

@@ -67,8 +67,8 @@ Size: small ≤6 entries · medium 7–14 · large 15+.
 | **F17** | Overnight, the box practises the sessions it is worst at | 18 | large | fidelity (`B.04`) |
 | **F18** | A cash position may be held overnight — by a decision it re-earns every morning | 12 | medium | no |
 | **F19** | An option can be priced, greeked and refused on its own liquidity | 16 | large | `L6.06` (`B.05`) |
-| **F20** | The option book is risk-managed as a book; margin known before a structure is proposed | 10 | medium | **SPAN (`B.06`)** |
-| **F21** | The bot invents its own option structures and learns which of its ideas pay | 20 | large | inherits `B.06` |
+| **F20** | The option book is risk-managed as a book; margin known before a structure is proposed | 10 | medium | no — `B.06` RESOLVED `A.96` |
+| **F21** | The bot invents its own option structures and learns which of its ideas pay | 20 | large | no — `B.06` RESOLVED `A.96` |
 | **F22** | Six independent trading operations, each complete, each switchable off | 31 | large | no |
 | **F23** | Six bots cannot take the same bet six times or trade against each other | 13 | medium | no |
 | **F24** | Capital allocated across bets that are jointly sized, not one at a time | 12 | medium | no |
@@ -132,7 +132,7 @@ reaches it after **4 features / ~56 entries**.
 | Item | Waiting on |
 |---|---|
 | **F40 entire** | **Operator.** Breeze session credentials · Fyers: one browser auth OR `FY_ID`+PIN+TOTP · Groww: activate the ₹499/mo subscription. Re-verified mechanically 2026-08-12. |
-| **`L6.30` SPAN** → cascades to F20, F21's optimizer, F24's margin constraint | **`B.06`** — NSE's calculation page 403'd; margin logic unverified. **Highest-leverage blocker on the options half.** |
+| ~~`L6.30` SPAN~~ | **RESOLVED 2026-08-12 (`A.96`).** The published risk-parameter archive runs 2008→today (HTTP 200, no auth) and an offline computation reproduces Kite's live `basket_order_margins` within ±8%. F20, F21 and F24's margin constraint are unblocked. |
 | `L6.06` IV-rank shrinkage | `B.05` — India VIX history absent. VRP path works without it. |
 | F29 / F30 endpoints | `B.07` — per-source endpoints and rate limits never freshly verified. |
 | `L11.43`–`L11.45` | `B.08` — GIFT Nifty source and licence unverified. |

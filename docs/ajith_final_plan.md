@@ -399,6 +399,15 @@ the one bot-walling host is never hit at the same second daily. ⟨IV⟩ · base
 BUILT `A.62` · `deploy/nse-dashboard.service` — USER unit + linger, `Restart=always`, burst-capped.
 *Supersedes its own "journald logging" clause: measured on this host, `journalctl --user` captures
 nothing from user units, so journald alone would hide every crash.*
+**L3.30**  **Committed-credential guard — the executable half of `R.02`.** A dependency-free
+detector for the credential shapes this project actually holds (GitHub PAT classic and
+fine-grained, Anthropic, AWS, private-key blocks, and broker API key/secret/TOTP assignments for
+Kite, Angel One, Upstox, Fyers, Groww and Breeze), run over the TRACKED tree by the Stop hook
+every turn and over the full history on demand. Scans what leaves the machine, never `.env`,
+which is gitignored and is the correct home for every one of these values. Each finding names
+its blast radius, because a finding with no consequence attached gets triaged as a lint nit.
+⟨VII⟩ · base · built 2026-08-12 · `A.95`
+
 **L3.29**  Kite-decoupled architecture guard — a test that fails if `kiteconnect` is imported anywhere
 outside the broker seam. Everything except live trading runs broker-independent. ⟨IV⟩ · adv · archived ·
 `kite_decoupled_architecture.md`
@@ -2238,7 +2247,12 @@ universe, eligibility and survivorship work this blocker was thought to gate is 
 remain blocked.
 **B.05**  **India VIX history + per-name IV backfill** needed for the IV-rank shrinkage prior. The VRP path
 works without it.
-**B.06**  **SPAN margin mechanics** — the calculation page 403'd during research; margin logic is unverified.
+**B.06**  **SPAN margin mechanics** — ~~the calculation page 403'd during research; margin logic
+is unverified.~~ **RESOLVED 2026-08-12 (`A.96`).** Verified twice, independently, and the two agree:
+NSE publishes the complete daily SPAN risk-parameter file publicly (2008→today, HTTP 200, no auth),
+and Kite's `basket_order_margins` returns the exchange's own `span`/`exposure` breakdown with real
+multi-leg netting, working with the market closed. An offline calculation over the published risk
+arrays reproduces the live broker within **±8%** across index and stock underlyings.
 **B.07**  **Per-source API endpoints, rate limits and free-vs-paid** for data targets 2–9 were never
 freshly verified (the research budget was exhausted mid-pass).
 **B.08**  **GIFT Nifty data source and licence** unverified, as are global-index and ADR free feeds.
@@ -4081,6 +4095,99 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
+
+**A.96 · 2026-08-12 · `B.06` resolved — the highest-leverage blocker in the plan was resting on a
+false premise, and the false premise is the more useful finding.** Operator asked me to decide and
+fix rather than escalate.
+
+*What was believed.* `research/61` recorded, as a "confirmed blocker", that **no public deep archive
+of daily SPAN risk-parameter files exists**, and recommended reconstructing point-in-time margins
+algorithmically from a dated rule-parameter table. `B.06` recorded that the margin calculation page
+403'd and margin logic was unverified. Between them these gated `L6.30`, and through it `L6.31`
+option book risk, the whole structure optimizer (`L6.12`-`L6.23`) and the capital allocator's margin
+constraint — the entire options half of the plan.
+
+*What is actually true, measured.* NSE serves the complete SPAN file publicly at
+`nsearchives.nseindia.com/archives/nsccl/span/nsccl.{YYYYMMDD}.s.zip`. Every probe from
+**2008-01-01 to today returns HTTP 200** — no cookie, no auth, no 403, a plain browser user-agent
+suffices, and the repo's existing `NseSourceFetcher` headers reach it unchanged. Today's file is
+9.4 MB zipped / 49 MB of XML: **133,274 option contracts, each carrying its 16-scenario risk
+array**, across 237 underlyings, plus intraday snapshots `.i1`-`.i5`.
+
+*Why the original conclusion was reached, which is the lesson worth keeping.* The research followed
+NSE's official SPAN *page*. That page is a React shell whose only download link points at the member
+login wall `ims.connect2nsccl.com` — so the data looked gated, and the conclusion followed
+reasonably from what was seen. **A login wall on the documented path is not evidence that the data
+is private.** The archive host was serving it publicly the entire time. `research/61`'s paragraph is
+corrected in place with the original struck through and visible, per `R.25`.
+
+*Verified twice, independently, and the two agree.* Kite's `basket_order_margins` returns the
+exchange's own `span`/`exposure` breakdown, **works with the market closed**, and nets multi-leg
+structures for real — a 24450/24650 call spread drops SPAN from 145,571 to 13,095, an **11.1x**
+reduction, and total margin 4.5x. An offline computation over the published risk arrays reproduces
+that live broker within **±8%** across index AND stock underlyings (NIFTY 0.974, RELIANCE 1.024,
+TATASTEEL 0.917, YESBANK 1.053). The residual is explained rather than mysterious: the EOD
+settlement file was compared against Kite's ~15:36 intraday state. Dropping the net-option-value
+term degrades a spread to 0.566, so NOV is mandatory — that term is what makes spreads come out
+sane.
+
+*The architecture this settles, for `F19`/`F20` when they build.* Offline evaluation over the daily
+file as the optimizer's inner loop — measured **4,311 structures/sec** against **54/sec** through
+the API, an ~80x difference and the reason an API-per-candidate design is not viable. The API
+becomes the CALIBRATION ORACLE, not the inner loop: sample a handful of structures per session,
+regress the broker's answer on the offline one to fit a per-underlying multiplier (data-derived, as
+`R.03` wants, rather than trusting ±8%), and take exactly ONE real `basket_order_margins` call to
+attest the finally-chosen structure before any order goes out. `marginism` 0.1.1 is real SPAN
+math that parses the real file and computes, but it is 175 lines from a 2.5-month-old
+single-maintainer repository — **vendor it as a specification, never depend on it** (`R.17`).
+
+*Consequence beyond the options half:* point-in-time margin for any backtest date since 2008 is now
+recoverable directly rather than reconstructed, so the algorithmic-reconstruction workaround is
+retired. **The engine is not built now** — that is `F19`/`F20` under `R.18`; what changes today is
+that it is no longer blocked, and the data path is verified rather than assumed.
+
+**A.95 · 2026-08-12 · The `B.10` credential incident, audited and half-fixed — the half that was
+mine to fix.** Operator asked me to decide and act rather than escalate.
+
+*What the audit found.* The token is **not in this repository**: the working tree is clean, all
+**231 commits** are clean, no remote URL embeds it, and there is no `~/.git-credentials` and no
+credential helper. It lives in exactly one place, `~/.config/gh/hosts.yml`, at mode 0600 — which
+is where it belongs. Both project repositories are PRIVATE and the account owns no organisations.
+So the exposure is bounded, and the todo's implied worry — a secret sitting in the git history —
+is not the situation.
+
+*Why it is still urgent, and this is the part that changed my assessment.* It is a **classic** PAT
+carrying `repo`, `admin:org`, `admin:enterprise`, `delete_repo`, `workflow`, `admin:public_key`,
+`write:packages`, `gist` and `user`, reaching **10 private and 4 public repositories**. The blast
+radius is the whole account — read every private repository, delete any repository, inject CI
+workflows — and it is wildly beyond what this project uses, which is push access to two repos.
+A token that broad is a standing liability whether or not it ever leaked.
+
+*What I could not do.* **GitHub publishes no API to revoke a classic PAT** — it is a web-UI action
+— so revocation stays operator work. It is written up in todo `0.5` with the exact steps and, more
+usefully, the replacement: a FINE-GRAINED token scoped to the two repositories with
+`Contents: read and write` and nothing else, which removes essentially the entire blast radius
+permanently rather than resetting the same liability.
+
+*What I did instead.* `R.02` said "never commit secrets" and **nothing enforced it** — the same
+shape of gap as `R.03` before the money-literal guard. So `L3.30` (new entry) is a
+dependency-free detector for the credential shapes this project actually holds — GitHub classic
+and fine-grained PATs, Anthropic and AWS keys, private-key blocks, and broker
+key/secret/TOTP/PIN assignments for Kite, Angel One, Upstox, Fyers, Groww and Breeze — wired into
+the Stop-hook execution gate beside the money guard, so a committed credential now BLOCKS the turn
+instead of being noticed later. Bespoke rather than `gitleaks`/`trufflehog` because it runs every
+turn and must be import-fast and noise-free; a guard that cries wolf gets disabled, and a disabled
+guard is worse than none because it is still cited as protection. Each finding names its blast
+radius for the same reason.
+
+Two of its 23 tests are `R.05` tests asserting that THIS repository and its ENTIRE history are
+clean — so the audit result above is pinned as a regression test rather than a claim in a document
+that ages.
+
+*Honest limit, tested and documented rather than papered over:* a determined author defeats any
+regex by concatenating a string, and there is a test asserting exactly that. The guard is for the
+ACCIDENT — a pasted token, a debug print, a config file added in haste — which is how `B.10`
+happened in the first place.
 
 **A.94 · 2026-08-12 · The catalogue was mapped into 41 deliverable FEATURES, and the audit of it
 found a defect that had been reporting built work as unbuilt and unbuilt work as built.**
