@@ -116,9 +116,7 @@ def test_a_symbol_returning_to_a_previous_isin_is_still_two_events() -> None:
             _observation(ADANI_GAS_ISIN, "SHARED", 9),
         ]
     )
-    reassignments = [
-        e for e in events if e.kind is IdentityEventKind.SYMBOL_REASSIGNED
-    ]
+    reassignments = [e for e in events if e.kind is IdentityEventKind.SYMBOL_REASSIGNED]
     assert len(reassignments) == 2
 
 

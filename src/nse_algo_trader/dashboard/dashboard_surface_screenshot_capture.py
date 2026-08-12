@@ -29,9 +29,13 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8080"
 ACCESS_TOKEN_PATH = Path("~/.nse_algo_trader/dashboard_access_token.txt").expanduser()
 DEFAULT_OUTPUT_ROOT = Path("~/nse_archive/dashboard_screenshots").expanduser()
 
-ROUTES = ("/wall", "/regime", "/manifest")
+ROUTES = ("/wall", "/regime", "/manifest", "/microstructure")
 """Every route a human reads. `/healthz` is excluded deliberately — it returns plain text
-and has no visual claim to confirm."""
+and has no visual claim to confirm.
+
+A route added here without being added to the server 404s and the capture fails, which is
+the intended direction of that dependency: the screenshot pass is the `R.08` check, so it
+should break when a surface disappears rather than quietly capture one page fewer."""
 
 THEMES: tuple[Literal["light", "dark"], ...] = ("light", "dark")
 """Literal, not `str`: playwright types `color_scheme` as an enum of exact values, so a
@@ -136,10 +140,7 @@ def capture_dashboard(
                 for route in ROUTES:
                     before = len(console_errors)
                     response = page.goto(f"{base_url}{route}", wait_until="networkidle")
-                    if (
-                        response is not None
-                        and response.status >= FIRST_HTTP_ERROR_STATUS
-                    ):
+                    if response is not None and response.status >= FIRST_HTTP_ERROR_STATUS:
                         raise DashboardCaptureError(
                             f"{route} returned HTTP {response.status} — refusing to "
                             "screenshot an error page as if it were the surface"
@@ -172,9 +173,7 @@ def summarise_capture(results: Sequence[CaptureResult]) -> str:
     if blank:
         detail += " · BLANK: " + ", ".join(f"{r.route}[{r.theme}]" for r in blank)
     if noisy:
-        detail += " · CONSOLE ERRORS: " + ", ".join(
-            f"{r.route}[{r.theme}]" for r in noisy
-        )
+        detail += " · CONSOLE ERRORS: " + ", ".join(f"{r.route}[{r.theme}]" for r in noisy)
     if not blank and not noisy:
         detail += " · all painted, no console errors"
     return detail
@@ -182,6 +181,4 @@ def summarise_capture(results: Sequence[CaptureResult]) -> str:
 
 def capture_failed(results: Sequence[CaptureResult]) -> bool:
     """Whether the capture proves a problem — a blank frame or a console error."""
-    return any(
-        not result.is_credible or result.console_errors for result in results
-    )
+    return any(not result.is_credible or result.console_errors for result in results)

@@ -381,9 +381,7 @@ class BitemporalIngestStore:
         ).fetchone()
         return int(record[0])
 
-    def fetch_history(
-        self, source_name: str, successful_only: bool = False
-    ) -> list[sqlite3.Row]:
+    def fetch_history(self, source_name: str, successful_only: bool = False) -> list[sqlite3.Row]:
         """Every fetch attempt for a source, including the failures.
 
         A source blocked for a week is a fact the coverage check needs; recording only

@@ -39,9 +39,7 @@ def test_governing_documents_are_present() -> None:
 @pytest.mark.unit
 def test_test_kinds_required_by_rule_23_are_registered() -> None:
     """R.23 step 3 names unit, property and adversarial tests; the markers must exist."""
-    configuration = tomllib.loads(
-        (REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    )
+    configuration = tomllib.loads((REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     declared = {
         marker.split(":", 1)[0]
         for marker in configuration["tool"]["pytest"]["ini_options"]["markers"]

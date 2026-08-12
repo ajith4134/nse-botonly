@@ -33,19 +33,28 @@ AUGUST_SEVENTH = datetime(2026, 8, 7, tzinfo=IST)
 AUGUST_ELEVENTH = datetime(2026, 8, 11, tzinfo=IST)
 
 RELIANCE = BarInstrument(
-    "NSE", "CASH", "RELIANCE",
+    "NSE",
+    "CASH",
+    "RELIANCE",
     {BrokerName.ZERODHA_KITE: "738561", BrokerName.ANGEL_ONE: "2885"},
 )
 
 
 def _bar(moment: datetime, close: str = "1320.6", volume: int = 8_508_600) -> BarRecord:
     return BarRecord(
-        exchange="NSE", segment="CASH", tradingsymbol="RELIANCE",
-        instrument_token=738561, bar_interval="day",
-        bar_timestamp=moment, available_from=moment + timedelta(days=1),
-        open_price=Decimal("1326.6"), high_price=Decimal("1328.7"),
-        low_price=Decimal("1314.1"), close_price=Decimal(close),
-        volume=volume, open_interest=None,
+        exchange="NSE",
+        segment="CASH",
+        tradingsymbol="RELIANCE",
+        instrument_token=738561,
+        bar_interval="day",
+        bar_timestamp=moment,
+        available_from=moment + timedelta(days=1),
+        open_price=Decimal("1326.6"),
+        high_price=Decimal("1328.7"),
+        low_price=Decimal("1314.1"),
+        close_price=Decimal(close),
+        volume=volume,
+        open_interest=None,
     )
 
 
@@ -133,15 +142,11 @@ def test_reconciliation_is_stable_regardless_of_source_order() -> None:
     """A result that depended on dict ordering would drift between runs for no reason."""
     kite_bars = [_bar(AUGUST_SEVENTH), _bar(AUGUST_ELEVENTH)]
     angel_bars = [_bar(AUGUST_ELEVENTH, volume=8_701_285)]
-    forward = reconcile_bars(
-        {BrokerName.ZERODHA_KITE: kite_bars, BrokerName.ANGEL_ONE: angel_bars}
-    )
+    forward = reconcile_bars({BrokerName.ZERODHA_KITE: kite_bars, BrokerName.ANGEL_ONE: angel_bars})
     reversed_order = reconcile_bars(
         {BrokerName.ANGEL_ONE: angel_bars, BrokerName.ZERODHA_KITE: kite_bars}
     )
-    assert [b.chosen_source for b in forward.bars] == [
-        b.chosen_source for b in reversed_order.bars
-    ]
+    assert [b.chosen_source for b in forward.bars] == [b.chosen_source for b in reversed_order.bars]
     assert [b.bar.volume for b in forward.bars] == [b.bar.volume for b in reversed_order.bars]
 
 

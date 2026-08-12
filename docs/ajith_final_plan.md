@@ -2664,6 +2664,57 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.79 · 2026-08-12 · `L0.22` built, renamed to what it actually is, and three of its estimators were
+wrong until real data and a second implementation said so.** The plan entry reads "tick-level order-book
+reconstruction" and also says it is retail-infeasible. Both are true, so the module is
+`order_book_snapshot_replay_engine` — `R.23(b)` says vocabulary sets scope, and `R.14` says a name that
+overclaims is a defect. Tick reconstruction needs order-by-order messages NSE licenses at ₹12.5 lakh/year
+(`research/72`); what exists here is a 5-level snapshot at a 0.25s p10 gap.
+
+*What it does instead, and why that is not a consolation prize.* The quantities a strategy needs from a
+book — who initiated a trade, whether a queue drained by execution or cancellation, where the pressure
+is — are unobservable in ANY snapshot feed and estimable from one. Cont-Kukanov-Stoikov Order Flow
+Imbalance is defined on exactly this data and is the SOTA analog; multi-level OFI, a Lee-Ready trade-side
+classifier, Stoikov's micro-price, and an interval-valued queue-depletion decomposition are the engine.
+Every emitted row carries the fidelity that produced it — inter-snapshot gap, both books' integrity
+flags, duplicate run length, whether the transition crossed a capture-run boundary — because a feature
+computed across a 4-second hole is a different measurement from one computed across 250ms.
+
+**Three defects, each found by a different check, none by reading the code.**
+
+1. *The real tape found the padding.* Kite always sends five levels and pads absent ones with price 0.
+   Reading a padded level as a quote made `best_ask` zero for a one-sided book, and the micro-price came
+   out at 0 paise against a best bid of 640. Measured before fixing: a zero price came with zero quantity
+   in all 195 padded levels sampled, never with real size — so `price > 0` is the existence test, from
+   measurement rather than assumption.
+2. *The real tape found the crossed books.* 757 of 135,401 transitions (0.56%) had ask below bid, and the
+   recorder's `BOOK_CROSSED` flag caught every one. The micro-price formula still returns a number there
+   — one below every bid in the book. It now returns nothing, because a fair price derived from a
+   contradiction is worse than no price: a consumer cannot tell it from a good one.
+3. *A second implementation found the quote rule.* Differential-tested against `tclf` on random books,
+   the classifier disagreed at `bid=1 ask=4 trade=2`: `tclf` said seller-initiated (below the 2.5
+   midpoint), this engine said unclassified. It was comparing against the TOUCH instead of the MIDPOINT,
+   so every trade inside the spread fell through to the weaker tick rule. Lee-Ready's actual rule is the
+   midpoint. Fixed, and pinned by the property test.
+
+*The OSS sourcing pass is in `research/214` §6 and its most useful result is a negative one.* No
+installable implementation of multi-level OFI or the micro-price exists anywhere — Stoikov's own
+reference is a Jupyter notebook — and every "LOB replay" project found (`hftbacktest`, `fastlob`,
+`bmoscon/order-book`, `crobat`) reconstructs from order-by-order or diff messages, because that is what
+raw exchange feeds give you. A consumer holding materialised snapshot rows has no reconstruction problem
+at all. `tclf` was the one real find, and it is adopted as a TEST ORACLE rather than a dependency: it is
+sklearn batch-shaped while this engine carries state through a streaming replay. Note for anyone who
+repeats the pass — `pip install tclf` succeeds and then `fit()` raises `AttributeError` because the PyPI
+artifact predates scikit-learn 1.6; git main works. Installing is not the same as running.
+
+*`R.11` closed on two older entries.* `L0.20` and `L0.21` sat at `[~]` because their primary consumer was
+queued and they had no dashboard surface. Both conditions are now met — this engine is the consumer, and
+`/microstructure` is the surface — so they are ticked.
+
+*Open and recorded, not skipped:* the surface replays a BOUNDED instrument count per request and prints
+that count on the page rather than implying the universe; replaying 9,000 instruments per page load would
+make it a batch job. The honest fix is a persisted read model, which is a separate slice.
+
 **A.78 · 2026-08-12 · `L0.18` and `L0.19` re-tested rather than believed, and both blockers are real —
 but for different reasons than the plan recorded.** The frontier after `L0.17` is two broker adapters the
 plan marks "blocked (credentials)" and "blocked (subscription)". Those labels were written months ago and

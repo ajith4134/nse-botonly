@@ -46,8 +46,18 @@ UDIFF_FIRST_DAY = date(2024, 7, 1)
 """Measured: UDiFF 404s before this date. The overlap with the legacy era is real."""
 
 _MONTH_CODES = (
-    "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
-    "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+    "JAN",
+    "FEB",
+    "MAR",
+    "APR",
+    "MAY",
+    "JUN",
+    "JUL",
+    "AUG",
+    "SEP",
+    "OCT",
+    "NOV",
+    "DEC",
 )
 
 CASH_COVERAGE_FLOOR = date(1994, 11, 3)
@@ -253,7 +263,5 @@ class NseBhavcopyAdapter:
         except IngestAdapterError as failure:
             return f"payload could not be dated: {failure}"
         if payload_date.isoformat() != target.expects:
-            return (
-                f"file is dated {payload_date.isoformat()}, requested {target.expects}"
-            )
+            return f"file is dated {payload_date.isoformat()}, requested {target.expects}"
         return None

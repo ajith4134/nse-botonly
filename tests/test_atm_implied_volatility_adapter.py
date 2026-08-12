@@ -207,9 +207,7 @@ def test_the_full_universe_is_embedded_and_not_a_sample() -> None:
     assert "RELIANCE" in EQUITY_UNDERLYINGS
     adapter = AtmImpliedVolatilityAdapter()
     targets = adapter.fetch_targets([date(2026, 8, 11)])
-    covered_symbols = {
-        parse_qs(urlparse(t.url).query)["symbol"][0] for t in targets
-    }
+    covered_symbols = {parse_qs(urlparse(t.url).query)["symbol"][0] for t in targets}
     assert covered_symbols == set(INDEX_UNDERLYINGS) | set(EQUITY_UNDERLYINGS)
 
 

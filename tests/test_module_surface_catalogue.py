@@ -40,12 +40,14 @@ def test_the_catalogue_measures_the_real_tree(catalogue: CatalogueSummary) -> No
 def test_tier_is_read_from_the_modules_own_vocabulary(catalogue: CatalogueSummary) -> None:
     """`R.23(b)`: a module calling itself an engine has claimed the full loop."""
     by_name = {surface.module_name: surface for surface in catalogue.surfaces}
-    assert by_name[
-        "nse_algo_trader.strategy.intraday_mean_reversion_engine"
-    ].tier is ModuleTier.DECISION_PATH
-    assert by_name[
-        "nse_algo_trader.market_depth.market_depth_tape_store"
-    ].tier is ModuleTier.STORE_OR_PIPELINE
+    assert (
+        by_name["nse_algo_trader.strategy.intraday_mean_reversion_engine"].tier
+        is ModuleTier.DECISION_PATH
+    )
+    assert (
+        by_name["nse_algo_trader.market_depth.market_depth_tape_store"].tier
+        is ModuleTier.STORE_OR_PIPELINE
+    )
 
 
 @pytest.mark.unit
@@ -84,10 +86,7 @@ def test_an_asgi_app_counts_as_an_entry_point(tmp_path: Path) -> None:
     (tmp_path / "scripts").mkdir()
     (tmp_path / "tests").mkdir()
 
-    states = {
-        surface.short_name: surface
-        for surface in build_module_catalogue(tmp_path).surfaces
-    }
+    states = {surface.short_name: surface for surface in build_module_catalogue(tmp_path).surfaces}
     assert states["web_server"].is_reachable
     assert states["served_engine"].is_reachable
 
@@ -111,10 +110,7 @@ def test_test_pairing_and_real_data_coverage_are_measured(tmp_path: Path) -> Non
         "@pytest.mark.real_data\ndef test_x(): assert VALUE\n"
     )
 
-    states = {
-        surface.short_name: surface
-        for surface in build_module_catalogue(tmp_path).surfaces
-    }
+    states = {surface.short_name: surface for surface in build_module_catalogue(tmp_path).surfaces}
     assert states["covered_engine"].test_count == 1
     assert states["covered_engine"].has_real_data_test
     assert states["covered_engine"].health is SurfaceHealth.HEALTHY
@@ -183,10 +179,7 @@ def test_a_package_is_reachable_when_any_submodule_is(tmp_path: Path) -> None:
     )
     (tmp_path / "tests").mkdir()
 
-    states = {
-        surface.short_name: surface
-        for surface in build_module_catalogue(tmp_path).surfaces
-    }
+    states = {surface.short_name: surface for surface in build_module_catalogue(tmp_path).surfaces}
     assert states["regime.deep_engine"].is_reachable
     assert states["regime"].is_reachable, "the package holding a used module is used"
 
@@ -205,10 +198,7 @@ def test_an_unused_package_is_still_an_orphan(tmp_path: Path) -> None:
     (tmp_path / "scripts").mkdir()
     (tmp_path / "tests").mkdir()
 
-    states = {
-        surface.short_name: surface
-        for surface in build_module_catalogue(tmp_path).surfaces
-    }
+    states = {surface.short_name: surface for surface in build_module_catalogue(tmp_path).surfaces}
     assert not states["abandoned"].is_reachable
     assert not states["abandoned.stranded"].is_reachable
 

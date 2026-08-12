@@ -180,9 +180,7 @@ class UniverseSnapshot:
 
     @property
     def unknown_count(self) -> int:
-        return sum(
-            1 for verdict in self.absences if verdict.classification is AbsenceClass.UNKNOWN
-        )
+        return sum(1 for verdict in self.absences if verdict.classification is AbsenceClass.UNKNOWN)
 
     @property
     def is_fully_resolved(self) -> bool:
@@ -316,8 +314,12 @@ class PointInTimeUniverseEngine:
                     " VALUES (?,?,?,?,?,?,?,?)",
                     [
                         (
-                            item.symbol, item.trade_date.isoformat(), item.segment,
-                            str(item.source), item.expiry_ladder_depth, item.isin,
+                            item.symbol,
+                            item.trade_date.isoformat(),
+                            item.segment,
+                            str(item.source),
+                            item.expiry_ladder_depth,
+                            item.isin,
                             item.furthest_expiry.isoformat() if item.furthest_expiry else None,
                             (known_as_of or item.trade_date).isoformat(),
                         )
@@ -475,7 +477,8 @@ class PointInTimeUniverseEngine:
         multi-expiry positions.
         """
         return tuple(
-            item for item in self.ladder_truncations_on(day, known_as_of=known_as_of)
+            item
+            for item in self.ladder_truncations_on(day, known_as_of=known_as_of)
             if item.is_exit_warning
         )
 
@@ -573,7 +576,9 @@ class PointInTimeUniverseEngine:
         """
         if day not in context.collected:
             return AbsenceVerdict(
-                symbol, day, AbsenceClass.UNOBSERVED,
+                symbol,
+                day,
+                AbsenceClass.UNOBSERVED,
                 (("reason", "no file was collected for this date"),),
             )
 
@@ -581,7 +586,9 @@ class PointInTimeUniverseEngine:
         next_seen = context.next_seen.get(symbol)
         if last_seen is None and next_seen is None:
             return AbsenceVerdict(
-                symbol, day, AbsenceClass.UNKNOWN,
+                symbol,
+                day,
+                AbsenceClass.UNKNOWN,
                 (("reason", "the symbol has never been observed in any collected file"),),
             )
 
@@ -592,41 +599,63 @@ class PointInTimeUniverseEngine:
         candidates = context.rename_candidates.get(symbol, ())
         if len(candidates) == 1:
             return AbsenceVerdict(
-                symbol, day, AbsenceClass.RENAMED,
-                (("successor", candidates[0]), ("shared_isin", "yes"),
-                 ("last_seen", last_seen.isoformat())),
+                symbol,
+                day,
+                AbsenceClass.RENAMED,
+                (
+                    ("successor", candidates[0]),
+                    ("shared_isin", "yes"),
+                    ("last_seen", last_seen.isoformat()),
+                ),
             )
         if len(candidates) > 1:
             # An ISIN shared by several symbols is a data-quality artefact, not a
             # rename. Review reproduced the old behaviour: `fetchone()` picked one
             # arbitrarily and discarded the rest without disclosing the ambiguity.
             return AbsenceVerdict(
-                symbol, day, AbsenceClass.UNKNOWN,
-                (("shared_isin_with", ", ".join(candidates)),
-                 ("reason", "several symbols share this ISIN, so a rename cannot be "
-                            "identified without disambiguating the duplicate")),
+                symbol,
+                day,
+                AbsenceClass.UNKNOWN,
+                (
+                    ("shared_isin_with", ", ".join(candidates)),
+                    (
+                        "reason",
+                        "several symbols share this ISIN, so a rename cannot be "
+                        "identified without disambiguating the duplicate",
+                    ),
+                ),
             )
 
         truncation = context.truncation_at_last_seen.get(symbol)
         if truncation is not None and truncation.symbol == symbol and truncation.is_exit_warning:
             return AbsenceVerdict(
-                symbol, day, AbsenceClass.EXITED_DERIVATIVES,
+                symbol,
+                day,
+                AbsenceClass.EXITED_DERIVATIVES,
                 (
                     ("last_seen", last_seen.isoformat()),
                     ("ladder_depth", str(truncation.observed_depth)),
                     ("cross_sectional_norm", str(truncation.cross_sectional_norm)),
                     ("ladder_direction", str(truncation.direction)),
-                    ("reason", "expiry ladder was short against its own date's norm and not "
-                               "advancing, then ran off without reappearing"),
+                    (
+                        "reason",
+                        "expiry ladder was short against its own date's norm and not "
+                        "advancing, then ran off without reappearing",
+                    ),
                 ),
             )
 
         return AbsenceVerdict(
-            symbol, day, AbsenceClass.UNKNOWN,
+            symbol,
+            day,
+            AbsenceClass.UNKNOWN,
             (
                 ("last_seen", last_seen.isoformat()),
-                ("reason", "absent with a full or advancing ladder, no successor ISIN and no "
-                           "later appearance; exit and end-of-collection are indistinguishable"),
+                (
+                    "reason",
+                    "absent with a full or advancing ladder, no successor ISIN and no "
+                    "later appearance; exit and end-of-collection are indistinguishable",
+                ),
             ),
         )
 
@@ -645,20 +674,29 @@ class PointInTimeUniverseEngine:
             sessions_absent = index[next_seen] - index[last_seen] - 1
             if sessions_absent > ceiling:
                 return AbsenceVerdict(
-                    symbol, day, AbsenceClass.UNKNOWN,
+                    symbol,
+                    day,
+                    AbsenceClass.UNKNOWN,
                     (
                         ("sessions_absent", str(sessions_absent)),
                         ("ordinary_gap_ceiling", str(ceiling)),
                         ("returns_on", next_seen.isoformat()),
-                        ("reason", "the absence is far longer than this universe's ordinary "
-                                   "gaps, so illiquidity and a delist-then-relist cannot be "
-                                   "told apart"),
+                        (
+                            "reason",
+                            "the absence is far longer than this universe's ordinary "
+                            "gaps, so illiquidity and a delist-then-relist cannot be "
+                            "told apart",
+                        ),
                     ),
                 )
         return AbsenceVerdict(
-            symbol, day, AbsenceClass.NOT_TRADED,
-            (("observed_after", next_seen.isoformat()),
-             ("reason", "present on a later collected date, so it was still listed")),
+            symbol,
+            day,
+            AbsenceClass.NOT_TRADED,
+            (
+                ("observed_after", next_seen.isoformat()),
+                ("reason", "present on a later collected date, so it was still listed"),
+            ),
         )
 
     # -------------------------------------------------------------- snapshot

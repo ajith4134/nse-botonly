@@ -62,7 +62,7 @@ error status but always as HTML. Matched case-insensitively against a lowered pr
 
 _HTML_MARKERS = (b"<!doctype html", b"<html", b"<head", b"<script")
 
-_JAVASCRIPT_SHELL_MARKERS = (b"__next_data__", b"<div id=\"root\"", b"<div id=\"__next\"")
+_JAVASCRIPT_SHELL_MARKERS = (b"__next_data__", b'<div id="root"', b'<div id="__next"')
 """A single-page-app shell: HTTP 200, a real page, and no data in the body."""
 
 
@@ -177,9 +177,7 @@ def classify_payload(
         )
     if http_status in (HTTP_FORBIDDEN, HTTP_SERVICE_UNAVAILABLE):
         return (FetchStatus.BOT_BLOCKED, f"HTTP {http_status}")
-    if looks_like_html and any(
-        marker in lowered_prefix for marker in _JAVASCRIPT_SHELL_MARKERS
-    ):
+    if looks_like_html and any(marker in lowered_prefix for marker in _JAVASCRIPT_SHELL_MARKERS):
         return (
             FetchStatus.JAVASCRIPT_SHELL,
             f"HTTP {http_status} carrying a JavaScript shell, no data in the body",
@@ -199,8 +197,7 @@ def classify_payload(
         if mismatch_reason is not None:
             return (
                 FetchStatus.CONTENT_MISMATCH,
-                f"HTTP {http_status} but the payload is not what was requested: "
-                f"{mismatch_reason}",
+                f"HTTP {http_status} but the payload is not what was requested: {mismatch_reason}",
             )
     return (FetchStatus.RETRIEVED, f"HTTP {http_status}, {len(payload):,} bytes")
 
@@ -259,9 +256,7 @@ class NseSourceFetcher:
 
         for attempt in range(1, self.retry_policy.maximum_attempts + 1):
             try:
-                response = self._session.get(
-                    target.url, timeout=self.request_timeout_seconds
-                )
+                response = self._session.get(target.url, timeout=self.request_timeout_seconds)
                 last_http_status = response.status_code
                 payload = response.content
                 last_status, last_evidence = classify_payload(

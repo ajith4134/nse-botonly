@@ -68,9 +68,7 @@ class SourceIngestRun:
 
     @property
     def rows_inserted(self) -> int:
-        return sum(
-            outcome.ingest.rows_inserted for outcome in self.outcomes if outcome.ingest
-        )
+        return sum(outcome.ingest.rows_inserted for outcome in self.outcomes if outcome.ingest)
 
     @property
     def rows_presented(self) -> int:
@@ -81,16 +79,12 @@ class SourceIngestRun:
         fetch produced nothing at all. Only the first is fine, and a status line that
         cannot separate them reports a dead feed as a quiet success.
         """
-        return sum(
-            outcome.ingest.rows_presented for outcome in self.outcomes if outcome.ingest
-        )
+        return sum(outcome.ingest.rows_presented for outcome in self.outcomes if outcome.ingest)
 
     @property
     def rows_already_present(self) -> int:
         return sum(
-            outcome.ingest.rows_already_present
-            for outcome in self.outcomes
-            if outcome.ingest
+            outcome.ingest.rows_already_present for outcome in self.outcomes if outcome.ingest
         )
 
     @property
@@ -100,11 +94,7 @@ class SourceIngestRun:
 
     @property
     def revisions_recorded(self) -> int:
-        return sum(
-            outcome.ingest.revisions_recorded
-            for outcome in self.outcomes
-            if outcome.ingest
-        )
+        return sum(outcome.ingest.revisions_recorded for outcome in self.outcomes if outcome.ingest)
 
     @property
     def blocked_targets(self) -> list[TargetIngestOutcome]:
@@ -113,8 +103,7 @@ class SourceIngestRun:
         return [
             outcome
             for outcome in self.outcomes
-            if outcome.fetch_status
-            in (FetchStatus.BOT_BLOCKED, FetchStatus.JAVASCRIPT_SHELL)
+            if outcome.fetch_status in (FetchStatus.BOT_BLOCKED, FetchStatus.JAVASCRIPT_SHELL)
         ]
 
     @property
@@ -147,8 +136,7 @@ class SourceIngestRun:
             f"{self.revisions_recorded:,} revisions, "
             f"{len(self.blocked_targets)} blocked, "
             f"{len(self.content_mismatches)} content mismatches, "
-            f"{len(self.parse_failures)} parse failures"
-            + self._describe_target_source()
+            f"{len(self.parse_failures)} parse failures" + self._describe_target_source()
         )
 
 
@@ -185,9 +173,7 @@ class NseSourceIngestRunner:
         targets = self._plan_targets(adapter, for_dates, discovery_memo, run)
 
         for target in targets:
-            outcome = self._fetcher.fetch(
-                target, content_check=adapter.content_mismatch_reason
-            )
+            outcome = self._fetcher.fetch(target, content_check=adapter.content_mismatch_reason)
             fetch_id = self._record(adapter, outcome)
 
             if not outcome.status.is_success or outcome.payload is None:
@@ -241,9 +227,7 @@ class NseSourceIngestRunner:
         run: SourceIngestRun,
     ) -> Sequence[FetchTarget]:
         """Targets via discovery when the adapter supports it, else the plain contract."""
-        if discovery_memo is None or not isinstance(
-            adapter, DiscoveringNseIngestSourceAdapter
-        ):
+        if discovery_memo is None or not isinstance(adapter, DiscoveringNseIngestSourceAdapter):
             return adapter.fetch_targets(for_dates)
 
         discovered: dict[str, object] = {}
@@ -256,14 +240,15 @@ class NseSourceIngestRunner:
                 )
 
         plan: DiscoveryPlan = plan_targets_with_discovery(
-            adapter, for_dates, discovery_memo, discovered or None  # type: ignore[arg-type]
+            adapter,
+            for_dates,
+            discovery_memo,
+            discovered or None,  # type: ignore[arg-type]
         )
         run.discovery_plan = plan
         return plan.targets
 
-    def _record(
-        self, adapter: NseIngestSourceAdapter, outcome: FetchOutcome
-    ) -> int:
+    def _record(self, adapter: NseIngestSourceAdapter, outcome: FetchOutcome) -> int:
         """Every attempt is written down, including the failures.
 
         A source bot-blocked for a week is a fact the coverage report needs; recording

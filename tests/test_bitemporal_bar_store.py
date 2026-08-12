@@ -84,11 +84,19 @@ def test_a_float_price_is_refused(store: BitemporalBarStore) -> None:
     """Accepting a float would silently reintroduce binary rounding into every indicator."""
     with pytest.raises(BarValidationError):
         BarRecord(
-            exchange="NSE", segment="NSE", tradingsymbol="RELIANCE", instrument_token=1,
-            bar_interval="5m", bar_timestamp=OPEN, available_from=OPEN + FIVE_MINUTES,
+            exchange="NSE",
+            segment="NSE",
+            tradingsymbol="RELIANCE",
+            instrument_token=1,
+            bar_interval="5m",
+            bar_timestamp=OPEN,
+            available_from=OPEN + FIVE_MINUTES,
             open_price=1055.0,  # type: ignore[arg-type]
-            high_price=Decimal("1"), low_price=Decimal("1"), close_price=Decimal("1"),
-            volume=1, open_interest=None,
+            high_price=Decimal("1"),
+            low_price=Decimal("1"),
+            close_price=Decimal("1"),
+            volume=1,
+            open_interest=None,
         )
 
 
@@ -125,10 +133,19 @@ def test_an_inverted_high_low_is_refused() -> None:
     """high < low is a corrupt bar, and it silently breaks every range calculation."""
     with pytest.raises(BarValidationError, match="high"):
         BarRecord(
-            exchange="NSE", segment="NSE", tradingsymbol="RELIANCE", instrument_token=1,
-            bar_interval="5m", bar_timestamp=OPEN, available_from=OPEN,
-            open_price=Decimal("100"), high_price=Decimal("90"), low_price=Decimal("95"),
-            close_price=Decimal("97"), volume=1, open_interest=None,
+            exchange="NSE",
+            segment="NSE",
+            tradingsymbol="RELIANCE",
+            instrument_token=1,
+            bar_interval="5m",
+            bar_timestamp=OPEN,
+            available_from=OPEN,
+            open_price=Decimal("100"),
+            high_price=Decimal("90"),
+            low_price=Decimal("95"),
+            close_price=Decimal("97"),
+            volume=1,
+            open_interest=None,
         )
 
 
@@ -136,10 +153,19 @@ def test_an_inverted_high_low_is_refused() -> None:
 def test_a_negative_volume_is_refused() -> None:
     with pytest.raises(BarValidationError, match="volume"):
         BarRecord(
-            exchange="NSE", segment="NSE", tradingsymbol="RELIANCE", instrument_token=1,
-            bar_interval="5m", bar_timestamp=OPEN, available_from=OPEN,
-            open_price=Decimal("1"), high_price=Decimal("1"), low_price=Decimal("1"),
-            close_price=Decimal("1"), volume=-1, open_interest=None,
+            exchange="NSE",
+            segment="NSE",
+            tradingsymbol="RELIANCE",
+            instrument_token=1,
+            bar_interval="5m",
+            bar_timestamp=OPEN,
+            available_from=OPEN,
+            open_price=Decimal("1"),
+            high_price=Decimal("1"),
+            low_price=Decimal("1"),
+            close_price=Decimal("1"),
+            volume=-1,
+            open_interest=None,
         )
 
 
@@ -162,22 +188,28 @@ def test_identity_is_the_stable_triple_not_the_token() -> None:
 @pytest.mark.parametrize(
     ("field_name", "poison"),
     [
-        ("open_price", Decimal("-100")),   # negative price inverts every return
-        ("open_price", Decimal("0")),      # nothing on NSE trades at zero
+        ("open_price", Decimal("-100")),  # negative price inverts every return
+        ("open_price", Decimal("0")),  # nothing on NSE trades at zero
         ("open_price", Decimal("99999")),  # open outside the bar's own range
         ("close_price", Decimal("-1")),
         ("close_price", Decimal("99999")),
     ],
 )
-def test_prices_outside_the_bars_own_range_are_refused(
-    field_name: str, poison: Decimal
-) -> None:
+def test_prices_outside_the_bars_own_range_are_refused(field_name: str, poison: Decimal) -> None:
     """The high/low check's own rationale, applied where review found it missing."""
     fields = {
-        "exchange": "NSE", "segment": "NSE", "tradingsymbol": "RELIANCE",
-        "instrument_token": 1, "bar_interval": "5m", "bar_timestamp": OPEN,
-        "available_from": OPEN, "open_price": Decimal("100"), "high_price": Decimal("105"),
-        "low_price": Decimal("95"), "close_price": Decimal("102"), "volume": 1,
+        "exchange": "NSE",
+        "segment": "NSE",
+        "tradingsymbol": "RELIANCE",
+        "instrument_token": 1,
+        "bar_interval": "5m",
+        "bar_timestamp": OPEN,
+        "available_from": OPEN,
+        "open_price": Decimal("100"),
+        "high_price": Decimal("105"),
+        "low_price": Decimal("95"),
+        "close_price": Decimal("102"),
+        "volume": 1,
         "open_interest": None,
     }
     fields[field_name] = poison
@@ -197,10 +229,19 @@ def test_a_flat_non_positive_bar_is_refused(price: Decimal) -> None:
     """
     with pytest.raises(BarValidationError, match="positive"):
         BarRecord(
-            exchange="NSE", segment="NSE", tradingsymbol="RELIANCE", instrument_token=1,
-            bar_interval="5m", bar_timestamp=OPEN, available_from=OPEN,
-            open_price=price, high_price=price, low_price=price, close_price=price,
-            volume=1, open_interest=None,
+            exchange="NSE",
+            segment="NSE",
+            tradingsymbol="RELIANCE",
+            instrument_token=1,
+            bar_interval="5m",
+            bar_timestamp=OPEN,
+            available_from=OPEN,
+            open_price=price,
+            high_price=price,
+            low_price=price,
+            close_price=price,
+            volume=1,
+            open_interest=None,
         )
 
 
@@ -208,8 +249,8 @@ def test_a_flat_non_positive_bar_is_refused(price: Decimal) -> None:
 @pytest.mark.parametrize(
     ("field_name", "poison"),
     [
-        ("volume", 10.5),            # a float volume wrote cleanly, then broke the read
-        ("volume", True),            # bool is an int; a flag is not a share count
+        ("volume", 10.5),  # a float volume wrote cleanly, then broke the read
+        ("volume", True),  # bool is an int; a flag is not a share count
         ("instrument_token", 0),
         ("instrument_token", -1),
         ("open_interest", -50),
@@ -220,10 +261,18 @@ def test_a_flat_non_positive_bar_is_refused(price: Decimal) -> None:
 )
 def test_malformed_scalar_fields_are_refused(field_name: str, poison: object) -> None:
     fields = {
-        "exchange": "NSE", "segment": "NSE", "tradingsymbol": "RELIANCE",
-        "instrument_token": 1, "bar_interval": "5m", "bar_timestamp": OPEN,
-        "available_from": OPEN, "open_price": Decimal("100"), "high_price": Decimal("105"),
-        "low_price": Decimal("95"), "close_price": Decimal("102"), "volume": 1,
+        "exchange": "NSE",
+        "segment": "NSE",
+        "tradingsymbol": "RELIANCE",
+        "instrument_token": 1,
+        "bar_interval": "5m",
+        "bar_timestamp": OPEN,
+        "available_from": OPEN,
+        "open_price": Decimal("100"),
+        "high_price": Decimal("105"),
+        "low_price": Decimal("95"),
+        "close_price": Decimal("102"),
+        "volume": 1,
         "open_interest": None,
     }
     fields[field_name] = poison
@@ -346,7 +395,8 @@ def test_event_ordering_holds_across_mixed_offsets(store: BitemporalBarStore) ->
     store.write([_bar(at=later.astimezone(UTC), close="1070.55"), _bar(at=OPEN)])
     stored = store.bars_as_of(later + FIVE_MINUTES)
     assert [b.bar_timestamp.astimezone(UTC) for b in stored] == [
-        OPEN.astimezone(UTC), later.astimezone(UTC)
+        OPEN.astimezone(UTC),
+        later.astimezone(UTC),
     ]
 
 
@@ -390,14 +440,16 @@ def test_reads_are_ordered_by_event_time(store: BitemporalBarStore) -> None:
     """
     shared_availability = OPEN + timedelta(hours=2)
     minutes = [25, 20, 15, 10, 5, 0]
-    store.write([
-        _bar(
-            at=OPEN + timedelta(minutes=offset),
-            available_at=shared_availability,
-            identity=("NSE", "NSE", symbol),
-        )
-        for symbol, offset in zip("ABCDEF", minutes, strict=True)
-    ])
+    store.write(
+        [
+            _bar(
+                at=OPEN + timedelta(minutes=offset),
+                available_at=shared_availability,
+                identity=("NSE", "NSE", symbol),
+            )
+            for symbol, offset in zip("ABCDEF", minutes, strict=True)
+        ]
+    )
     stored = store.bars_as_of(shared_availability)
     assert [b.bar_timestamp for b in stored] == [
         OPEN + timedelta(minutes=offset) for offset in sorted(minutes)
@@ -495,13 +547,19 @@ def test_real_retained_bars_round_trip(tmp_path: Path) -> None:
 
     bars = [
         BarRecord(
-            exchange="NSE", segment="NSE", tradingsymbol=f"TOKEN{row[0]}",
-            instrument_token=row[0], bar_interval=row[1],
+            exchange="NSE",
+            segment="NSE",
+            tradingsymbol=f"TOKEN{row[0]}",
+            instrument_token=row[0],
+            bar_interval=row[1],
             bar_timestamp=datetime.fromisoformat(row[2]),
             available_from=datetime.fromisoformat(row[9]),
-            open_price=Decimal(str(row[3])), high_price=Decimal(str(row[4])),
-            low_price=Decimal(str(row[5])), close_price=Decimal(str(row[6])),
-            volume=row[7], open_interest=row[8],
+            open_price=Decimal(str(row[3])),
+            high_price=Decimal(str(row[4])),
+            low_price=Decimal(str(row[5])),
+            close_price=Decimal(str(row[6])),
+            volume=row[7],
+            open_interest=row[8],
         )
         for row in rows
     ]

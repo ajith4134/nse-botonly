@@ -296,9 +296,7 @@ class BulkBlockDealsAdapter:
             return None
         if not rows:
             return None
-        dates_present = {
-            _parse_deal_date(row.get(_DATE_COLUMN, "")).isoformat() for row in rows
-        }
+        dates_present = {_parse_deal_date(row.get(_DATE_COLUMN, "")).isoformat() for row in rows}
         if target.expects not in dates_present:
             return (
                 f"{self._category.category_name} deals file carries date(s) "

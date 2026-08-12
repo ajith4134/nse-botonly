@@ -78,9 +78,7 @@ class AngelOneSymbologyResolver:
     def refresh(self, *, today: date | None = None) -> int:
         """Re-read Angel's master and replace the stored mapping."""
         rows = self._fetch_master()
-        symbols = parse_equity_symbols(
-            rows, refreshed_on=today or datetime.now(IST).date()
-        )
+        symbols = parse_equity_symbols(rows, refreshed_on=today or datetime.now(IST).date())
         if len(symbols) < MINIMUM_CREDIBLE_EQUITY_ROWS:
             raise SymbologyError(
                 f"angel master parsed to only {len(symbols)} equity rows "
@@ -148,7 +146,5 @@ def _download_scrip_master() -> list[dict[str, Any]]:
     response.raise_for_status()
     payload = response.json()
     if not isinstance(payload, list):
-        raise SymbologyError(
-            f"angel master returned {type(payload).__name__}, expected a list"
-        )
+        raise SymbologyError(f"angel master returned {type(payload).__name__}, expected a list")
     return payload

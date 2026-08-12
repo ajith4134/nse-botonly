@@ -120,9 +120,7 @@ def _load_bars(
                 (minimum_bars,),
             ).fetchone()
             if row is None:
-                raise RegimeReadModelError(
-                    f"no instrument has more than {minimum_bars} bars"
-                )
+                raise RegimeReadModelError(f"no instrument has more than {minimum_bars} bars")
             instrument_token = int(row[0])
         bars = connection.execute(
             "SELECT bar_timestamp, high_price, low_price, close_price FROM price_bars "

@@ -150,36 +150,48 @@ class IntradayMeanReversionEngine:
 
         if deviation is None or band is None:
             return MeanReversionDecision(
-                MeanReversionAction.ABSTAIN, 0.0,
+                MeanReversionAction.ABSTAIN,
+                0.0,
                 f"immature: {self._observations} deviation observations",
-                deviation or 0.0, band, None,
+                deviation or 0.0,
+                band,
+                None,
             )
 
         if not belief.is_actionable(
             self.minimum_regime_concentration, self.minimum_regime_agreement
         ):
             return MeanReversionDecision(
-                MeanReversionAction.ABSTAIN, 0.0,
+                MeanReversionAction.ABSTAIN,
+                0.0,
                 f"regime not actionable: concentration={belief.concentration:.2f} "
                 f"agreement={belief.agreement:.2f} — an unknown regime is not tradeable",
-                deviation, band, belief.most_likely,
+                deviation,
+                band,
+                belief.most_likely,
             )
 
         trending = belief.distribution.probability_of(MarketRegime.TRENDING)
         ranging = belief.distribution.probability_of(MarketRegime.RANGING)
         if trending >= ranging:
             return MeanReversionDecision(
-                MeanReversionAction.ABSTAIN, 0.0,
+                MeanReversionAction.ABSTAIN,
+                0.0,
                 f"trending weight {trending:.2f} >= ranging {ranging:.2f} — in a trend an "
                 f"extreme deviation is the trend, not a reversion",
-                deviation, band, belief.most_likely,
+                deviation,
+                band,
+                belief.most_likely,
             )
 
         if abs(deviation) < band:
             return MeanReversionDecision(
-                MeanReversionAction.ABSTAIN, 0.0,
+                MeanReversionAction.ABSTAIN,
+                0.0,
                 f"deviation {deviation:.2f} inside this instrument's own band {band:.2f}",
-                deviation, band, belief.most_likely,
+                deviation,
+                band,
+                belief.most_likely,
             )
 
         # Conviction combines how far past its own band price is with how sure the panel
@@ -187,13 +199,14 @@ class IntradayMeanReversionEngine:
         excess = (abs(deviation) - band) / band if band > 0 else 0.0
         conviction = min(1.0, excess) * ranging * belief.agreement
         action = (
-            MeanReversionAction.ENTER_LONG
-            if deviation < 0
-            else MeanReversionAction.ENTER_SHORT
+            MeanReversionAction.ENTER_LONG if deviation < 0 else MeanReversionAction.ENTER_SHORT
         )
         return MeanReversionDecision(
-            action, conviction,
+            action,
+            conviction,
             f"deviation {deviation:.2f} beyond band {band:.2f} in a ranging regime "
             f"(P(ranging)={ranging:.2f}, agreement={belief.agreement:.2f})",
-            deviation, band, belief.most_likely,
+            deviation,
+            band,
+            belief.most_likely,
         )

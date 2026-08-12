@@ -835,3 +835,54 @@ fits all seven cases but I did not test the alternative that they were simply bu
 this one was luck or too narrow. The concrete practice I am taking regardless: when a commit ships a
 module outside the entry named in its subject, the extra IDs go in the subject too, and the audit becomes
 periodic rather than something run once because the operator asked.
+
+## O.54 · 2026-08-12 · Real data and a second implementation catch different defects, and neither catches both
+
+**Opinion.** `L0.22` shipped with three defects. Two were found by running it on the real depth tape
+(zero-padded levels read as quotes at price 0; a micro-price computed from a crossed book) and one by
+differential-testing against `tclf` (the quote rule comparing against the touch instead of the midpoint).
+Neither method could have found the other's defects, and my unit tests — 30 of them, written first, with
+hand-computed expected values — found none of the three.
+
+**Reasoning.** They fail on different axes. Real data catches **what I did not know the input looks
+like**: I had no reason to expect a five-level feed to pad absent levels with zeros, or to expect 0.56%
+of books to arrive crossed. No amount of reasoning produces those facts. A second implementation catches
+**what I got wrong about the definition**: my quote rule was internally consistent, tested, and matched
+its own docstring, which is exactly why nothing in my own test suite could see it. A reference disagrees
+because it encodes a different reading of the literature, and one of the two readings is wrong.
+
+Hand-written unit tests find neither class, because I write the test from the same misunderstanding I
+wrote the code from. My OFI cases were correct only because I derived them from the paper's formula
+term by term; the one case I reasoned about informally — "the ask stepped down onto the bid" — I got
+wrong, and the implementation was right.
+
+**Confidence: measured.** Three defects, three detection methods, zero overlap, in one engine on one day.
+
+**What would change my mind.** A defect found by unit tests that neither real data nor a reference would
+have caught would show the trio is not cleanly separated — I would expect that for pure state-machine
+logic (the duplicate-run counter, the eager `UnknownInstrumentError`), where there is no external input
+shape to be surprised by and no reference to disagree with. The practice I am taking: for any estimator
+of an unobservable quantity, all three are mandatory, and I should look for the reference implementation
+BEFORE writing the estimator rather than after — `tclf` would have given me the midpoint rule for free.
+
+## O.55 · 2026-08-12 · A negative sourcing result is worth as much as a found library, if it explains itself
+
+**Opinion.** The `L0.22` sourcing pass found nothing to depend on. The valuable part was not the empty
+result but the reason: every public order-book replay project reconstructs from order-by-order or
+diff-level messages, because that is the shape raw exchange feeds arrive in. A project that already
+holds materialised snapshot rows has no reconstruction problem at all — no insert, cancel or match
+logic — only iteration and inference. That explains why the search was empty AND tells me the engine
+should be thin on plumbing and dense on estimators, which is what it became.
+
+**Reasoning.** "I searched and found nothing" is nearly worthless — it cannot be distinguished from
+searching badly. "I searched, found five candidates, and all five are MBO-shaped for the same structural
+reason" is a finding about the problem, and it survives the next time someone asks. `R.17`'s demand for
+mechanical evidence applies to rejections, and a structural explanation is the strongest form of it.
+
+**Confidence: reasoned** — I ran the triage on installability and fetched real signatures, but the claim
+that this generalises to every LOB library is inference from five, not a census.
+
+**What would change my mind.** A snapshot-native feature library that installs on aarch64 and takes a
+book series as input. `mansoor-mamnoon/limit-order-book` is the one candidate that might be it — its
+own analytics output already includes imbalance, micro-price and impact — but it needs a CMake/C++
+build never attempted here, so it is surfaced in `research/214` for the operator rather than judged.

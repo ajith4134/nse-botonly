@@ -149,9 +149,7 @@ def test_special_characters_in_index_names_are_url_encoded_as_verified_live() ->
     financial_25_50 = next(
         e for e in INDEX_UNIVERSE if e.index_name == "NIFTY FINANCIAL SERVICES 25/50"
     )
-    assert weight_methodology_url(oil_and_gas).endswith(
-        "FinalHeatmapNIFTY%20OIL%20%26%20GAS.json"
-    )
+    assert weight_methodology_url(oil_and_gas).endswith("FinalHeatmapNIFTY%20OIL%20%26%20GAS.json")
     assert weight_methodology_url(financial_25_50).endswith(
         "FinalHeatmapNIFTY%20FINANCIAL%20SERVICES%2025/50.json"
     )
@@ -245,9 +243,7 @@ def test_the_real_weight_payload_passes_its_own_content_check() -> None:
         expects=WEIGHT_REAL_PAYLOAD_DATE,
     )
     assert (
-        adapter.content_mismatch_reason(
-            _fixture("index_weight_inputs_nifty50.json"), honest_target
-        )
+        adapter.content_mismatch_reason(_fixture("index_weight_inputs_nifty50.json"), honest_target)
         is None
     )
 
@@ -258,9 +254,7 @@ def test_a_membership_row_is_dated_from_the_targets_claim_never_the_payload() ->
     equal exactly what the target claimed, since there is nothing else to derive it from."""
     adapter = IndexConstituentsAdapter()
     nifty50 = _nifty50_entry()
-    target = FetchTarget(
-        url=membership_url(nifty50), source_name=SOURCE_NAME, expects="2019-03-04"
-    )
+    target = FetchTarget(url=membership_url(nifty50), source_name=SOURCE_NAME, expects="2019-03-04")
     rows = adapter.parse(_fixture("index_membership_nifty50.csv"), target)
     assert {row.effective_date for row in rows} == {date(2019, 3, 4)}
 

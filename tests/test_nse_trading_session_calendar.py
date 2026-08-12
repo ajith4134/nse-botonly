@@ -54,8 +54,11 @@ def test_a_weekend_is_not_a_session(calendar: NseTradingSessionCalendar) -> None
 @pytest.mark.unit
 @pytest.mark.parametrize(
     ("holiday", "name"),
-    [(REPUBLIC_DAY_2024, "Republic Day"), (HOLI_2024, "Holi"),
-     (INDEPENDENCE_DAY_2024, "Independence Day")],
+    [
+        (REPUBLIC_DAY_2024, "Republic Day"),
+        (HOLI_2024, "Holi"),
+        (INDEPENDENCE_DAY_2024, "Independence Day"),
+    ],
 )
 def test_known_nse_holidays_are_not_sessions(
     calendar: NseTradingSessionCalendar, holiday: date, name: str
@@ -208,7 +211,8 @@ def test_a_file_on_a_non_session_is_surfaced_not_discarded(
     """
     report = calendar.classify_observed_dates(
         observed=frozenset({REPUBLIC_DAY_2024, A_NORMAL_TUESDAY}),
-        start=date(2024, 1, 1), end=date(2024, 1, 31),
+        start=date(2024, 1, 1),
+        end=date(2024, 1, 31),
     )
     assert report.observed_non_sessions == (REPUBLIC_DAY_2024,)
 
@@ -264,7 +268,10 @@ def test_the_retained_collection_gap_is_resolved_correctly(
     report = calendar.classify_observed_dates(observed, min(observed), max(observed))
     assert date(2026, 6, 26) not in report.uncollected_sessions
     assert report.uncollected_sessions == (
-        date(2026, 7, 28), date(2026, 7, 29), date(2026, 7, 30), date(2026, 7, 31),
+        date(2026, 7, 28),
+        date(2026, 7, 29),
+        date(2026, 7, 30),
+        date(2026, 7, 31),
     )
     assert report.observed_non_sessions == ()
     assert report.unreliable_years == ()
@@ -310,9 +317,7 @@ def test_holidays_in_an_unreliable_year_are_not_reported_as_collection_gaps(
     completeness — including Republic Day — reading as a total outage for a year
     that was merely unverified. Those dates must be partitioned out.
     """
-    report = calendar.classify_observed_dates(
-        frozenset(), date(1993, 1, 1), date(1993, 12, 31)
-    )
+    report = calendar.classify_observed_dates(frozenset(), date(1993, 1, 1), date(1993, 12, 31))
     assert report.uncollected_sessions == ()
     assert date(1993, 1, 26) in report.unverifiable_dates
     assert report.has_unverifiable_dates
@@ -324,9 +329,7 @@ def test_a_mixed_window_separates_real_gaps_from_unverifiable_ones(
     calendar: NseTradingSessionCalendar,
 ) -> None:
     """A window spanning the reliability boundary must not blur the two."""
-    report = calendar.classify_observed_dates(
-        frozenset(), date(1996, 12, 1), date(1997, 1, 31)
-    )
+    report = calendar.classify_observed_dates(frozenset(), date(1996, 12, 1), date(1997, 1, 31))
     assert all(day.year == FIRST_RELIABLE_YEAR for day in report.uncollected_sessions)
     assert all(day.year == 1996 for day in report.unverifiable_dates)
     assert report.uncollected_sessions and report.unverifiable_dates
@@ -335,8 +338,12 @@ def test_a_mixed_window_separates_real_gaps_from_unverifiable_ones(
 @pytest.mark.property
 @pytest.mark.parametrize(
     ("start", "end"),
-    [(date(2024, 1, 1), date(2024, 1, 31)), (date(1996, 6, 1), date(1997, 6, 30)),
-     (date(2026, 12, 1), date(2027, 1, 31)), (date(2024, 2, 29), date(2024, 2, 29))],
+    [
+        (date(2024, 1, 1), date(2024, 1, 31)),
+        (date(1996, 6, 1), date(1997, 6, 30)),
+        (date(2026, 12, 1), date(2027, 1, 31)),
+        (date(2024, 2, 29), date(2024, 2, 29)),
+    ],
 )
 def test_the_three_way_partition_is_exhaustive_and_disjoint(
     calendar: NseTradingSessionCalendar, start: date, end: date
@@ -372,9 +379,9 @@ def test_an_inverted_year_range_is_refused(calendar: NseTradingSessionCalendar) 
         (10, 6.875, True),
         (7, 6.875, True),
         (6, 6.875, False),
-        (0, 6.875, False),      # zero is categorical, whatever the fence says
-        (0, -5.0, False),       # ... including when the fence would admit it
-        (5, 5.0, True),         # the boundary itself: >= not >
+        (0, 6.875, False),  # zero is categorical, whatever the fence says
+        (0, -5.0, False),  # ... including when the fence would admit it
+        (5, 5.0, True),  # the boundary itself: >= not >
         (5, 5.000001, False),
     ],
 )
@@ -415,9 +422,7 @@ def test_collection_completeness_reflects_the_missing_share(
     report = calendar.classify_observed_dates(
         frozenset(sessions[:-2]), date(2024, 1, 1), date(2024, 1, 31)
     )
-    assert report.collection_completeness == pytest.approx(
-        1.0 - 2 / JANUARY_2024_SESSIONS
-    )
+    assert report.collection_completeness == pytest.approx(1.0 - 2 / JANUARY_2024_SESSIONS)
 
 
 @pytest.mark.unit
@@ -460,7 +465,8 @@ def test_non_session_observations_are_returned_in_order(
 ) -> None:
     report = calendar.classify_observed_dates(
         frozenset({date(2024, 3, 25), REPUBLIC_DAY_2024, date(2024, 1, 27)}),
-        date(2024, 1, 1), date(2024, 12, 31),
+        date(2024, 1, 1),
+        date(2024, 12, 31),
     )
     assert report.observed_non_sessions == tuple(sorted(report.observed_non_sessions))
     assert len(report.observed_non_sessions) > 1  # order is actually exercised

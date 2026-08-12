@@ -59,8 +59,18 @@ from typing import Final
 INSTRUMENT_DUMP_URL: Final[str] = "https://api.kite.trade/instruments"
 
 EXPECTED_COLUMNS: Final[tuple[str, ...]] = (
-    "instrument_token", "exchange_token", "tradingsymbol", "name", "last_price",
-    "expiry", "strike", "tick_size", "lot_size", "instrument_type", "segment", "exchange",
+    "instrument_token",
+    "exchange_token",
+    "tradingsymbol",
+    "name",
+    "last_price",
+    "expiry",
+    "strike",
+    "tick_size",
+    "lot_size",
+    "instrument_type",
+    "segment",
+    "exchange",
 )
 REQUIRED_COLUMNS: Final[frozenset[str]] = frozenset(EXPECTED_COLUMNS)
 
@@ -193,9 +203,7 @@ def _require_finite_decimal(raw: str, column: str, row_number: int) -> Decimal:
             f"row {row_number}: {column}={raw!r} is not a valid decimal"
         ) from exc
     if not value.is_finite():
-        raise InstrumentDumpValidationError(
-            f"row {row_number}: {column}={raw!r} is not finite"
-        )
+        raise InstrumentDumpValidationError(f"row {row_number}: {column}={raw!r} is not finite")
     return value
 
 
@@ -471,10 +479,19 @@ class InstrumentMasterStore:
                     " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     [
                         (
-                            stamp, r.exchange, r.segment, r.tradingsymbol, r.instrument_token,
-                            r.exchange_token, r.name, str(r.last_price),
+                            stamp,
+                            r.exchange,
+                            r.segment,
+                            r.tradingsymbol,
+                            r.instrument_token,
+                            r.exchange_token,
+                            r.name,
+                            str(r.last_price),
                             r.expiry.isoformat() if r.expiry else None,
-                            str(r.strike), str(r.tick_size), r.lot_size, r.instrument_type,
+                            str(r.strike),
+                            str(r.tick_size),
+                            r.lot_size,
+                            r.instrument_type,
                         )
                         for r in records
                     ],
@@ -486,8 +503,11 @@ class InstrumentMasterStore:
                     " VALUES (?,?,?,?,?,?,?,?,?)",
                     [
                         (
-                            stamp, r.instrument_token, r.previous_seen_on.isoformat(),
-                            *r.previous_identity, *r.current_identity,
+                            stamp,
+                            r.instrument_token,
+                            r.previous_seen_on.isoformat(),
+                            *r.previous_identity,
+                            *r.current_identity,
                         )
                         for r in reassignments
                     ],
@@ -520,11 +540,18 @@ class InstrumentMasterStore:
             parameters.append(exchange)
         return [
             InstrumentRecord(
-                instrument_token=row[0], exchange_token=row[1], tradingsymbol=row[2],
-                name=row[3], last_price=Decimal(row[4]),
+                instrument_token=row[0],
+                exchange_token=row[1],
+                tradingsymbol=row[2],
+                name=row[3],
+                last_price=Decimal(row[4]),
                 expiry=date.fromisoformat(row[5]) if row[5] else None,
-                strike=Decimal(row[6]), tick_size=Decimal(row[7]), lot_size=row[8],
-                instrument_type=row[9], segment=row[10], exchange=row[11],
+                strike=Decimal(row[6]),
+                tick_size=Decimal(row[7]),
+                lot_size=row[8],
+                instrument_type=row[9],
+                segment=row[10],
+                exchange=row[11],
             )
             for row in self._connection.execute(query, parameters)
         ]
@@ -598,14 +625,10 @@ class InstrumentMasterStore:
         # Multiply before dividing: (cohort / total) * multiple rounds twice and
         # lands a digit away from the shrinkage figure it is compared against,
         # which makes the boundary untestable and the comparison subtly wrong.
-        derived = (
-            Decimal(largest_cohort[0]) * _EXPIRY_COHORT_SAFETY_MULTIPLE
-        ) / Decimal(total)
+        derived = (Decimal(largest_cohort[0]) * _EXPIRY_COHORT_SAFETY_MULTIPLE) / Decimal(total)
         return max(derived, _MINIMUM_SHRINKAGE_TOLERANCE)
 
-    def _refuse_if_implausibly_small(
-        self, records: list[InstrumentRecord], baseline: str
-    ) -> None:
+    def _refuse_if_implausibly_small(self, records: list[InstrumentRecord], baseline: str) -> None:
         previous_count = self._connection.execute(
             "SELECT COUNT(*) FROM instrument_master WHERE ingested_on = ?", (baseline,)
         ).fetchone()[0]

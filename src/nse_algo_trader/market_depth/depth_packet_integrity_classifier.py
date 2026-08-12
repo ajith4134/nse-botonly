@@ -97,9 +97,7 @@ class DepthPacketIntegrityClassifier:
         self._session_date_cache: dict[date, bool] = {}
 
     def state_for(self, instrument_token: int) -> InstrumentIntegrityState:
-        return self._state_by_token.setdefault(
-            instrument_token, InstrumentIntegrityState()
-        )
+        return self._state_by_token.setdefault(instrument_token, InstrumentIntegrityState())
 
     @property
     def instruments_seen(self) -> int:
@@ -184,20 +182,14 @@ class DepthPacketIntegrityClassifier:
         fingerprint = packet.book_fingerprint()
         is_duplicate = state.last_book_fingerprint == fingerprint
         state.last_book_fingerprint = fingerprint
-        return (
-            IntegrityFlag.DUPLICATE_OF_PREVIOUS_BOOK
-            if is_duplicate
-            else IntegrityFlag.NONE
-        )
+        return IntegrityFlag.DUPLICATE_OF_PREVIOUS_BOOK if is_duplicate else IntegrityFlag.NONE
 
     def _classify_session_window(self, packet: DepthPacket) -> IntegrityFlag:
         receipt_ist = packet.receipt_time.astimezone(INDIA_MARKET_TIMEZONE)
         if not self._is_trading_session(receipt_ist.date()):
             return IntegrityFlag.OUTSIDE_SESSION_WINDOW
         if not (
-            NSE_QUOTING_WINDOW_OPENS_IST
-            <= receipt_ist.time()
-            <= NSE_QUOTING_WINDOW_CLOSES_IST
+            NSE_QUOTING_WINDOW_OPENS_IST <= receipt_ist.time() <= NSE_QUOTING_WINDOW_CLOSES_IST
         ):
             return IntegrityFlag.OUTSIDE_SESSION_WINDOW
         return IntegrityFlag.NONE

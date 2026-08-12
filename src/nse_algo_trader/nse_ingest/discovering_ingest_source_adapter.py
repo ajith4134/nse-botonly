@@ -77,7 +77,7 @@ class DiscoveryOutcome(Enum):
     justified and the run must say it fell back."""
 
 
-_URL_CONTROL_CHARACTERS = frozenset('?&#/\\%\'"<> \t\r\n')
+_URL_CONTROL_CHARACTERS = frozenset("?&#/\\%'\"<> \t\r\n")
 """Characters that would let a discovered value stop being a value and start being URL
 structure. Rejected outright rather than escaped, because a legitimate NSE parameter —
 an expiry, a symbol, an index name — contains none of them, so anything that does is
@@ -117,9 +117,7 @@ class DiscoveredParameter:
     def __post_init__(self) -> None:
         value = self.parameter_value
         if not value or not value.strip():
-            raise UnsafeDiscoveredParameterError(
-                f"{self.parameter_kind}: empty discovered value"
-            )
+            raise UnsafeDiscoveredParameterError(f"{self.parameter_kind}: empty discovered value")
         if len(value) > MAXIMUM_DISCOVERED_VALUE_LENGTH:
             raise UnsafeDiscoveredParameterError(
                 f"{self.parameter_kind}: discovered value is {len(value)} characters, "
@@ -273,9 +271,7 @@ class DiscoveredParameterStore:
         return cursor.rowcount
 
 
-def validity_horizon_from_dates(
-    candidate_dates: Sequence[date], discovered_on: date
-) -> date:
+def validity_horizon_from_dates(candidate_dates: Sequence[date], discovered_on: date) -> date:
     """The last day a set of forward-dated parameters can still be trusted.
 
     A discovered list of option expiries stops being current the moment its nearest
@@ -417,9 +413,7 @@ def discovery_result_from_json_list(
                     f"discovered value {value!r} is not a date in {date_format!r}"
                 ) from failure
     horizon = (
-        validity_horizon_from_dates(parsed_dates, discovered_on)
-        if parsed_dates
-        else discovered_on
+        validity_horizon_from_dates(parsed_dates, discovered_on) if parsed_dates else discovered_on
     )
     return DiscoveryResult(
         outcome=DiscoveryOutcome.DISCOVERED,

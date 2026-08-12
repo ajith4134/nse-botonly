@@ -118,6 +118,4 @@ class RollingSnapshotSource:
     """
 
     source_name: str
-    reason: str = field(
-        default="published as a single rolling file with no dated archive"
-    )
+    reason: str = field(default="published as a single rolling file with no dated archive")

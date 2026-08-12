@@ -163,9 +163,7 @@ class LeakageLedger:
             return f"{self.admitted:,} admitted, nothing blocked"
         reasons = ", ".join(
             f"{reason.value}={count:,}"
-            for reason, count in sorted(
-                self.blocked.items(), key=lambda item: -item[1]
-            )
+            for reason, count in sorted(self.blocked.items(), key=lambda item: -item[1])
         )
         return f"{self.admitted:,} admitted, {self.total_blocked:,} blocked ({reasons})"
 
@@ -186,9 +184,7 @@ class CausalLeakageFirewall:
         block_unknown_sources: bool = True,
     ) -> None:
         if session_close < session_open:
-            raise ValueError(
-                f"session_close {session_close} precedes session_open {session_open}"
-            )
+            raise ValueError(f"session_close {session_close} precedes session_open {session_open}")
         self._session_open = session_open
         self._session_close = session_close
         self._virtual_now = session_open
@@ -220,9 +216,7 @@ class CausalLeakageFirewall:
         lag = self._publication_lags.get(row.source_name)
         if lag is None or not lag.is_derivable:
             return (
-                LeakageReason.PUBLICATION_SCHEDULE_UNKNOWN
-                if self._block_unknown_sources
-                else None
+                LeakageReason.PUBLICATION_SCHEDULE_UNKNOWN if self._block_unknown_sources else None
             )
 
         knowable_from = lag.knowable_from(row.effective_date)

@@ -57,9 +57,7 @@ class ClassifierReliability:
     total_brier_score: float = 0.0
     scored_opinions: int = 0
 
-    def record_outcome(
-        self, distribution: RegimeDistribution, actual: MarketRegime
-    ) -> None:
+    def record_outcome(self, distribution: RegimeDistribution, actual: MarketRegime) -> None:
         """Score one past opinion against what the market turned out to be."""
         self.total_brier_score += sum(
             (probability - (1.0 if regime is actual else 0.0)) ** 2
@@ -140,19 +138,13 @@ class RegimeBelief:
         and mutually contradictory, which is a confident-looking average built on a
         panel that has no idea.
         """
-        return (
-            self.concentration >= minimum_concentration
-            and self.agreement >= minimum_agreement
-        )
+        return self.concentration >= minimum_concentration and self.agreement >= minimum_agreement
 
 
-def total_variation_distance(
-    left: RegimeDistribution, right: RegimeDistribution
-) -> float:
+def total_variation_distance(left: RegimeDistribution, right: RegimeDistribution) -> float:
     """Half the L1 distance — 0 when identical, 1 when disjoint."""
     return 0.5 * sum(
-        abs(left.probability_of(regime) - right.probability_of(regime))
-        for regime in MarketRegime
+        abs(left.probability_of(regime) - right.probability_of(regime)) for regime in MarketRegime
     )
 
 
@@ -186,16 +178,12 @@ class SoftRegimeWeightingBrain:
             return 0.0
         if not opinion.is_mature:
             return IMMATURE_CLASSIFIER_WEIGHT
-        skill = self.reliability.get(
-            opinion.classifier_name, ClassifierReliability()
-        ).skill
+        skill = self.reliability.get(opinion.classifier_name, ClassifierReliability()).skill
         # Confidence scales the vote within a classifier; skill scales it between
         # classifiers. A trusted engine that is unsure this bar should not shout.
         return skill * max(opinion.confidence, 0.0)
 
-    def combine(
-        self, opinions: Sequence[RegimeOpinion], observed_at: datetime
-    ) -> RegimeBelief:
+    def combine(self, opinions: Sequence[RegimeOpinion], observed_at: datetime) -> RegimeBelief:
         """The panel's combined belief, or honest ignorance when nothing qualifies."""
         weighted = [
             (opinion, self.weight_for(opinion))
@@ -238,13 +226,9 @@ class SoftRegimeWeightingBrain:
         # to all-zeros and the belief silently becomes uniform — the very failure this
         # pooling rule was introduced to fix.
         largest = max(log_scores.values())
-        blended_scores = {
-            regime: math.exp(score - largest) for regime, score in log_scores.items()
-        }
+        blended_scores = {regime: math.exp(score - largest) for regime, score in log_scores.items()}
         blended_total = sum(blended_scores.values())
-        blended = {
-            regime: score / blended_total for regime, score in blended_scores.items()
-        }
+        blended = {regime: score / blended_total for regime, score in blended_scores.items()}
 
         contributing = [opinion for opinion, _weight in weighted]
         pairwise = [
@@ -254,13 +238,10 @@ class SoftRegimeWeightingBrain:
         ]
         return RegimeBelief(
             distribution=RegimeDistribution(blended),
-            contributing_classifiers=tuple(
-                opinion.classifier_name for opinion in contributing
-            ),
+            contributing_classifiers=tuple(opinion.classifier_name for opinion in contributing),
             disagreement=sum(pairwise) / len(pairwise) if pairwise else 0.0,
             weights={
-                opinion.classifier_name: weight / total_weight
-                for opinion, weight in weighted
+                opinion.classifier_name: weight / total_weight for opinion, weight in weighted
             },
             observed_at=observed_at,
         )

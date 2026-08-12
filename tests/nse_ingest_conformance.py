@@ -242,8 +242,7 @@ class NseIngestAdapterConformance(abc.ABC):
             adapter.source_name, original.effective_date, known_by=observed
         )
         assert all(
-            "__conformance_revision__" not in observation.values
-            for observation in as_known_before
+            "__conformance_revision__" not in observation.values for observation in as_known_before
         ), "a later revision leaked into an earlier point in time"
 
     @pytest.mark.adversarial
@@ -265,9 +264,7 @@ class NseIngestAdapterConformance(abc.ABC):
             natural_key=("future",),
         )
         with pytest.raises(BitemporalIngestStoreError):
-            store.ingest_rows(
-                adapter.source_name, [*rows, impossible], observed, fetch_id
-            )
+            store.ingest_rows(adapter.source_name, [*rows, impossible], observed, fetch_id)
         assert store.row_count(adapter.source_name) == count_before
 
     @pytest.mark.unit

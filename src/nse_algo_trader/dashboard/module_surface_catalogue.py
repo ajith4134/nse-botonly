@@ -162,9 +162,7 @@ def _defines_asgi_application(source: str) -> bool:
         return False
     return any(
         isinstance(node, ast.Assign)
-        and any(
-            isinstance(target, ast.Name) and target.id == "app" for target in node.targets
-        )
+        and any(isinstance(target, ast.Name) and target.id == "app" for target in node.targets)
         for node in tree.body
     )
 

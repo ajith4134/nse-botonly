@@ -56,9 +56,7 @@ class ShardCaptureStatistics:
 
     def record_drop(self, instrument_token: int) -> None:
         self.packets_dropped_to_overflow += 1
-        self.drops_by_token[instrument_token] = (
-            self.drops_by_token.get(instrument_token, 0) + 1
-        )
+        self.drops_by_token[instrument_token] = self.drops_by_token.get(instrument_token, 0) + 1
 
 
 @dataclass(frozen=True)
@@ -176,9 +174,7 @@ class LiveOrderBookDepthRecorder:
                     statistics.last_packet_at = packet.receipt_time
                     for flag in IntegrityFlag:
                         if flag is not IntegrityFlag.NONE and flag & integrity_flags:
-                            statistics.flag_counts[flag] = (
-                                statistics.flag_counts.get(flag, 0) + 1
-                            )
+                            statistics.flag_counts[flag] = statistics.flag_counts.get(flag, 0) + 1
         except BaseException as writer_exception:  # noqa: BLE001 — recorded, then re-surfaced at stop
             # A writer dying silently would let the session look healthy while its tape
             # stopped growing. It is captured here and re-raised by `stop`.

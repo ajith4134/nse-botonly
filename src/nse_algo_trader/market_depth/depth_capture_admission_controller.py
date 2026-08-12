@@ -58,13 +58,8 @@ class InstrumentCaptureCandidate:
             raise AdmissionControlError(
                 f"negative liquidity value for token {self.instrument_token}"
             )
-        if (
-            self.measured_packets_per_second is not None
-            and self.measured_packets_per_second < 0
-        ):
-            raise AdmissionControlError(
-                f"negative packet rate for token {self.instrument_token}"
-            )
+        if self.measured_packets_per_second is not None and self.measured_packets_per_second < 0:
+            raise AdmissionControlError(f"negative packet rate for token {self.instrument_token}")
 
 
 @dataclass(frozen=True)
@@ -197,9 +192,7 @@ class DepthCaptureAdmissionController:
         for candidate in ranked:
             cost = cost_of(candidate)
             over_budget = spent + cost > budget
-            over_ceiling = (
-                connection_ceiling is not None and len(admitted) >= connection_ceiling
-            )
+            over_ceiling = connection_ceiling is not None and len(admitted) >= connection_ceiling
             if over_budget or over_ceiling:
                 rejected.append(candidate.instrument_token)
                 continue
@@ -215,9 +208,7 @@ class DepthCaptureAdmissionController:
                 f"costed at the cohort median of {fallback_rate:.4f} packets/s"
             )
         if connection_ceiling is not None and len(rejected) and len(admitted) >= connection_ceiling:
-            notes.append(
-                f"capped at the connection ceiling of {connection_ceiling} instruments"
-            )
+            notes.append(f"capped at the connection ceiling of {connection_ceiling} instruments")
         return AdmissionDecision(
             admitted_tokens=tuple(admitted),
             rejected_tokens=tuple(rejected),
@@ -291,8 +282,7 @@ class DepthCaptureAdmissionController:
 
         if projected_bytes_by_token:
             cost_of_token = {
-                token: float(projected_bytes_by_token.get(token, 0.0))
-                for token in admitted_tokens
+                token: float(projected_bytes_by_token.get(token, 0.0)) for token in admitted_tokens
             }
         else:
             # No per-instrument costs supplied: fall back to an equal share, and say so

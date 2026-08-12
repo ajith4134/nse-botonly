@@ -207,9 +207,7 @@ class KiteLiveDepthFeed:
                 continue
             self._sequence += 1
             packets.append(
-                depth_packet_from_kite_tick(
-                    kite_tick, exchange, receipt_time, self._sequence
-                )
+                depth_packet_from_kite_tick(kite_tick, exchange, receipt_time, self._sequence)
             )
         if packets:
             handler(packets)

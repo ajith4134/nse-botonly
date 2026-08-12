@@ -61,9 +61,7 @@ class SourceCoverageReport:
 
     def years_below(self, coverage_fraction: float) -> tuple[SourceYearCoverage, ...]:
         """Years a consumer should not trust without knowing why."""
-        return tuple(
-            year for year in self.years if year.coverage_fraction < coverage_fraction
-        )
+        return tuple(year for year in self.years if year.coverage_fraction < coverage_fraction)
 
     def worst_year(self) -> SourceYearCoverage | None:
         return min(self.years, key=lambda year: year.coverage_fraction, default=None)
@@ -87,9 +85,7 @@ def build_source_coverage_report(
         dates_by_year.setdefault(effective_date.year, set()).add(effective_date)
 
     for year in sorted(dates_by_year):
-        sessions = set(
-            trading_calendar.sessions_between(date(year, 1, 1), date(year, 12, 31))
-        )
+        sessions = set(trading_calendar.sessions_between(date(year, 1, 1), date(year, 12, 31)))
         present = dates_by_year[year]
         missing = sorted(sessions - present)
         years.append(

@@ -40,7 +40,19 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "hypothesis", "ruff", "mypy"]
+dev = [
+  "pytest",
+  "pytest-cov",
+  "hypothesis",
+  "ruff",
+  "mypy",
+  # A differential-test ORACLE, never a runtime dependency: `L0.22`'s trade classifier is
+  # checked against tclf's Lee-Ready on random books, and it found a real defect on its
+  # first run (`research/214` §6). Pinned to git main because the PyPI artifact (0.0.9,
+  # 2024-02-18) predates scikit-learn 1.6 removing `BaseEstimator._validate_data` and
+  # raises `AttributeError` on `fit()` against the 1.9.0 installed here.
+  "tclf @ git+https://github.com/KarelZe/tclf.git@main",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

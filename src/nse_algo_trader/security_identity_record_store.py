@@ -83,9 +83,7 @@ class SecurityIdentityObservation:
 
     def __post_init__(self) -> None:
         if len(self.isin) != ISIN_LENGTH:
-            raise SecurityIdentityError(
-                f"{self.isin!r} is not a {ISIN_LENGTH}-character ISIN"
-            )
+            raise SecurityIdentityError(f"{self.isin!r} is not a {ISIN_LENGTH}-character ISIN")
         if not self.symbol:
             raise SecurityIdentityError("symbol may not be empty")
 
@@ -258,8 +256,7 @@ class SecurityIdentityRecordStore:
         candidates: set[str] = {str(row[0]) for row in rows}
         if len(candidates) > 1:
             raise AmbiguousSymbolError(
-                f"{symbol!r} referred to {len(candidates)} securities on {on}: "
-                f"{sorted(candidates)}"
+                f"{symbol!r} referred to {len(candidates)} securities on {on}: {sorted(candidates)}"
             )
         return next(iter(candidates))
 
@@ -306,12 +303,8 @@ class SecurityIdentityRecordStore:
     def describe(self) -> str:
         """One line for the daily report."""
         events = self.identity_events()
-        renames = sum(
-            1 for e in events if e.kind is IdentityEventKind.SYMBOL_RENAMED
-        )
-        reassignments = sum(
-            1 for e in events if e.kind is IdentityEventKind.SYMBOL_REASSIGNED
-        )
+        renames = sum(1 for e in events if e.kind is IdentityEventKind.SYMBOL_RENAMED)
+        reassignments = sum(1 for e in events if e.kind is IdentityEventKind.SYMBOL_REASSIGNED)
         total = int(
             self._connection.execute(
                 "SELECT COUNT(*) FROM security_identity_observation"

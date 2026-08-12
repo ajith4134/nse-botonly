@@ -71,9 +71,7 @@ class AngelOneHistoricalBarSource:
 
     def fetch_bars(self, request: BarRequest) -> list[BarRecord]:
         if not self.supports(request.interval):
-            raise UnsupportedIntervalError(
-                f"angel one cannot express {request.interval.value}"
-            )
+            raise UnsupportedIntervalError(f"angel one cannot express {request.interval.value}")
         parameters = {
             "exchange": request.instrument.exchange,
             "symboltoken": request.instrument.identifier_for(BrokerName.ANGEL_ONE),

@@ -31,6 +31,9 @@ from fastapi.responses import (
 
 from nse_algo_trader.dashboard.module_surface_catalogue import build_module_catalogue
 from nse_algo_trader.dashboard.operations_wall_renderer import render_operations_wall
+from nse_algo_trader.dashboard.order_book_replay_surface_renderer import (
+    render_order_book_replay_page,
+)
 from nse_algo_trader.dashboard.regime_brain_read_model import (
     RegimeReadModelError,
     measure_regime_brain,
@@ -38,8 +41,21 @@ from nse_algo_trader.dashboard.regime_brain_read_model import (
 from nse_algo_trader.dashboard.regime_brain_surface_renderer import (
     render_regime_brain_page,
 )
+from nse_algo_trader.market_depth.market_depth_tape_store import (
+    DepthTapeStoreError,
+    MarketDepthTapeReader,
+)
+from nse_algo_trader.market_depth.order_book_snapshot_replay_engine import (
+    InstrumentCoverageReport,
+    OrderBookReplayError,
+    OrderBookSnapshotReplayEngine,
+)
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+
+DEPTH_TAPE_ROOT = Path("~/nse_archive/depth_tape").expanduser()
+"""Where the recorder writes. Outside the repository, like every other data root here —
+the tape is hundreds of megabytes a session and has no business in a git tree."""
 
 ACCESS_TOKEN_PATH = Path("~/.nse_algo_trader/dashboard_access_token.txt").expanduser()
 """The dashboard binds to a PUBLIC interface, so it is token-gated. The token lives in a
@@ -102,9 +118,7 @@ def _remember_key(response: HTMLResponse | RedirectResponse, request: Request) -
     """
     supplied = request.query_params.get("key")
     if supplied:
-        response.set_cookie(
-            ACCESS_COOKIE_NAME, supplied, httponly=True, samesite="lax", path="/"
-        )
+        response.set_cookie(ACCESS_COOKIE_NAME, supplied, httponly=True, samesite="lax", path="/")
 
 
 SURFACED_MODULES: frozenset[str] = frozenset(
@@ -116,6 +130,8 @@ SURFACED_MODULES: frozenset[str] = frozenset(
         "nse_algo_trader.regime.soft_regime_weighting_brain",
         "nse_algo_trader.regime.market_regime_state",
         "nse_algo_trader.strategy.intraday_mean_reversion_engine",
+        "nse_algo_trader.market_depth.order_book_snapshot_replay_engine",
+        "nse_algo_trader.dashboard.order_book_replay_surface_renderer",
     }
 )
 """Modules that genuinely have a panel today. Declaring this is safe precisely BECAUSE
@@ -145,6 +161,25 @@ def discover_engine_modules(package_name: str = "nse_algo_trader") -> list[Manif
         if not module.ispkg and not module.name.rsplit(".", 1)[-1].startswith("_")
     ]
     return sorted(entries, key=lambda entry: entry.module_name)
+
+
+def _measure_latest_depth_session(
+    instrument_limit: int, staleness_quantile: float
+) -> InstrumentCoverageReport:
+    """Replay the most recent recorded session and report what it could say.
+
+    The latest session rather than a configured date: the recorder writes forward and a
+    dashboard pinned to a date silently goes stale, which is the same failure as a
+    hand-authored status.
+    """
+    reader = MarketDepthTapeReader(DEPTH_TAPE_ROOT)
+    sessions = reader.session_dates()
+    if not sessions:
+        raise OrderBookReplayError(f"no depth tape sessions under {DEPTH_TAPE_ROOT}")
+    engine = OrderBookSnapshotReplayEngine(
+        reader, session_date=max(sessions), staleness_quantile=staleness_quantile
+    )
+    return engine.coverage_report(instrument_limit=instrument_limit)
 
 
 def build_dashboard_app() -> FastAPI:
@@ -192,6 +227,30 @@ def build_dashboard_app() -> FastAPI:
                 f"<h1>Cannot measure regime brain</h1><p>{failure}</p>", status_code=503
             )
         response = HTMLResponse(render_regime_brain_page(snapshot))
+        _remember_key(response, request)
+        return response
+
+    @app.get("/microstructure", response_class=HTMLResponse)
+    def order_book_replay_surface(
+        request: Request, instrument_limit: int = 25, staleness_quantile: float = 0.99
+    ) -> HTMLResponse:
+        """`L0.22`'s surface, measured by replaying the real tape on request.
+
+        Bounded by `instrument_limit` because replaying 9,000 instruments per page load
+        would make this a batch job rather than a page. The bound is a query parameter and
+        is printed on the page, so the sample is visible rather than implied away.
+        """
+        if not _is_authorised(request):
+            return _unauthorised_html()
+        try:
+            report = _measure_latest_depth_session(instrument_limit, staleness_quantile)
+        except (OrderBookReplayError, DepthTapeStoreError) as failure:
+            # Same discipline as /regime: fail visibly rather than render a page that
+            # measures nothing and looks identical to one that measured everything.
+            return HTMLResponse(
+                f"<h1>Cannot replay the depth tape</h1><p>{failure}</p>", status_code=503
+            )
+        response = HTMLResponse(render_order_book_replay_page(report))
         _remember_key(response, request)
         return response
 

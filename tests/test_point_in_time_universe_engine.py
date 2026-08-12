@@ -162,8 +162,11 @@ def test_a_symbol_that_never_returns_without_ladder_evidence_is_unknown(
     """
     days = [date(2026, 6, 29), date(2026, 7, 1), date(2026, 7, 2)]
     engine.ingest(
-        [_observation("MYSTERY", days[0]), _observation("MYSTERY", days[1]),
-         *[_observation("RELIANCE", d) for d in days]]
+        [
+            _observation("MYSTERY", days[0]),
+            _observation("MYSTERY", days[1]),
+            *[_observation("RELIANCE", d) for d in days],
+        ]
     )
     verdict = engine.classify_absence("MYSTERY", days[2])
     assert verdict.classification is AbsenceClass.UNKNOWN
@@ -177,7 +180,8 @@ def test_a_rename_is_detected_by_a_shared_isin(engine: PointInTimeUniverseEngine
         [
             _observation("OLDNAME", before, isin="INE001A01036"),
             _observation("NEWNAME", after, isin="INE001A01036"),
-            _observation("RELIANCE", before), _observation("RELIANCE", after),
+            _observation("RELIANCE", before),
+            _observation("RELIANCE", after),
         ]
     )
     verdict = engine.classify_absence("OLDNAME", after)
@@ -248,9 +252,16 @@ def test_observations_without_a_ladder_depth_do_not_break_the_norm(
     day = date(2026, 7, 22)
     engine.ingest(
         [_observation(f"SYM{i}", day, ladder_depth=FULL_LADDER) for i in range(5)]
-        + [_observation(f"CASH{i}", day, segment="CASH",
-                        source=ObservationSource.CASH_BHAVCOPY, ladder_depth=None)
-           for i in range(20)]
+        + [
+            _observation(
+                f"CASH{i}",
+                day,
+                segment="CASH",
+                source=ObservationSource.CASH_BHAVCOPY,
+                ladder_depth=None,
+            )
+            for i in range(20)
+        ]
     )
     assert engine.ladder_norm_on(day) == FULL_LADDER
 
@@ -306,9 +317,7 @@ def test_a_snapshot_is_frozen(engine: PointInTimeUniverseEngine) -> None:
 def test_a_snapshot_reports_its_unresolved_count(engine: PointInTimeUniverseEngine) -> None:
     """A caller must be able to refuse a snapshot it cannot trust (`O.22`)."""
     days = [date(2026, 6, 29), date(2026, 7, 1)]
-    engine.ingest(
-        [_observation("MYSTERY", days[0])] + [_observation("RELIANCE", d) for d in days]
-    )
+    engine.ingest([_observation("MYSTERY", days[0])] + [_observation("RELIANCE", d) for d in days])
     snapshot = engine.snapshot_as_of(days[1])
     assert snapshot.unknown_count >= 1
     assert not snapshot.is_fully_resolved
@@ -379,9 +388,7 @@ def test_the_real_pending_exits_are_flagged_with_lead_time(tmp_path: Path) -> No
 def test_the_real_universe_is_stable_across_the_window(tmp_path: Path) -> None:
     """216 underlyings, 213 on every date. The engine must not invent churn."""
     engine = _engine_from_retained_fo(tmp_path)
-    sizes = [
-        len(engine.snapshot_as_of(day).members) for day in engine.collected_dates()
-    ]
+    sizes = [len(engine.snapshot_as_of(day).members) for day in engine.collected_dates()]
     assert min(sizes) >= 200
     assert max(sizes) - min(sizes) <= 5
     engine.close()
@@ -438,7 +445,8 @@ def test_a_new_listing_ramping_up_is_not_an_exit_warning(
         ]
         + [
             _observation(f"SYM{i}", day, ladder_depth=FULL_LADDER, furthest=date(2026, 9, 29))
-            for day in days for i in range(9)
+            for day in days
+            for i in range(9)
         ]
     )
     on_second_day = {t.symbol: t.direction for t in engine.ladder_truncations_on(days[1])}
@@ -459,7 +467,8 @@ def test_a_running_off_ladder_is_still_an_exit_warning(
         ]
         + [
             _observation(f"SYM{i}", day, ladder_depth=FULL_LADDER, furthest=date(2026, 9, 29))
-            for day in days for i in range(9)
+            for day in days
+            for i in range(9)
         ]
     )
     warned = {t.symbol for t in engine.exit_warnings_on(days[1])}
@@ -579,7 +588,8 @@ def test_an_isin_shared_by_several_symbols_is_not_called_a_rename(
             _observation("ALPHACORP", before, isin="INE000A00001"),
             _observation("BETACORP", after, isin="INE000A00001"),
             _observation("GAMMACO", after, isin="INE000A00001"),
-            _observation("RELIANCE", before), _observation("RELIANCE", after),
+            _observation("RELIANCE", before),
+            _observation("RELIANCE", after),
         ]
     )
     verdict = engine.classify_absence("ALPHACORP", after)
@@ -595,8 +605,10 @@ def test_the_ladder_norm_is_undefined_when_nothing_carries_a_ladder(
     """`None`, not 0 — a mode over nothing is undefined (the docstring's own claim)."""
     day = date(2026, 7, 22)
     engine.ingest(
-        [_observation(f"CASH{i}", day, segment="CASH", source=CASH, ladder_depth=None)
-         for i in range(5)]
+        [
+            _observation(f"CASH{i}", day, segment="CASH", source=CASH, ladder_depth=None)
+            for i in range(5)
+        ]
     )
     assert engine.ladder_norm_on(day) is None
     assert engine.ladder_truncations_on(day) == ()
@@ -620,8 +632,10 @@ def test_cash_symbols_never_enter_the_truncation_set(
     day = date(2026, 7, 22)
     engine.ingest(
         [_observation(f"SYM{i}", day, ladder_depth=FULL_LADDER) for i in range(5)]
-        + [_observation(f"CASH{i}", day, segment="CASH", source=CASH, ladder_depth=None)
-           for i in range(20)]
+        + [
+            _observation(f"CASH{i}", day, segment="CASH", source=CASH, ladder_depth=None)
+            for i in range(20)
+        ]
     )
     assert all(not t.symbol.startswith("CASH") for t in engine.ladder_truncations_on(day))
 
@@ -636,16 +650,18 @@ def test_the_real_cash_universe_illiquidity_claim(tmp_path: Path) -> None:
     table. Verified here against `cash_bhavcopy_delivery` itself.
     """
     connection = sqlite3.connect(f"file:{RETAINED_STORE}?mode=ro", uri=True)
-    rows = connection.execute(
-        "SELECT trade_date, symbol FROM cash_bhavcopy_delivery"
-    ).fetchall()
+    rows = connection.execute("SELECT trade_date, symbol FROM cash_bhavcopy_delivery").fetchall()
     connection.close()
     with PointInTimeUniverseEngine(tmp_path / "cash.sqlite3") as engine:
         engine.ingest(
             [
                 UniverseObservation(
-                    symbol=symbol, trade_date=date.fromisoformat(stamp), segment="CASH",
-                    source=CASH, expiry_ladder_depth=None, isin=None,
+                    symbol=symbol,
+                    trade_date=date.fromisoformat(stamp),
+                    segment="CASH",
+                    source=CASH,
+                    expiry_ladder_depth=None,
+                    isin=None,
                 )
                 for stamp, symbol in rows
             ]
@@ -679,8 +695,12 @@ def test_real_isins_from_the_mwpl_table_are_one_to_one(tmp_path: Path) -> None:
         engine.ingest(
             [
                 UniverseObservation(
-                    symbol=symbol, trade_date=date.fromisoformat(stamp), segment="NFO-STK",
-                    source=ObservationSource.MWPL, expiry_ladder_depth=None, isin=isin,
+                    symbol=symbol,
+                    trade_date=date.fromisoformat(stamp),
+                    segment="NFO-STK",
+                    source=ObservationSource.MWPL,
+                    expiry_ladder_depth=None,
+                    isin=isin,
                 )
                 for stamp, symbol, isin in rows
             ]
@@ -688,7 +708,8 @@ def test_real_isins_from_the_mwpl_table_are_one_to_one(tmp_path: Path) -> None:
         collected = engine.collected_dates()
         snapshot = engine.snapshot_as_of(collected[-1])
         renamed = [
-            verdict for verdict in snapshot.absences
+            verdict
+            for verdict in snapshot.absences
             if verdict.classification is AbsenceClass.RENAMED
         ]
         assert renamed == []

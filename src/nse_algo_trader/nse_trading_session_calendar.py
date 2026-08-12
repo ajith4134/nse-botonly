@@ -238,9 +238,7 @@ class NseTradingSessionCalendar:
         including them produced a fence below zero; excluding them gives 6.88,
         which then also catches 1998's implausible 4.
         """
-        covered = sorted(
-            count for count in self._recognised_holidays_by_year.values() if count > 0
-        )
+        covered = sorted(count for count in self._recognised_holidays_by_year.values() if count > 0)
         quartiles = statistics.quantiles(covered, n=_QUARTILE_DIVISIONS)
         first_quartile, third_quartile = quartiles[0], quartiles[2]
         return first_quartile - _TUKEY_FENCE_MULTIPLE * (third_quartile - first_quartile)
@@ -275,9 +273,9 @@ class NseTradingSessionCalendar:
 
     def unreliable_years_between(self, first_year: int, last_year: int) -> tuple[int, ...]:
         """Raises:
-            TradingCalendarError: ``last_year`` precedes ``first_year``. Returning
-                an empty tuple would read as "no unreliable years", which is the
-                same silent-empty trap ``sessions_between`` already guards against.
+        TradingCalendarError: ``last_year`` precedes ``first_year``. Returning
+            an empty tuple would read as "no unreliable years", which is the
+            same silent-empty trap ``sessions_between`` already guards against.
         """
         if last_year < first_year:
             raise TradingCalendarError(

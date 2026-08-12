@@ -78,9 +78,7 @@ class RegimeDistribution:
         has no opinion on flat, featureless data, and "no opinion" is maximum entropy,
         not an error.
         """
-        cleaned = {
-            regime: max(0.0, float(scores.get(regime, 0.0))) for regime in MarketRegime
-        }
+        cleaned = {regime: max(0.0, float(scores.get(regime, 0.0))) for regime in MarketRegime}
         total = sum(cleaned.values())
         if total <= 0.0:
             return cls(MarketRegime.uniform_probabilities())
@@ -104,8 +102,11 @@ class RegimeDistribution:
         lets the classifier that DOES measure that axis carry it.
         """
         silent = set(silent_on)
-        measured = {regime: max(0.0, float(scores.get(regime, 0.0)))
-                    for regime in MarketRegime if regime not in silent}
+        measured = {
+            regime: max(0.0, float(scores.get(regime, 0.0)))
+            for regime in MarketRegime
+            if regime not in silent
+        }
         measured_total = sum(measured.values())
         if not silent:
             return cls.from_scores(measured)
@@ -113,10 +114,11 @@ class RegimeDistribution:
         # split is the neutral choice when a classifier speaks to one axis of two.
         measured_share = 0.5 if measured_total > 0.0 else 0.0
         silent_share = 1.0 - measured_share
-        probabilities = {
-            regime: (measured[regime] / measured_total) * measured_share
-            for regime in measured
-        } if measured_total > 0.0 else {}
+        probabilities = (
+            {regime: (measured[regime] / measured_total) * measured_share for regime in measured}
+            if measured_total > 0.0
+            else {}
+        )
         for regime in silent:
             probabilities[regime] = silent_share / len(silent)
         for regime in MarketRegime:

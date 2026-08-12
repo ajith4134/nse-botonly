@@ -123,8 +123,7 @@ def test_evenly_covered_instruments_are_usable(tmp_path: Path) -> None:
     )
     report = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS, REQUIRED_COVERAGE)
     assert (
-        report.count_by_usability()[InstrumentSessionUsability.USABLE]
-        == HEALTHY_INSTRUMENT_COUNT
+        report.count_by_usability()[InstrumentSessionUsability.USABLE] == HEALTHY_INSTRUMENT_COUNT
     )
     assert len(report.usable_tokens()) == HEALTHY_INSTRUMENT_COUNT
 
@@ -210,9 +209,7 @@ def test_missing_exchange_timestamps_downgrade_to_caveats(tmp_path: Path) -> Non
         {token: _evenly_spaced(token, 200, 100.0) for token in range(1001, 1011)},
         flags_by_token={STEADY_TOKEN: IntegrityFlag.EXCHANGE_TIME_ABSENT},
     )
-    report = build_session_report(
-        tmp_path, SESSION_DATE, SESSION_SECONDS, REQUIRED_COVERAGE
-    )
+    report = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS, REQUIRED_COVERAGE)
     quality = report.quality_for(STEADY_TOKEN)
     assert quality is not None
     assert quality.usability is InstrumentSessionUsability.USABLE_WITH_CAVEATS
@@ -236,9 +233,7 @@ def test_an_instrument_with_one_packet_is_wholly_uncovered(tmp_path: Path) -> No
     packets = {token: _evenly_spaced(token, 200, 100.0) for token in range(1001, 1011)}
     packets[SPARSE_TOKEN] = _evenly_spaced(SPARSE_TOKEN, 1, 1.0)
     _write_tape(tmp_path, packets)
-    report = build_session_report(
-        tmp_path, SESSION_DATE, SESSION_SECONDS, REQUIRED_COVERAGE
-    )
+    report = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS, REQUIRED_COVERAGE)
     quality = report.quality_for(SPARSE_TOKEN)
     assert quality is not None
     assert quality.covered_seconds == 0.0
@@ -268,8 +263,7 @@ def test_the_gap_threshold_is_the_instruments_own_extreme_interval(tmp_path: Pat
     uniform spacing any index gives the same answer, so this uses UNEVEN spacing where
     picking the wrong quantile index changes the verdict."""
     steady = [
-        _packet(STEADY_TOKEN, i + 1, SESSION_OPEN + timedelta(seconds=i * 10))
-        for i in range(200)
+        _packet(STEADY_TOKEN, i + 1, SESSION_OPEN + timedelta(seconds=i * 10)) for i in range(200)
     ]
     # One genuine hour-long hole, after which normal quoting resumes.
     interrupted = steady[:100] + [
@@ -277,9 +271,7 @@ def test_the_gap_threshold_is_the_instruments_own_extreme_interval(tmp_path: Pat
         for i in range(100)
     ]
     _write_tape(tmp_path, {STEADY_TOKEN: interrupted})
-    report = build_session_report(
-        tmp_path, SESSION_DATE, SESSION_SECONDS, REQUIRED_COVERAGE
-    )
+    report = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS, REQUIRED_COVERAGE)
     quality = report.quality_for(STEADY_TOKEN)
     assert quality is not None
     # The hole is excluded from coverage, so covered time is far below the span.
@@ -292,14 +284,9 @@ def test_the_gap_threshold_is_the_instruments_own_extreme_interval(tmp_path: Pat
 def test_largest_gap_accounts_for_time_outside_the_observed_span(tmp_path: Path) -> None:
     """An instrument quoting for one minute of a six-hour session has a gap of nearly
     the whole session, even though every interval inside its span was tiny."""
-    brief = [
-        _packet(STEADY_TOKEN, i + 1, SESSION_OPEN + timedelta(seconds=i))
-        for i in range(60)
-    ]
+    brief = [_packet(STEADY_TOKEN, i + 1, SESSION_OPEN + timedelta(seconds=i)) for i in range(60)]
     _write_tape(tmp_path, {STEADY_TOKEN: brief})
-    report = build_session_report(
-        tmp_path, SESSION_DATE, SESSION_SECONDS, REQUIRED_COVERAGE
-    )
+    report = build_session_report(tmp_path, SESSION_DATE, SESSION_SECONDS, REQUIRED_COVERAGE)
     quality = report.quality_for(STEADY_TOKEN)
     assert quality is not None
     assert quality.largest_gap_seconds > SESSION_SECONDS * NEARLY_THE_WHOLE_SESSION

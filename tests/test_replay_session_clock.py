@@ -35,9 +35,7 @@ from nse_algo_trader.wall_clock_access_detector import (
 )
 
 MONDAY = date(2026, 8, 10)
-NEXT_DAY_SOURCE = {
-    "bhavcopy": SourcePublicationLag("bhavcopy", days=1, observations_used=100)
-}
+NEXT_DAY_SOURCE = {"bhavcopy": SourcePublicationLag("bhavcopy", days=1, observations_used=100)}
 
 
 def _clock(day: date = MONDAY) -> ReplaySessionClock:

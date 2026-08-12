@@ -26,9 +26,26 @@ from pathlib import Path
 # a false positive costs one allowlist entry and a justification; a false
 # negative is a hardcoded risk limit shipping to production.
 MONEY_NAME_MARKERS: tuple[str, ...] = (
-    "rupee", "inr", "paise", "capital", "margin", "premium",
-    "notional", "loss", "profit", "balance", "brokerage", "fee", "cost",
-    "amount", "price", "cash", "collateral", "payout", "credit", "debit",
+    "rupee",
+    "inr",
+    "paise",
+    "capital",
+    "margin",
+    "premium",
+    "notional",
+    "loss",
+    "profit",
+    "balance",
+    "brokerage",
+    "fee",
+    "cost",
+    "amount",
+    "price",
+    "cash",
+    "collateral",
+    "payout",
+    "credit",
+    "debit",
 )
 
 # Suffixes that mark a name as POLICY rather than money. A fraction, ratio or
@@ -36,8 +53,17 @@ MONEY_NAME_MARKERS: tuple[str, ...] = (
 # what R.03 asks for, so it must never be flagged. Checked before the money
 # markers, since "maximum_daily_loss_fraction" contains "loss".
 POLICY_NAME_MARKERS: tuple[str, ...] = (
-    "fraction", "ratio", "percent", "_pct", "multiple", "multiplier",
-    "count", "quantity", "lots", "bps", "basis_points",
+    "fraction",
+    "ratio",
+    "percent",
+    "_pct",
+    "multiple",
+    "multiplier",
+    "count",
+    "quantity",
+    "lots",
+    "bps",
+    "basis_points",
 )
 
 # Names permitted to hold a money literal, each exempt for a stated reason.

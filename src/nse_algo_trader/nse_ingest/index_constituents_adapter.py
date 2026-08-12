@@ -170,9 +170,7 @@ INDEX_UNIVERSE: tuple[IndexCatalogEntry, ...] = (
     IndexCatalogEntry("NIFTY CPSE", "ind_niftycpselist"),
     IndexCatalogEntry("NIFTY PSE", "ind_niftypselist"),
     IndexCatalogEntry("NIFTY INDIA CONSUMPTION", "ind_niftyconsumptionlist"),
-    IndexCatalogEntry(
-        "NIFTY FINANCIAL SERVICES 25/50", "ind_niftyfinancialservices25_50list"
-    ),
+    IndexCatalogEntry("NIFTY FINANCIAL SERVICES 25/50", "ind_niftyfinancialservices25_50list"),
 )
 """Every index this reconnaissance curl-verified on both hosts (2026-08-11) — 33 of
 NSE's published indices, deliberately spanning broad-market, size-sliced, sectoral and

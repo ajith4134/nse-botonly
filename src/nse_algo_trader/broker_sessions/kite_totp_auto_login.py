@@ -83,9 +83,7 @@ def fetch_kite_request_token_via_totp_login(
         timeout=_REQUEST_TIMEOUT_SECONDS,
     )
     if twofa_response.status_code != HTTP_OK:
-        raise KiteAutoLoginError(
-            f"Kite TOTP step failed: {twofa_response.json().get('message')}"
-        )
+        raise KiteAutoLoginError(f"Kite TOTP step failed: {twofa_response.json().get('message')}")
 
     # Authenticated now — re-hitting connect/login redirects toward the
     # registered redirect URL carrying request_token. Follow Location
@@ -98,9 +96,7 @@ def fetch_kite_request_token_via_totp_login(
             timeout=_REQUEST_TIMEOUT_SECONDS,
         )
         redirect_location = redirect_response.headers.get("location", "")
-        request_token_values = parse_qs(
-            urlparse(redirect_location).query
-        ).get("request_token")
+        request_token_values = parse_qs(urlparse(redirect_location).query).get("request_token")
         if request_token_values:
             return request_token_values[0]
         if not redirect_location:
@@ -109,9 +105,7 @@ def fetch_kite_request_token_via_totp_login(
                 f"(stopped at HTTP {redirect_response.status_code})"
             )
         next_url_to_follow = urljoin(next_url_to_follow, redirect_location)
-    raise KiteAutoLoginError(
-        f"request_token not found within {_MAX_REDIRECTS_TO_FOLLOW} redirects"
-    )
+    raise KiteAutoLoginError(f"request_token not found within {_MAX_REDIRECTS_TO_FOLLOW} redirects")
 
 
 def generate_and_store_daily_kite_access_token(

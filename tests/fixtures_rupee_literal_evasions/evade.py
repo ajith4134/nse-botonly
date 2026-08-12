@@ -11,11 +11,12 @@ notional_cap = 500000
 funds_available = 100000
 cash_floor = 25000
 equity_at_risk = 10000
-option_premium = 150            # 'premium_amount' is the marker, bare 'premium' is not
-inr_limit = 5000                # marker is '_inr', not 'inr'
+option_premium = 150  # 'premium_amount' is the marker, bare 'premium' is not
+inr_limit = 5000  # marker is '_inr', not 'inr'
 INR_HARD_STOP = 7500
 rs_max_loss = 5000
-rupiah = 1                      # (control)
+rupiah = 1  # (control)
+
 
 # --- 2. instance/class attribute targets are ast.Attribute, not ast.Name ---
 class RiskLimits:
@@ -23,22 +24,27 @@ class RiskLimits:
         self.max_loss_rupees = 5000
         self.margin_rupees = Decimal("25000")
 
+
 # --- 3. function default arguments are not Assign nodes ---
 def size_position(max_loss_rupees: Decimal = Decimal("5000")) -> Decimal:
     return max_loss_rupees
+
 
 # --- 4. return / call-argument literals ---
 def hard_capital_floor() -> Decimal:
     return Decimal("100000")
 
+
 # --- 5. container values ---
 LIMITS = {"max_loss_rupees": 5000, "margin_rupees": Decimal("25000")}
 BANDS = [5000, 25000, 100000]
+
 
 # --- 6. dataclass field(default=...) ---
 @dataclass
 class Book:
     margin_rupees: Decimal = field(default=Decimal("25000"))
+
 
 # --- 7. arithmetic / non-Constant expressions ---
 max_loss_rupees = 5 * 1000
@@ -62,6 +68,7 @@ MINIMUM_SUPPORTED_CAPITAL_RUPEES = Decimal("42")
 # --- 11. subscript target ---
 CONFIG = {}
 CONFIG["max_loss_rupees"] = 5000
+
 
 # --- 12. comparison against a bare number (spec CLAIMS this is detected) ---
 def breached(pnl_rupees: Decimal) -> bool:

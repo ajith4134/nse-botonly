@@ -158,9 +158,7 @@ def test_the_sunday_returning_fridays_data_case_is_caught() -> None:
     """The measured trap: HTTP 200, a well-formed file, and the wrong day's data. No
     retry library treats this as a failure because nothing about it is an error."""
     adapter = WellBehavedAdapter()
-    sunday = FetchTarget(
-        url="https://x/x_2026-08-09.csv", source_name=SOURCE, expects="2026-08-09"
-    )
+    sunday = FetchTarget(url="https://x/x_2026-08-09.csv", source_name=SOURCE, expects="2026-08-09")
     fridays_file = _payload_for(date(2026, 8, 7))
     status, evidence = classify_payload(
         fridays_file, HTTP_OK, sunday, adapter.content_mismatch_reason
@@ -189,7 +187,7 @@ def test_a_content_mismatch_is_never_retried() -> None:
         (b"<!DOCTYPE html>Access Denied Reference #18.abc", 200, FetchStatus.BOT_BLOCKED),
         (b"", 200, FetchStatus.EMPTY_PAYLOAD),
         (b"anything", 404, FetchStatus.NOT_FOUND),
-        (b"<!doctype html><div id=\"__next\"></div>", 200, FetchStatus.JAVASCRIPT_SHELL),
+        (b'<!doctype html><div id="__next"></div>', 200, FetchStatus.JAVASCRIPT_SHELL),
         (b"<!doctype html><table>real page</table>", 200, FetchStatus.BOT_BLOCKED),
         (b"anything", 500, FetchStatus.TRANSPORT_FAILURE),
     ],
@@ -503,9 +501,7 @@ def test_todays_effective_date_is_accepted() -> None:
         observed = datetime.now(UTC)
         fetch_id = store.record_fetch(SOURCE, "u", observed, "retrieved", "e", 1)
         today = datetime.now(UTC).date()
-        result = store.ingest_rows(
-            SOURCE, [IngestRow({"x": 1}, today, ("A",))], observed, fetch_id
-        )
+        result = store.ingest_rows(SOURCE, [IngestRow({"x": 1}, today, ("A",))], observed, fetch_id)
         assert result.rows_inserted == 1
 
 
@@ -519,9 +515,7 @@ def test_an_outcome_only_succeeds_when_fetched_and_parsed(
 
     clean = TargetIngestOutcome(_target(), FetchStatus.RETRIEVED, "ok")
     blocked = TargetIngestOutcome(_target(), FetchStatus.BOT_BLOCKED, "HTTP 403")
-    unparsed = TargetIngestOutcome(
-        _target(), FetchStatus.RETRIEVED, "ok", parse_error="bad csv"
-    )
+    unparsed = TargetIngestOutcome(_target(), FetchStatus.RETRIEVED, "ok", parse_error="bad csv")
     assert clean.succeeded
     assert not blocked.succeeded
     assert not unparsed.succeeded

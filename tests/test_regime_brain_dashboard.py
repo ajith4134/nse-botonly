@@ -48,29 +48,56 @@ def _snapshot() -> RegimeBrainSnapshot:
         bars_used=2289,
         measured_at=now,
         panels=(
-            ClassifierPanel("trend_strength", True, True, 2289,
-                            dict(
-                                RegimeDistribution.from_scores(
-                                    {
-                                        MarketRegime.RANGING: 3.0,
-                                        MarketRegime.TRENDING: 1.0,
-                                        MarketRegime.VOLATILE: 1.0,
-                                        MarketRegime.QUIET: 1.0,
-                                    }
-                                ).probabilities
-                            ),
-                            0.4, 1.0, "ADX=12.3"),
-            ClassifierPanel("volatility", False, True, 2200,
-                            MarketRegime.uniform_probabilities(), 0.25, 0.0, "vol=0.01"),
+            ClassifierPanel(
+                "trend_strength",
+                True,
+                True,
+                2289,
+                dict(
+                    RegimeDistribution.from_scores(
+                        {
+                            MarketRegime.RANGING: 3.0,
+                            MarketRegime.TRENDING: 1.0,
+                            MarketRegime.VOLATILE: 1.0,
+                            MarketRegime.QUIET: 1.0,
+                        }
+                    ).probabilities
+                ),
+                0.4,
+                1.0,
+                "ADX=12.3",
+            ),
+            ClassifierPanel(
+                "volatility",
+                False,
+                True,
+                2200,
+                MarketRegime.uniform_probabilities(),
+                0.25,
+                0.0,
+                "vol=0.01",
+            ),
         ),
         belief=RegimeBelief(
             RegimeDistribution.from_scores(
-                {MarketRegime.RANGING: 3.0, MarketRegime.TRENDING: 1.0,
-                 MarketRegime.VOLATILE: 1.0, MarketRegime.QUIET: 1.0}),
-            ("trend_strength",), 0.0, {"trend_strength": 1.0}, now,
+                {
+                    MarketRegime.RANGING: 3.0,
+                    MarketRegime.TRENDING: 1.0,
+                    MarketRegime.VOLATILE: 1.0,
+                    MarketRegime.QUIET: 1.0,
+                }
+            ),
+            ("trend_strength",),
+            0.0,
+            {"trend_strength": 1.0},
+            now,
         ),
         decision=MeanReversionDecision(
-            MeanReversionAction.ABSTAIN, 0.0, "regime not actionable", -0.4, 1.9,
+            MeanReversionAction.ABSTAIN,
+            0.0,
+            "regime not actionable",
+            -0.4,
+            1.9,
             MarketRegime.RANGING,
         ),
         deviation_band=1.9,
@@ -147,13 +174,24 @@ def test_engine_evidence_is_escaped_into_the_page() -> None:
     """Evidence strings come from engines and land in HTML."""
     snapshot = _snapshot()
     hostile = ClassifierPanel(
-        "x", True, True, 1, MarketRegime.uniform_probabilities(), 0.5, 1.0,
+        "x",
+        True,
+        True,
+        1,
+        MarketRegime.uniform_probabilities(),
+        0.5,
+        1.0,
         "<script>alert(1)</script>",
     )
     page = render_regime_brain_page(
         RegimeBrainSnapshot(
-            snapshot.instrument_token, snapshot.bars_used, snapshot.measured_at,
-            (hostile,), snapshot.belief, snapshot.decision, snapshot.deviation_band,
+            snapshot.instrument_token,
+            snapshot.bars_used,
+            snapshot.measured_at,
+            (hostile,),
+            snapshot.belief,
+            snapshot.decision,
+            snapshot.deviation_band,
         )
     )
     assert "<script>alert(1)</script>" not in page

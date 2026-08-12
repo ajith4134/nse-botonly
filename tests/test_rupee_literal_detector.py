@@ -27,9 +27,7 @@ EVASION_CORPUS = Path(__file__).parent / "fixtures_rupee_literal_evasions"
 MINIMUM_EXPECTED_SOURCE_FILES = 2
 # Every exemption weakens the guard, so the list is capped and reviewed.
 MAXIMUM_TOLERATED_EXEMPTIONS = 5
-EVASION_FILES = sorted(
-    path for path in EVASION_CORPUS.glob("*.py") if path.name != "__init__.py"
-)
+EVASION_FILES = sorted(path for path in EVASION_CORPUS.glob("*.py") if path.name != "__init__.py")
 
 
 @pytest.mark.unit

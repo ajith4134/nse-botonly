@@ -291,9 +291,7 @@ class CircuitBandSurveillanceAdapter:
 
     # ---------------------------------------------------------- circuit band + GSM
 
-    def _parse_circuit_band_gsm(
-        self, payload: bytes, target: FetchTarget
-    ) -> Sequence[IngestRow]:
+    def _parse_circuit_band_gsm(self, payload: bytes, target: FetchTarget) -> Sequence[IngestRow]:
         if not target.expects:
             raise IngestAdapterError(
                 "sec_list.csv carries no in-payload date; this adapter can only "
@@ -303,9 +301,7 @@ class CircuitBandSurveillanceAdapter:
         try:
             effective_date = date.fromisoformat(target.expects)
         except ValueError as failure:
-            raise IngestAdapterError(
-                f"unparseable requested date {target.expects!r}"
-            ) from failure
+            raise IngestAdapterError(f"unparseable requested date {target.expects!r}") from failure
 
         parsed: list[IngestRow] = []
         for row in _sec_list_rows(payload):
@@ -374,9 +370,7 @@ class CircuitBandSurveillanceAdapter:
                             "asm_term": term,
                             "asm_stage": str(entry.get("asmSurvIndicator") or ""),
                             "asm_surveillance_code": str(entry.get("survCode") or ""),
-                            "asm_surveillance_description": str(
-                                entry.get("survDesc") or ""
-                            ),
+                            "asm_surveillance_description": str(entry.get("survDesc") or ""),
                             "as_on_date": effective_date.isoformat(),
                         },
                         effective_date=effective_date,
@@ -385,9 +379,7 @@ class CircuitBandSurveillanceAdapter:
                 )
         return parsed
 
-    def _asm_content_mismatch_reason(
-        self, payload: bytes, target: FetchTarget
-    ) -> str | None:
+    def _asm_content_mismatch_reason(self, payload: bytes, target: FetchTarget) -> str | None:
         try:
             rows = self._parse_report_asm(payload)
         except IngestAdapterError as failure:

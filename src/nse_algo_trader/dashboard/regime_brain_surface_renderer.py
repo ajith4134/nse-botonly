@@ -134,9 +134,7 @@ def render_regime_brain_page(snapshot: RegimeBrainSnapshot) -> str:
         f"{escape(regime.value)}</span>"
         for slot, regime in enumerate(REGIME_SLOT_ORDER, start=1)
     )
-    band_label = (
-        "—" if snapshot.deviation_band is None else f"{snapshot.deviation_band:.2f}"
-    )
+    band_label = "—" if snapshot.deviation_band is None else f"{snapshot.deviation_band:.2f}"
     leading = snapshot.belief.most_likely
     leading_label = leading.value if leading else "no armed classifier — abstaining"
 
@@ -248,11 +246,21 @@ details{{margin-top:16px}} summary{{cursor:pointer;font-size:13px;color:var(--te
       {belief_bars}
     </div>
     <div class="card">
-      {_meter("Concentration", snapshot.belief.concentration,
-              "How peaked the pooled belief is. Low means the panel has no clear view.")}
-      {_meter("Agreement", snapshot.belief.agreement,
-              "How much the classifiers agreed. Low means split — "
-              "an unknown regime is not tradeable.")}
+      {
+        _meter(
+            "Concentration",
+            snapshot.belief.concentration,
+            "How peaked the pooled belief is. Low means the panel has no clear view.",
+        )
+    }
+      {
+        _meter(
+            "Agreement",
+            snapshot.belief.agreement,
+            "How much the classifiers agreed. Low means split — "
+            "an unknown regime is not tradeable.",
+        )
+    }
     </div>
   </div>
 

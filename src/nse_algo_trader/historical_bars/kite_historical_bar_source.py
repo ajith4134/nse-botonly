@@ -68,9 +68,7 @@ class KiteHistoricalBarSource:
                 raise BrokerAuthenticationError(
                     f"kite rejected credentials: {failure}"
                 ) from failure
-            raise HistoricalBarSourceError(
-                f"kite historical_data failed: {failure}"
-            ) from failure
+            raise HistoricalBarSourceError(f"kite historical_data failed: {failure}") from failure
 
         return [
             to_bar_record(

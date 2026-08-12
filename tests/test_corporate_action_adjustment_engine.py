@@ -119,13 +119,18 @@ def test_bonus_shapes_including_the_extreme_real_one(
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "subject",
-    ["Annual General Meeting", "Agm", "Interest Payment", "Dividend - Rs 5 Per Share",
-     "Interim Dividend - Re 1 Per Share", "Annual General Meeting/Dividend - Rs 2 Per Share",
-     "Buy Back", "Buyback"],
+    [
+        "Annual General Meeting",
+        "Agm",
+        "Interest Payment",
+        "Dividend - Rs 5 Per Share",
+        "Interim Dividend - Re 1 Per Share",
+        "Annual General Meeting/Dividend - Rs 2 Per Share",
+        "Buy Back",
+        "Buyback",
+    ],
 )
-def test_inert_actions_do_not_adjust(
-    engine: CorporateActionAdjustmentEngine, subject: str
-) -> None:
+def test_inert_actions_do_not_adjust(engine: CorporateActionAdjustmentEngine, subject: str) -> None:
     """38,514 of 41,885 real actions are inert; a false adjustment here corrupts everything."""
     parsed = engine.parse(_action(subject))
     assert parsed.classification is ActionClass.NON_ADJUSTING
@@ -150,8 +155,13 @@ def test_a_demerger_is_flagged_as_unquantified_never_as_inert(
 @pytest.mark.adversarial
 @pytest.mark.parametrize(
     "subject",
-    ["Bonus", "Bonus 0:0", "Face Value Split From Rs 0/- To Re 1/-", "Bonus 1:0",
-     "Some Entirely Novel Corporate Event Nobody Anticipated"],
+    [
+        "Bonus",
+        "Bonus 0:0",
+        "Face Value Split From Rs 0/- To Re 1/-",
+        "Bonus 1:0",
+        "Some Entirely Novel Corporate Event Nobody Anticipated",
+    ],
 )
 def test_an_unparseable_subject_is_reported_not_assumed_inert(
     engine: CorporateActionAdjustmentEngine, subject: str
@@ -188,10 +198,12 @@ def test_factors_compose_exactly_with_no_float_drift(
     price quoted after both is already current and takes a factor of 1 — asserted
     below so the direction cannot silently reverse.
     """
-    engine.ingest([
-        _action("Face Value Split From Rs 10/- To Re 1/-", ex=date(2020, 1, 10)),
-        _action("Bonus 1:2", ex=date(2021, 1, 10)),
-    ])
+    engine.ingest(
+        [
+            _action("Face Value Split From Rs 10/- To Re 1/-", ex=date(2020, 1, 10)),
+            _action("Bonus 1:2", ex=date(2021, 1, 10)),
+        ]
+    )
     assert engine.cumulative_price_factor("ACME", as_of=date(2019, 1, 1)) == (
         Decimal("1") / Decimal("15")
     )
@@ -367,8 +379,10 @@ def _engine_from_feed(tmp_path: Path) -> CorporateActionAdjustmentEngine:
     [
         ("Fv Splt Frm Rs 10 To Rs 2", Decimal("2") / Decimal("10")),
         ("Fv Splt Frm Rs 10 To Re 1", Decimal("1") / Decimal("10")),
-        ("Face Valus Split (Sub-Division) - From Rs 10/- Per Share To Rs 2/- Per Share",
-         Decimal("2") / Decimal("10")),
+        (
+            "Face Valus Split (Sub-Division) - From Rs 10/- Per Share To Rs 2/- Per Share",
+            Decimal("2") / Decimal("10"),
+        ),
         ("Split-Rs.10tors.2/Div-60%Purpose Revised", Decimal("2") / Decimal("10")),
     ],
 )
@@ -399,8 +413,10 @@ def test_a_consolidation_raises_historical_prices(
 @pytest.mark.adversarial
 @pytest.mark.parametrize(
     "subject",
-    ["Face Value Split From Rs 1/- To Rs 10/-",
-     "Consolidation Of Equity Shares From Rs 10 Per Share To Re 1 Per Share"],
+    [
+        "Face Value Split From Rs 1/- To Rs 10/-",
+        "Consolidation Of Equity Shares From Rs 10 Per Share To Re 1 Per Share",
+    ],
 )
 def test_a_subject_whose_words_and_numbers_disagree_is_refused(
     engine: CorporateActionAdjustmentEngine, subject: str
@@ -445,8 +461,14 @@ def test_a_bonus_hidden_inside_a_dividend_string_is_still_found(
 @pytest.mark.adversarial
 @pytest.mark.parametrize(
     "subject",
-    ["Bonus Preference Shares 21:1", "Bonus Ncrps 1:116", "Bonus Ncrps 4:1",
-     "Bonus Debentures 6:1", "Bonus 1 Dvr : 10 Eq Share", "Bonus Warrants 1:1"],
+    [
+        "Bonus Preference Shares 21:1",
+        "Bonus Ncrps 1:116",
+        "Bonus Ncrps 4:1",
+        "Bonus Debentures 6:1",
+        "Bonus 1 Dvr : 10 Eq Share",
+        "Bonus Warrants 1:1",
+    ],
 )
 def test_a_bonus_of_a_non_equity_instrument_never_adjusts_the_equity_price(
     engine: CorporateActionAdjustmentEngine, subject: str
@@ -504,9 +526,7 @@ def test_a_late_announced_action_does_not_leak_into_an_earlier_read(
     A corporate action corrected or announced late must not appear in a backtest
     dated before anyone could have known it.
     """
-    engine.ingest(
-        [_action("Bonus 1:1", ex=date(2020, 1, 10))], known_as_of=date(2020, 3, 1)
-    )
+    engine.ingest([_action("Bonus 1:1", ex=date(2020, 1, 10))], known_as_of=date(2020, 3, 1))
     as_of = date(2020, 1, 5)
     assert engine.cumulative_price_factor(
         "ACME", as_of=as_of, known_as_of=date(2020, 1, 5)
@@ -578,9 +598,7 @@ def test_no_real_non_equity_bonus_is_quantified(tmp_path: Path) -> None:
 
         parsed_date = _feed_date(ex_text)
         assert parsed_date is not None
-        parsed = engine.parse(
-            CorporateAction(symbol, parsed_date, subject, None, None, "EQ")
-        )
+        parsed = engine.parse(CorporateAction(symbol, parsed_date, subject, None, None, "EQ"))
         assert parsed.price_factor is None, f"{symbol} {subject} was quantified"
     engine.close()
 

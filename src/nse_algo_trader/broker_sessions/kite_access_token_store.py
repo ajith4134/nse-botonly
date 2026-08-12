@@ -14,9 +14,7 @@ from zoneinfo import ZoneInfo
 INDIA_MARKET_TIMEZONE = ZoneInfo("Asia/Kolkata")
 _KITE_TOKEN_EXPIRY_TIME_IST = time(6, 0)
 
-DEFAULT_KITE_ACCESS_TOKEN_FILE_PATH = Path(
-    "~/.nse_algo_trader/kite_access_token.json"
-).expanduser()
+DEFAULT_KITE_ACCESS_TOKEN_FILE_PATH = Path("~/.nse_algo_trader/kite_access_token.json").expanduser()
 
 
 @dataclass(frozen=True)
@@ -42,9 +40,7 @@ class KiteAccessTokenRecord:
         return same_day_expiry + timedelta(days=1)
 
     def is_still_valid(self, now: datetime | None = None) -> bool:
-        now_ist = (now or datetime.now(INDIA_MARKET_TIMEZONE)).astimezone(
-            INDIA_MARKET_TIMEZONE
-        )
+        now_ist = (now or datetime.now(INDIA_MARKET_TIMEZONE)).astimezone(INDIA_MARKET_TIMEZONE)
         return now_ist < self.expires_at()
 
 
@@ -76,9 +72,7 @@ class KiteAccessTokenFileStore:
             generated_at=datetime.fromisoformat(stored_fields["generated_at"]),
         )
 
-    def load_if_still_valid(
-        self, now: datetime | None = None
-    ) -> KiteAccessTokenRecord | None:
+    def load_if_still_valid(self, now: datetime | None = None) -> KiteAccessTokenRecord | None:
         token_record = self.load()
         if token_record is None or not token_record.is_still_valid(now):
             return None

@@ -131,9 +131,7 @@ def test_missing_configuration_raises_and_never_defaults(
 
 @pytest.mark.adversarial
 @pytest.mark.parametrize("malformed", ["", "  ", "abc", "1e5", "100_000", "₹100000"])
-def test_malformed_configuration_raises(
-    monkeypatch: pytest.MonkeyPatch, malformed: str
-) -> None:
+def test_malformed_configuration_raises(monkeypatch: pytest.MonkeyPatch, malformed: str) -> None:
     monkeypatch.setenv("NSE_TRADING_CAPITAL_RUPEES", malformed)
     with pytest.raises(CapitalConfigurationError):
         load_trading_capital_from_environment()
@@ -155,9 +153,7 @@ def test_wellformed_configuration_loads(monkeypatch: pytest.MonkeyPatch) -> None
         max_value=MAXIMUM_SUPPORTED_CAPITAL_RUPEES,
         places=2,
     ),
-    fraction=hypothesis_strategies.decimals(
-        min_value=Decimal(0), max_value=Decimal(1), places=30
-    ),
+    fraction=hypothesis_strategies.decimals(min_value=Decimal(0), max_value=Decimal(1), places=30),
 )
 def test_an_allocation_never_exceeds_the_exact_truncated_product(
     total: Decimal, fraction: Decimal
@@ -260,9 +256,7 @@ def test_non_ascii_digits_are_refused(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.unit
 def test_the_injected_environment_seam_is_exercised() -> None:
     """The DI parameter existed but no test used it; an unused seam is untested code."""
-    loaded = load_trading_capital_from_environment(
-        {"NSE_TRADING_CAPITAL_RUPEES": "500000"}
-    )
+    loaded = load_trading_capital_from_environment({"NSE_TRADING_CAPITAL_RUPEES": "500000"})
     assert loaded.total_rupees == Decimal("500000.00")
 
 

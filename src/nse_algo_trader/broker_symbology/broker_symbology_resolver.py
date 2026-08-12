@@ -132,9 +132,7 @@ class BrokerSymbolStore:
                 "an empty download is a fetch failure, not an empty exchange"
             )
         with self._connection:
-            self._connection.execute(
-                "DELETE FROM broker_symbol WHERE broker = ?", (broker.value,)
-            )
+            self._connection.execute("DELETE FROM broker_symbol WHERE broker = ?", (broker.value,))
             self._connection.executemany(
                 "INSERT INTO broker_symbol (broker, exchange, tradingsymbol, "
                 "broker_identifier, broker_symbol, series, refreshed_on) "

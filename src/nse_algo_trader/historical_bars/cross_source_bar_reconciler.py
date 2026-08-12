@@ -152,9 +152,7 @@ class ReconciliationReport:
             parts.append(f"{len(self.volume_disagreements)} volume-only disagreements")
         if self.price_disagreements:
             parts.append(f"{len(self.price_disagreements)} PRICE DISAGREEMENTS")
-        for broker, reliability in sorted(
-            self.reliability.items(), key=lambda item: item[0].value
-        ):
+        for broker, reliability in sorted(self.reliability.items(), key=lambda item: item[0].value):
             parts.append(
                 f"{broker.value} coverage={reliability.bars_offered}"
                 f"/agree={reliability.agreement_rate:.0%}"
@@ -245,9 +243,7 @@ def reconcile_bars(
                 contributing_sources=tuple(broker for broker, _bar in candidates),
                 disagreement=disagreement_by_moment[moment],
                 alternatives=tuple(
-                    (broker, bar)
-                    for broker, bar in candidates
-                    if broker is not chosen_broker
+                    (broker, bar) for broker, bar in candidates if broker is not chosen_broker
                 ),
             )
         )

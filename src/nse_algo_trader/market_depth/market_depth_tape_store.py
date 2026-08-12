@@ -156,9 +156,7 @@ class MarketDepthTapeStore:
         if self._flush_is_due():
             self.flush()
 
-    def append_many(
-        self, classified_packets: Iterable[tuple[DepthPacket, IntegrityFlag]]
-    ) -> None:
+    def append_many(self, classified_packets: Iterable[tuple[DepthPacket, IntegrityFlag]]) -> None:
         for packet, integrity_flags in classified_packets:
             self.append(packet, integrity_flags)
 
@@ -333,18 +331,14 @@ class MarketDepthTapeReader:
         )
         if rows.num_rows == 0:
             return None
-        ordered = rows.sort_by(
-            [(time_column, "ascending"), ("receipt_sequence", "ascending")]
-        )
+        ordered = rows.sort_by([(time_column, "ascending"), ("receipt_sequence", "ascending")])
         return {name: ordered.column(name)[-1].as_py() for name in ordered.column_names}
 
     def instrument_tokens(self, session_date: date) -> list[int]:
         table = self._dataset(session_date).to_table(columns=["instrument_token"])
         return sorted(set(table.column("instrument_token").to_pylist()))
 
-    def iter_instrument_row_counts(
-        self, session_date: date
-    ) -> Iterator[tuple[int, int]]:
+    def iter_instrument_row_counts(self, session_date: date) -> Iterator[tuple[int, int]]:
         """(token, row count) for a session — the session report's raw input."""
         table = self._dataset(session_date).to_table(columns=["instrument_token"])
         counts: dict[int, int] = {}
@@ -361,9 +355,7 @@ class MarketDepthTapeReader:
         far, not just the calibration slice. An instrument seen once has no span and so
         no rate, and is reported as absent rather than as zero.
         """
-        table = self._dataset(session_date).to_table(
-            columns=["instrument_token", "receipt_time"]
-        )
+        table = self._dataset(session_date).to_table(columns=["instrument_token", "receipt_time"])
         tokens = table.column("instrument_token").to_pylist()
         receipts = table.column("receipt_time").to_pylist()
         first_seen: dict[int, datetime] = {}
@@ -383,9 +375,7 @@ class MarketDepthTapeReader:
         return rates
 
     def total_bytes_on_disk(self) -> int:
-        return sum(
-            path.stat().st_size for path in self._tape_root.rglob("*.parquet")
-        )
+        return sum(path.stat().st_size for path in self._tape_root.rglob("*.parquet"))
 
     def measured_bytes_per_row(self, session_dates: Sequence[date] | None = None) -> float | None:
         """Realized compressed bytes per row across the tape, or None if empty.

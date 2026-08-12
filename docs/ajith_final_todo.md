@@ -109,7 +109,7 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [x] **1.17** Broker symbology resolver (ICICI is one instance) — `L0.17` · Angel One built: 3,163 mappings, 100% coverage of the bar step (`A.73`); ICICI instance still credential-blocked
 - [ ] **1.18** Fyers deep-history adapter — `L0.18` ⛔ BLOCKED, **re-verified mechanically 2026-08-12** (`A.78`): `fyers-apiv3` imports fine and `.env` carries `FYERS_APP_ID` + `FYERS_API_SECRET`, but v3 mints a token only through an interactive `generate-authcode` browser redirect, and the non-interactive TOTP path needs `FY_ID` + PIN + TOTP secret, none of which exist. `generate_token()` without an auth code raises `AttributeError: 'SessionModel' object has no attribute 'auth_token'`. ⚠️ *operator action: complete one browser auth, or add the three TOTP-login variables*
 - [ ] **1.19** Groww historical adapter — `L0.19` ⛔ BLOCKED, **re-verified mechanically 2026-08-12** (`A.78`): `growwapi` installs, the client builds and prints "Ready to Groww!" on BOTH stored tokens — and every endpoint (`get_historical_candles`, `get_quote`, `get_ltp`, `get_holdings_for_user`) answers `GrowwAPIException: Access forbidden for this request`. The ₹499/mo subscription is not active. ⚠️ *operator action: activate the subscription*
-- [~] **1.20** Live order-book depth recorder (P4b) — `L0.20` — ***PULLED FORWARD out of sequence, see
+- [x] **1.20** Live order-book depth recorder (P4b) — `L0.20` — ***PULLED FORWARD out of sequence, see
       `A.44`***: the depth tape is the only `L0` artifact that cannot be reconstructed after the fact, so
       every session without a recorder is permanently lost data. `src/nse_algo_trader/market_depth/`
       (feed seam · integrity classifier · admission controller · recorder · session report), 60 tests,
@@ -118,16 +118,17 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       Measurements that became design inputs rather than assumptions: `exchange_timestamp` is a true
       epoch parsed NAIVE by the SDK (correct on this UTC host **by accident** — `A.45`), epoch 0 in ~1 in
       6 packets, one subscribe snapshot **11 minutes stale**, depth shape `(5,5)` on 4,084 of 4,084.
-      `[~]` not `[x]` per `R.11`: the primary consumer (`1.22` reconstruction, microstructure features)
-      is queued, and per `R.08` there is no dashboard surface yet.
-- [~] **1.21** Market-depth store — `L0.21` — built with `1.20`. Append-only Parquet + zstd, atomic
+      **Closed 2026-08-12 (`A.79`):** both `R.11` conditions are now met — the primary consumer
+      `1.22` exists and replays this tape, and `R.08` is satisfied by `/microstructure`. The
+      first full-session capture also corrected the admission solve (`A.77`).
+- [x] **1.21** Market-depth store — `L0.21` — built with `1.20`. Append-only Parquet + zstd, atomic
       part files via temp-then-`replace` **proven by an actual `kill -9` mid-session test**, bitemporal
       (`exchange_time` vs `receipt_time`) consistent with `1.4`, integer paise never floats, plus
       `book_at()` — the reconstruction primitive `1.22` builds on. **Measured on real data: 62.02
       compressed bytes/row**, which beat every synthetic benchmark in the sourcing run (`research/208`)
       and is the admission controller's key input. ArcticDB and `nautilus_trader` were both rejected on
       MECHANICAL evidence (`R.17`): neither is pip-installable on this ARM64 / glibc-2.34 host.
-- [ ] **1.22** Tick-level order-book reconstruction — `L0.22`
+- [x] **1.22** Tick-level order-book reconstruction — `L0.22` · **renamed to what it is: `order_book_snapshot_replay_engine`.** True tick reconstruction needs order-by-order data NSE sells for ₹12.5 lakh/yr (`research/72`); this is the snapshot-replay engine the 5-level tape can actually support, with the ceiling carried on every row rather than in a footnote. Cont-Kukanov-Stoikov multi-level OFI, Lee-Ready trade-side inference, Stoikov micro-price, and an interval-valued queue-depletion decomposition. Spec `docs/research/214`; 39 tests incl. 3 R.05 passes over the real 2026-08-11 tape (135,401 transitions) and a differential property test against `tclf`. Surface at `/microstructure` (`A.79`)
 - [~] **1.23** NSE bhavcopy ingest — `L0.23` — *built on the shared ingest core (`A.46`), cash AND
       F&O, across BOTH schema eras: legacy 14-column `SYMBOL`/`TIMESTAMP` files and 34-column UDiFF
       `TckrSymb`/`TradDt` files, with the era boundary MEASURED (legacy 404s from 2024-07-08, UDiFF

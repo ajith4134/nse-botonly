@@ -8,6 +8,23 @@ Reconcile with the live task list at each session start.
 
 Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) · ⛔ blocked
 
+## `L0.22` order-book replay (2026-08-12, `A.79`) — 🟡 built, three open
+
+- 🔴 **`/microstructure` replays on request and is therefore bounded.** 25 instruments takes ~3.6s;
+  9,000 would make the page a batch job. The count is printed on the page rather than implied away, so
+  it is honest, but the right fix is a persisted read model written by the daily runner — the same shape
+  `regime_brain_read_model` deliberately avoided and this one cannot. Separate slice.
+- 🔴 **Named consumers still queued.** The feature frame is built for `L1.05` (fill model) and `L1.06`
+  (market-impact model), neither of which exists. `R.06` is satisfied by the dashboard surface today;
+  the engine is not *load-bearing* until a cost model reads it.
+- 🟡 **Duplicate books rose from 27% to 47.2% between 2026-08-11 and 2026-08-12** on the live surface.
+  Measured, unexplained. Candidates: the wider 1,420-instrument admission (`A.77`) reaching less active
+  names, or a quieter session. Worth one measurement before the duplicate-suppression work in the depth
+  capture item below is costed, since it changes the size of that prize.
+- ℹ️ **`mansoor-mamnoon/limit-order-book` surfaced for operator double-check** (`research/214` §6): the
+  one sourcing candidate that looked functionally close (its analytics already emit imbalance,
+  micro-price and impact) but needs a CMake/C++ aarch64 build never attempted here.
+
 ## Broker adapters blocked on the operator (2026-08-12, re-verified) — ⛔ OPEN
 
 - ⛔ **`L0.18` Fyers** — needs one interactive browser auth at `generate-authcode`, OR `FY_ID` + PIN +

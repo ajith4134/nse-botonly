@@ -49,9 +49,7 @@ NOW = datetime(2026, 8, 11, 6, 30, tzinfo=UTC)
 def _opinion(name: str, regime: MarketRegime, mature: bool = True) -> RegimeOpinion:
     return RegimeOpinion(
         name,
-        RegimeDistribution.from_scores(
-            {r: (6.0 if r is regime else 0.4) for r in MarketRegime}
-        ),
+        RegimeDistribution.from_scores({r: (6.0 if r is regime else 0.4) for r in MarketRegime}),
         NOW,
         mature,
         200,
@@ -60,9 +58,7 @@ def _opinion(name: str, regime: MarketRegime, mature: bool = True) -> RegimeOpin
 
 def _belief(regime: MarketRegime, agreement: float = 1.0) -> RegimeBelief:
     return RegimeBelief(
-        RegimeDistribution.from_scores(
-            {r: (6.0 if r is regime else 0.4) for r in MarketRegime}
-        ),
+        RegimeDistribution.from_scores({r: (6.0 if r is regime else 0.4) for r in MarketRegime}),
         ("trend_strength", "volatility"),
         1.0 - agreement,
         {"trend_strength": 0.5, "volatility": 0.5},
@@ -89,13 +85,25 @@ def _matured_engine(seed: int = 3) -> IntradayMeanReversionEngine:
 @pytest.mark.unit
 def test_a_distribution_must_actually_be_one() -> None:
     with pytest.raises(RegimeDistributionError):
-        RegimeDistribution({MarketRegime.TRENDING: 0.5, MarketRegime.RANGING: 0.2,
-                            MarketRegime.VOLATILE: 0.1, MarketRegime.QUIET: 0.1})
+        RegimeDistribution(
+            {
+                MarketRegime.TRENDING: 0.5,
+                MarketRegime.RANGING: 0.2,
+                MarketRegime.VOLATILE: 0.1,
+                MarketRegime.QUIET: 0.1,
+            }
+        )
     with pytest.raises(RegimeDistributionError, match="missing"):
         RegimeDistribution({MarketRegime.TRENDING: 1.0})
     with pytest.raises(RegimeDistributionError):
-        RegimeDistribution({MarketRegime.TRENDING: math.nan, MarketRegime.RANGING: 0.0,
-                            MarketRegime.VOLATILE: 0.0, MarketRegime.QUIET: 0.0})
+        RegimeDistribution(
+            {
+                MarketRegime.TRENDING: math.nan,
+                MarketRegime.RANGING: 0.0,
+                MarketRegime.VOLATILE: 0.0,
+                MarketRegime.QUIET: 0.0,
+            }
+        )
 
 
 @pytest.mark.adversarial
@@ -201,9 +209,7 @@ def test_the_session_classifier_knows_the_clock_with_certainty(
 @pytest.mark.unit
 def test_the_markov_model_separates_calm_from_turbulent() -> None:
     rng = np.random.default_rng(0)
-    training = list(
-        np.concatenate([rng.normal(0, 0.004, 200), rng.normal(0, 0.02, 200)])
-    )
+    training = list(np.concatenate([rng.normal(0, 0.004, 200), rng.normal(0, 0.02, 200)]))
     model = MarkovSwitchingRegimeModel()
     model.fit_on_history(training)
     assert model.is_mature
@@ -273,12 +279,18 @@ def test_disagreement_is_reported_rather_than_averaged_away() -> None:
     brain.arm("trend_strength")
     brain.arm("volatility")
     agreed = brain.combine(
-        [_opinion("trend_strength", MarketRegime.RANGING),
-         _opinion("volatility", MarketRegime.RANGING)], NOW
+        [
+            _opinion("trend_strength", MarketRegime.RANGING),
+            _opinion("volatility", MarketRegime.RANGING),
+        ],
+        NOW,
     )
     split = brain.combine(
-        [_opinion("trend_strength", MarketRegime.RANGING),
-         _opinion("volatility", MarketRegime.TRENDING)], NOW
+        [
+            _opinion("trend_strength", MarketRegime.RANGING),
+            _opinion("volatility", MarketRegime.TRENDING),
+        ],
+        NOW,
     )
     assert agreed.agreement == pytest.approx(1.0)
     assert split.agreement < 0.5

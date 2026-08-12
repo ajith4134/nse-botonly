@@ -46,9 +46,7 @@ FULL_DUMP_ROW_COUNT = 113_955
 FULL_DUMP_NFO_UNDERLYINGS = 213
 SAFETY_MULTIPLE = Decimal(2)
 MINIMUM_TOLERANCE = Decimal("0.05")
-INDEX_OPTION_UNDERLYINGS = frozenset(
-    {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50"}
-)
+INDEX_OPTION_UNDERLYINGS = frozenset({"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50"})
 
 
 @pytest.fixture
@@ -206,9 +204,7 @@ def test_non_finite_prices_are_rejected(real_dump_text: str, poison: str) -> Non
 
 @pytest.mark.adversarial
 @pytest.mark.parametrize("column", ["last_price", "strike", "tick_size", "lot_size"])
-def test_a_blank_numeric_is_rejected_not_coerced_to_zero(
-    real_dump_text: str, column: str
-) -> None:
+def test_a_blank_numeric_is_rejected_not_coerced_to_zero(real_dump_text: str, column: str) -> None:
     """Kills the "blank becomes Decimal(1)" mutant, and defect 9.
 
     A blank lot size silently becoming 0 is an order-sizing hazard, and a blank

@@ -54,9 +54,7 @@ EXPECTED_AVERAGE_TRADED_PRICE_PAISE = 124_900
 
 
 def _levels(prices: list[int], quantity: int = 100) -> tuple[DepthLevel, ...]:
-    return tuple(
-        DepthLevel(price_paise=price, quantity=quantity, orders=3) for price in prices
-    )
+    return tuple(DepthLevel(price_paise=price, quantity=quantity, orders=3) for price in prices)
 
 
 def _packet(
@@ -298,9 +296,7 @@ def test_one_late_packet_does_not_drag_the_watermark_backwards(
     after it would be judged against a stale watermark and pass silently."""
     base = datetime(2026, 8, 11, 10, 0, tzinfo=IST).astimezone(UTC)
     classifier.classify(_packet(exchange_time=base, sequence=1, volume=1))
-    classifier.classify(
-        _packet(exchange_time=base - timedelta(seconds=30), sequence=2, volume=2)
-    )
+    classifier.classify(_packet(exchange_time=base - timedelta(seconds=30), sequence=2, volume=2))
     still_late = classifier.classify(
         _packet(exchange_time=base - timedelta(seconds=10), sequence=3, volume=3)
     )
@@ -322,9 +318,7 @@ def test_packet_on_a_non_session_date_is_flagged(
     classifier: DepthPacketIntegrityClassifier,
 ) -> None:
     sunday = datetime(2026, 8, 9, 10, 0, tzinfo=IST).astimezone(UTC)
-    assert IntegrityFlag.OUTSIDE_SESSION_WINDOW & classifier.classify(
-        _packet(receipt_time=sunday)
-    )
+    assert IntegrityFlag.OUTSIDE_SESSION_WINDOW & classifier.classify(_packet(receipt_time=sunday))
 
 
 # ------------------------------------------------- the derived staleness threshold
@@ -337,12 +331,8 @@ def test_staleness_flag_is_withheld_until_the_estimate_is_mature(
     """`R.04`: the algorithm is full-strength from the first packet; only its
     activation waits for enough data to mean anything."""
     receipt = datetime(2026, 8, 11, 10, 0, tzinfo=IST).astimezone(UTC)
-    outrageous = _packet(
-        exchange_time=receipt - timedelta(hours=3), receipt_time=receipt
-    )
-    assert not (
-        IntegrityFlag.STALE_BEYOND_DERIVED_THRESHOLD & classifier.classify(outrageous)
-    )
+    outrageous = _packet(exchange_time=receipt - timedelta(hours=3), receipt_time=receipt)
+    assert not (IntegrityFlag.STALE_BEYOND_DERIVED_THRESHOLD & classifier.classify(outrageous))
     assert not classifier.state_for(738561).staleness_threshold_is_mature
 
 
@@ -551,9 +541,7 @@ def test_staleness_exactly_at_the_threshold_is_not_flagged(
         sequence=99_998,
         volume=99_998,
     )
-    assert not (
-        IntegrityFlag.STALE_BEYOND_DERIVED_THRESHOLD & classifier.classify(at_threshold)
-    )
+    assert not (IntegrityFlag.STALE_BEYOND_DERIVED_THRESHOLD & classifier.classify(at_threshold))
 
 
 @pytest.mark.unit
@@ -574,9 +562,7 @@ def test_every_quote_field_survives_normalization() -> None:
             "sell": [{"price": 1250.05, "quantity": 1, "orders": 1} for _ in range(5)],
         },
     }
-    packet = depth_packet_from_kite_tick(
-        kite_tick, "NSE", datetime(2026, 8, 11, tzinfo=UTC), 1
-    )
+    packet = depth_packet_from_kite_tick(kite_tick, "NSE", datetime(2026, 8, 11, tzinfo=UTC), 1)
     assert packet.last_traded_quantity == EXPECTED_LAST_TRADED_QUANTITY
     assert packet.volume_traded == EXPECTED_VOLUME_TRADED
     assert packet.total_buy_quantity == EXPECTED_TOTAL_BUY_QUANTITY

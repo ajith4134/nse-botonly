@@ -53,9 +53,7 @@ class VolatilityRegimeClassifier:
 
     name: str = "volatility"
     _returns: list[float] = field(default_factory=list)
-    _quiet_quantile: stats.Quantile = field(
-        default_factory=lambda: stats.Quantile(QUIET_QUANTILE)
-    )
+    _quiet_quantile: stats.Quantile = field(default_factory=lambda: stats.Quantile(QUIET_QUANTILE))
     _volatile_quantile: stats.Quantile = field(
         default_factory=lambda: stats.Quantile(VOLATILE_QUANTILE)
     )
@@ -80,9 +78,9 @@ class VolatilityRegimeClassifier:
                 self._returns = self._returns[-RETURN_WINDOW:]
             if len(self._returns) >= MINIMUM_RETURNS_FOR_VARIANCE:
                 mean_return = sum(self._returns) / len(self._returns)
-                variance = sum(
-                    (value - mean_return) ** 2 for value in self._returns
-                ) / (len(self._returns) - 1)
+                variance = sum((value - mean_return) ** 2 for value in self._returns) / (
+                    len(self._returns) - 1
+                )
                 self._latest_volatility = math.sqrt(max(0.0, variance))
                 # Learn the instrument's own distribution AFTER using the current
                 # estimate, so a reading can never be the reason it is judged normal.

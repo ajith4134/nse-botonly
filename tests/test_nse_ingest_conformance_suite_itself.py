@@ -100,9 +100,7 @@ class CollidingKeyAdapter(WellBehavedAdapter):
     def parse(self, payload: bytes, target: FetchTarget) -> Sequence[IngestRow]:
         rows = super().parse(payload, target)
         return [
-            IngestRow(
-                values=row.values, effective_date=row.effective_date, natural_key=("SAME",)
-            )
+            IngestRow(values=row.values, effective_date=row.effective_date, natural_key=("SAME",))
             for row in rows
         ]
 
@@ -211,9 +209,7 @@ def test_an_as_of_read_is_the_leakage_guard(tmp_path: Path) -> None:
     adapter = WellBehavedAdapter()
     monday = datetime(2026, 8, 10, 12, tzinfo=UTC)
     with BitemporalIngestStore(tmp_path / "asof.sqlite3") as store:
-        fetch_id = store.record_fetch(
-            adapter.source_name, "u", monday, "retrieved", "e", 1
-        )
+        fetch_id = store.record_fetch(adapter.source_name, "u", monday, "retrieved", "e", 1)
         store.ingest_rows(
             adapter.source_name,
             [IngestRow({"close": 100}, SAMPLE_DAY, ("RELIANCE",))],

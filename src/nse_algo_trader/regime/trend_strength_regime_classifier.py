@@ -120,9 +120,7 @@ class WilderDirectionalState:
         indicator_sum = positive_indicator + negative_indicator
         if indicator_sum <= 0.0:
             return
-        directional_index = (
-            100.0 * abs(positive_indicator - negative_indicator) / indicator_sum
-        )
+        directional_index = 100.0 * abs(positive_indicator - negative_indicator) / indicator_sum
         if self.bars_seen <= WILDER_PERIOD + 1:
             self.smoothed_directional_index = directional_index
         else:
@@ -231,9 +229,7 @@ class TrendStrengthRegimeClassifier:
         efficiency = self._efficiency_ratio()
         return {
             MarketRegime.TRENDING: (adx / 100.0) + efficiency + (1.0 - choppiness / 100.0),
-            MarketRegime.RANGING: (1.0 - adx / 100.0)
-            + (1.0 - efficiency)
-            + (choppiness / 100.0),
+            MarketRegime.RANGING: (1.0 - adx / 100.0) + (1.0 - efficiency) + (choppiness / 100.0),
         }
 
     def opinion(self, observed_at: datetime) -> RegimeOpinion:
@@ -270,9 +266,7 @@ class TrendStrengthRegimeClassifier:
             ),
         )
 
-    def observe_bars(
-        self, bars: Sequence[tuple[float, float, float]]
-    ) -> None:
+    def observe_bars(self, bars: Sequence[tuple[float, float, float]]) -> None:
         """Convenience for replaying a session: (high, low, close) in time order."""
         for high, low, close in bars:
             self.observe(high, low, close)

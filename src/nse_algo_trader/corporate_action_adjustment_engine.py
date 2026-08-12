@@ -91,9 +91,7 @@ class CorporateAction:
         if not self.symbol.strip():
             raise CorporateActionError("symbol must be a non-empty string")
         if not isinstance(self.ex_date, date):
-            raise CorporateActionError(
-                f"ex_date must be a date, not {type(self.ex_date).__name__}"
-            )
+            raise CorporateActionError(f"ex_date must be a date, not {type(self.ex_date).__name__}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,9 +150,7 @@ class SeriesTrust:
 # (14 actions), `Face Valus Split` (2), `Fv Spl-Rs10tors2/Bon-1:1` (10, with no
 # spaces at all). These are real splits that a tidy regex silently drops, and a
 # dropped split is indistinguishable from no split.
-_FACE_VALUE_LEAD: Final = (
-    r"(?:face\s*val\w*\s*spl\w*|fv\s*spl\w*|\bsplit\b|\bconsolidat\w*)"
-)
+_FACE_VALUE_LEAD: Final = r"(?:face\s*val\w*\s*spl\w*|fv\s*spl\w*|\bsplit\b|\bconsolidat\w*)"
 _SPLIT_PATTERNS: Final = (
     re.compile(
         r"(?P<lead>" + _FACE_VALUE_LEAD + r")"
@@ -178,21 +174,51 @@ _RIGHTS_PATTERNS: Final = (
 # factor of 1/7 on a day the stock moved 2.8%, and `ZEEL` 2014 got 1/22 on a flat
 # day — the engine injecting exactly the fake crash it exists to prevent.
 _NON_EQUITY_BONUS_MARKERS: Final = (
-    "debenture", "ncrps", "ncd", "preference", "pref share", "dvr", "warrant",
-    "bond", "unit", "ncrp",
+    "debenture",
+    "ncrps",
+    "ncd",
+    "preference",
+    "pref share",
+    "dvr",
+    "warrant",
+    "bond",
+    "unit",
+    "ncrp",
 )
 # Real price impact, no number anywhere in the text.
 _UNQUANTIFIED_MARKERS: Final = (
-    "demerger", "de-merger", "de merger", "scheme of arrangement", "spin off", "spin-off",
-    "amalgamation", "reduction of capital", "capital reduction", "composite scheme",
+    "demerger",
+    "de-merger",
+    "de merger",
+    "scheme of arrangement",
+    "spin off",
+    "spin-off",
+    "amalgamation",
+    "reduction of capital",
+    "capital reduction",
+    "composite scheme",
 )
 # Inert. Buyback is deliberately here: it changes share count but the exchange does
 # not adjust the price series for it.
 _INERT_MARKERS: Final = (
-    "annual general meeting", "agm", "dividend", "interest payment", "buy back", "buyback",
-    "extra ordinary general meeting", "extra-ordinary general meeting", "egm",
-    "postal ballot", "book closure", "court convened", "distribution -", "int div",
-    "board meeting", "results", "interest", "redemption",
+    "annual general meeting",
+    "agm",
+    "dividend",
+    "interest payment",
+    "buy back",
+    "buyback",
+    "extra ordinary general meeting",
+    "extra-ordinary general meeting",
+    "egm",
+    "postal ballot",
+    "book closure",
+    "court convened",
+    "distribution -",
+    "int div",
+    "board meeting",
+    "results",
+    "interest",
+    "redemption",
 )
 
 _SCHEMA: Final[str] = """
@@ -261,11 +287,19 @@ class CorporateActionAdjustmentEngine:
         # trusted either.
         if any(marker in lowered for marker in _UNQUANTIFIED_MARKERS):
             return ParsedAction(
-                action, ActionClass.ADJUSTMENT_REQUIRED_BUT_UNQUANTIFIED, AdjustmentKind.NONE,
-                None, None,
-                (("subject", subject),
-                 ("reason", "this action moves the price but the feed carries no usable ratio; "
-                            "any ratio elsewhere in the same subject describes only part of it")),
+                action,
+                ActionClass.ADJUSTMENT_REQUIRED_BUT_UNQUANTIFIED,
+                AdjustmentKind.NONE,
+                None,
+                None,
+                (
+                    ("subject", subject),
+                    (
+                        "reason",
+                        "this action moves the price but the feed carries no usable ratio; "
+                        "any ratio elsewhere in the same subject describes only part of it",
+                    ),
+                ),
             )
 
         # Components are COMPOSED, not raced. Ten real actions carry a split and a
@@ -287,26 +321,41 @@ class CorporateActionAdjustmentEngine:
                 price *= price_part
                 quantity *= quantity_part
                 evidence.extend(detail)
-            resolved_kind = (
-                components[0][0] if len(components) == 1 else AdjustmentKind.COMPOUND
-            )
+            resolved_kind = components[0][0] if len(components) == 1 else AdjustmentKind.COMPOUND
             if len(components) > 1:
                 evidence.append(("components", str(len(components))))
             return ParsedAction(
-                action, ActionClass.ADJUSTING_QUANTIFIED, resolved_kind,
-                price, quantity, tuple(evidence),
+                action,
+                ActionClass.ADJUSTING_QUANTIFIED,
+                resolved_kind,
+                price,
+                quantity,
+                tuple(evidence),
             )
 
         if any(marker in lowered for marker in _INERT_MARKERS):
             return ParsedAction(
-                action, ActionClass.NON_ADJUSTING, AdjustmentKind.NONE, None, None,
+                action,
+                ActionClass.NON_ADJUSTING,
+                AdjustmentKind.NONE,
+                None,
+                None,
                 (("subject", subject), ("reason", "no price adjustment for this action type")),
             )
         return ParsedAction(
-            action, ActionClass.UNPARSED, AdjustmentKind.NONE, None, None,
-            (("subject", subject),
-             ("reason", "no pattern matched; reported rather than assumed inert, because a "
-                        "dropped split is indistinguishable from no split")),
+            action,
+            ActionClass.UNPARSED,
+            AdjustmentKind.NONE,
+            None,
+            None,
+            (
+                ("subject", subject),
+                (
+                    "reason",
+                    "no pattern matched; reported rather than assumed inert, because a "
+                    "dropped split is indistinguishable from no split",
+                ),
+            ),
         )
 
     def _match_split(self, subject: str) -> _Component | None:
@@ -339,11 +388,14 @@ class CorporateActionAdjustmentEngine:
                 # expansion to history on the strength of a typo.
                 return None
             kind = (
-                AdjustmentKind.RATIO_CONSOLIDATION if says_consolidation
+                AdjustmentKind.RATIO_CONSOLIDATION
+                if says_consolidation
                 else AdjustmentKind.RATIO_SPLIT
             )
             return (
-                kind, after / before, before / after,
+                kind,
+                after / before,
+                before / after,
                 (("face_value_before", str(before)), ("face_value_after", str(after))),
             )
         return None
@@ -362,7 +414,9 @@ class CorporateActionAdjustmentEngine:
             # `Bonus a:b` — a new shares for every b held, so b becomes a+b.
             total = new + held
             return (
-                AdjustmentKind.RATIO_BONUS, held / total, total / held,
+                AdjustmentKind.RATIO_BONUS,
+                held / total,
+                total / held,
                 (("new_per_held", f"{new}:{held}"),),
             )
         return None
@@ -380,19 +434,26 @@ class CorporateActionAdjustmentEngine:
             # neither of which is in the subject line. The ratio is recorded; the
             # factor is deliberately withheld rather than approximated.
             return ParsedAction(
-                action, ActionClass.ADJUSTMENT_REQUIRED_BUT_UNQUANTIFIED,
-                AdjustmentKind.RATIO_RIGHTS, None, None,
-                (("subject", subject), ("new_per_held", f"{new}:{held}"),
-                 ("reason", "a rights factor needs the cum-rights close and the issue price; "
-                            "the ratio alone does not determine it")),
+                action,
+                ActionClass.ADJUSTMENT_REQUIRED_BUT_UNQUANTIFIED,
+                AdjustmentKind.RATIO_RIGHTS,
+                None,
+                None,
+                (
+                    ("subject", subject),
+                    ("new_per_held", f"{new}:{held}"),
+                    (
+                        "reason",
+                        "a rights factor needs the cum-rights close and the issue price; "
+                        "the ratio alone does not determine it",
+                    ),
+                ),
             )
         return None
 
     # ------------------------------------------------------------------ ingest
 
-    def ingest(
-        self, actions: list[CorporateAction], *, known_as_of: date | None = None
-    ) -> int:
+    def ingest(self, actions: list[CorporateAction], *, known_as_of: date | None = None) -> int:
         if not actions:
             return 0
         try:
@@ -402,8 +463,12 @@ class CorporateActionAdjustmentEngine:
                     " face_value, series, known_as_of) VALUES (?,?,?,?,?,?,?)",
                     [
                         (
-                            item.symbol, item.ex_date.isoformat(), item.subject, item.isin,
-                            item.face_value, item.series,
+                            item.symbol,
+                            item.ex_date.isoformat(),
+                            item.subject,
+                            item.isin,
+                            item.face_value,
+                            item.series,
                             (known_as_of or item.ex_date).isoformat(),
                         )
                         for item in actions
@@ -425,14 +490,10 @@ class CorporateActionAdjustmentEngine:
             parsed_date = _feed_date(ex_text)
             if parsed_date is None:
                 continue
-            actions.append(
-                CorporateAction(symbol, parsed_date, subject, isin, face_value, series)
-            )
+            actions.append(CorporateAction(symbol, parsed_date, subject, isin, face_value, series))
         return self.ingest(actions)
 
-    def _actions_for(
-        self, symbol: str, known_as_of: date | None = None
-    ) -> list[CorporateAction]:
+    def _actions_for(self, symbol: str, known_as_of: date | None = None) -> list[CorporateAction]:
         """Actions for a symbol as believed at ``known_as_of``.
 
         The belief filter was previously absent from every read path: the column
@@ -445,8 +506,7 @@ class CorporateActionAdjustmentEngine:
             (symbol, self._belief_bound(known_as_of)),
         ).fetchall()
         return [
-            CorporateAction(str(r[0]), date.fromisoformat(str(r[1])), str(r[2]),
-                            r[3], r[4], r[5])
+            CorporateAction(str(r[0]), date.fromisoformat(str(r[1])), str(r[2]), r[3], r[4], r[5])
             for r in rows
         ]
 
@@ -498,9 +558,7 @@ class CorporateActionAdjustmentEngine:
     ) -> SeriesTrust:
         """Whether a restated series over ``[start, end]`` can be relied on."""
         if end < start:
-            raise CorporateActionError(
-                f"end {end.isoformat()} is before start {start.isoformat()}"
-            )
+            raise CorporateActionError(f"end {end.isoformat()} is before start {start.isoformat()}")
         unquantified, unparsed = [], []
         for action in self._actions_for(symbol, known_as_of):
             if not start <= action.ex_date <= end:

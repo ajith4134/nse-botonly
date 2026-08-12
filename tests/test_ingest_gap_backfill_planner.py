@@ -165,9 +165,14 @@ def test_backfill_returns_none_when_there_is_nothing_to_do(
     for day in (date(2026, 8, 3), date(2026, 8, 4)):
         _store_a_day(store, day, now)
     report = find_missing_dates(store, SOURCE, date(2026, 8, 3), date(2026, 8, 4))
-    assert backfill_missing_dates(
-        NseSourceIngestRunner(StubFetcher({}), store), WellBehavedAdapter(), report  # type: ignore[arg-type]
-    ) is None
+    assert (
+        backfill_missing_dates(
+            NseSourceIngestRunner(StubFetcher({}), store),
+            WellBehavedAdapter(),
+            report,  # type: ignore[arg-type]
+        )
+        is None
+    )
 
 
 @pytest.mark.adversarial
@@ -245,6 +250,4 @@ def test_a_rolling_source_with_undated_urls_reports_never_attempted(
         SOURCE, "https://archives.nseindia.com/rolling.csv", now, "retrieved", "ok", 1
     )
     report = find_missing_dates(store, SOURCE, WINDOW_START, WINDOW_END)
-    assert all(
-        entry.reason is MissingDateReason.NEVER_ATTEMPTED for entry in report.missing
-    )
+    assert all(entry.reason is MissingDateReason.NEVER_ATTEMPTED for entry in report.missing)

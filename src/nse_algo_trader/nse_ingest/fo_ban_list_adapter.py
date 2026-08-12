@@ -38,9 +38,7 @@ from nse_algo_trader.nse_ingest.nse_source_fetcher import FetchTarget
 FO_BAN_LIST_URL = "https://nsearchives.nseindia.com/content/fo/fo_secban.csv"
 """The single rolling file. Verified reachable, unauthenticated, 2026-08-11."""
 
-_TRADE_DATE_PATTERN = re.compile(
-    rb"Trade\s+Date\s*:?\s*(\d{1,2}-[A-Za-z]{3}-\d{4})", re.IGNORECASE
-)
+_TRADE_DATE_PATTERN = re.compile(rb"Trade\s+Date\s*:?\s*(\d{1,2}-[A-Za-z]{3}-\d{4})", re.IGNORECASE)
 
 _BANNED_ROW_PATTERN = re.compile(r"^\s*(\d+)\s*,\s*([A-Za-z0-9&._-]+)\s*$")
 

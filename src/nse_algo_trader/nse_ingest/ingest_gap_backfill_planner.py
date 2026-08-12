@@ -103,9 +103,7 @@ class SourceGapReport:
         return tuple(entry for entry in self.missing if entry.reason is reason)
 
     def describe(self) -> str:
-        counts = {
-            reason.value: len(self.by_reason(reason)) for reason in MissingDateReason
-        }
+        counts = {reason.value: len(self.by_reason(reason)) for reason in MissingDateReason}
         return (
             f"{self.source_name} {self.window_start}..{self.window_end}: "
             f"{self.dates_present}/{self.trading_sessions} present · "
@@ -169,8 +167,12 @@ def find_missing_dates(
     for session in sessions:
         if session in present:
             continue
-        stamps = (session.isoformat(), session.strftime("%d%m%Y"), session.strftime("%Y%m%d"),
-                  session.strftime("%d%b%Y").upper())
+        stamps = (
+            session.isoformat(),
+            session.strftime("%d%m%Y"),
+            session.strftime("%Y%m%d"),
+            session.strftime("%d%b%Y").upper(),
+        )
         matched: list[tuple[str, str]] = []
         for url, records in attempts_by_date.items():
             if any(stamp in url for stamp in stamps):

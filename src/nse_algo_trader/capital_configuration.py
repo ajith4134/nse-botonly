@@ -71,9 +71,7 @@ def _require_finite_decimal(value: object, description: str) -> Decimal:
             "across a session's sizing calls"
         )
     if not value.is_finite():
-        raise CapitalConfigurationError(
-            f"{description} must be a finite amount; got {value}"
-        )
+        raise CapitalConfigurationError(f"{description} must be a finite amount; got {value}")
     return value
 
 

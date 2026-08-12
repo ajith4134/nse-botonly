@@ -116,9 +116,7 @@ def _csv_rows_from_zip(payload: bytes) -> list[dict[str, str]]:
     """
     try:
         with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-            csv_members = [
-                name for name in archive.namelist() if name.lower().endswith(".csv")
-            ]
+            csv_members = [name for name in archive.namelist() if name.lower().endswith(".csv")]
             if not csv_members:
                 raise IngestAdapterError("MWPL ZIP contains no .csv member")
             text = archive.read(csv_members[0]).decode("utf-8", "replace")

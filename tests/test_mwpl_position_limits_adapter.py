@@ -98,7 +98,10 @@ def test_only_combineoi_is_offered_not_the_dead_end_nseoi_name() -> None:
     assert len(targets) == 1
     assert "combineoi_" in targets[0].url
     assert "nseoi_" not in targets[0].url
-    assert targets[0].url == "https://nsearchives.nseindia.com/archives/nsccl/mwpl/combineoi_10082026.zip"
+    assert (
+        targets[0].url
+        == "https://nsearchives.nseindia.com/archives/nsccl/mwpl/combineoi_10082026.zip"
+    )
 
 
 @pytest.mark.unit

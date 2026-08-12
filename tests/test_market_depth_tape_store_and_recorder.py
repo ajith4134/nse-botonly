@@ -206,9 +206,7 @@ def test_integrity_flags_survive_the_round_trip(tmp_path: Path) -> None:
 def test_book_at_returns_the_last_row_at_or_before_the_instant(tmp_path: Path) -> None:
     with _store(tmp_path) as store:
         for sequence in range(1, 11):
-            store.append(
-                _packet(sequence=sequence, price=125_000 + sequence), IntegrityFlag.NONE
-            )
+            store.append(_packet(sequence=sequence, price=125_000 + sequence), IntegrityFlag.NONE)
     book = MarketDepthTapeReader(tmp_path).book_at(
         738561, BASE_TIME + timedelta(seconds=5, milliseconds=500), SESSION_DATE
     )
@@ -221,9 +219,7 @@ def test_book_at_returns_the_last_row_at_or_before_the_instant(tmp_path: Path) -
 def test_book_at_is_none_before_the_first_packet(tmp_path: Path) -> None:
     with _store(tmp_path) as store:
         store.append(_packet(sequence=10), IntegrityFlag.NONE)
-    assert (
-        MarketDepthTapeReader(tmp_path).book_at(738561, BASE_TIME, SESSION_DATE) is None
-    )
+    assert MarketDepthTapeReader(tmp_path).book_at(738561, BASE_TIME, SESSION_DATE) is None
 
 
 @pytest.mark.unit
@@ -382,9 +378,7 @@ def test_every_appended_packet_appears_exactly_once(
     table = MarketDepthTapeReader(tape_root).read_instrument_window(
         738561, BASE_TIME, BASE_TIME + timedelta(days=1), SESSION_DATE
     )
-    assert sorted(table.column("receipt_sequence").to_pylist()) == list(
-        range(1, packet_count + 1)
-    )
+    assert sorted(table.column("receipt_sequence").to_pylist()) == list(range(1, packet_count + 1))
 
 
 # --------------------------------------------------------- admission control
@@ -530,9 +524,7 @@ def test_shedding_drops_the_least_liquid_first(tmp_path: Path) -> None:
 
 @pytest.mark.unit
 def test_nothing_is_shed_when_the_budget_holds(tmp_path: Path) -> None:
-    assert (
-        _controller(tmp_path).tokens_to_shed([1, 2], {1: 1.0, 2: 2.0}, 100.0, 500.0) == ()
-    )
+    assert _controller(tmp_path).tokens_to_shed([1, 2], {1: 1.0, 2: 2.0}, 100.0, 500.0) == ()
 
 
 # ------------------------------------------------------------------ recorder
@@ -667,9 +659,7 @@ def test_a_recorder_with_no_shards_is_refused() -> None:
             session_date=SESSION_DATE,
             shards=[],
             classifier=DepthPacketIntegrityClassifier(),
-            admission_decision=AdmissionDecision(
-                (), (), 0.0, 1.0, 1.0, 1.0, False, 0, None
-            ),
+            admission_decision=AdmissionDecision((), (), 0.0, 1.0, 1.0, 1.0, False, 0, None),
             session_ends_at=datetime.now(UTC),
         )
 
@@ -696,9 +686,7 @@ def test_run_until_session_end_returns_at_the_close(tmp_path: Path) -> None:
 
 @pytest.mark.hermetic
 def test_request_stop_ends_the_session_early(tmp_path: Path) -> None:
-    recorder, _, _ = _recorder(
-        tmp_path, [], session_ends_at=datetime.now(UTC) + timedelta(hours=6)
-    )
+    recorder, _, _ = _recorder(tmp_path, [], session_ends_at=datetime.now(UTC) + timedelta(hours=6))
     recorder.start()
     threading.Timer(0.05, recorder.request_stop).start()
     recorder.run_until_session_end(poll_seconds=0.01)
@@ -774,9 +762,7 @@ def test_packet_rates_are_measured_over_each_instruments_own_span(tmp_path: Path
         for sequence in range(1, 101):
             store.append(_packet(token=fast_token, sequence=sequence), IntegrityFlag.NONE)
         for sequence in range(1, 11):
-            store.append(
-                _packet(token=slow_token, sequence=sequence * 10), IntegrityFlag.NONE
-            )
+            store.append(_packet(token=slow_token, sequence=sequence * 10), IntegrityFlag.NONE)
     rates = MarketDepthTapeReader(tmp_path).instrument_packet_rates(SESSION_DATE)
     # 100 packets one second apart spans 99s; 10 packets ten seconds apart spans 90s.
     assert rates[fast_token] == pytest.approx(100 / 99, rel=1e-6)

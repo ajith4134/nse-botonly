@@ -133,8 +133,7 @@ def test_refresh_replaces_rather_than_accumulates(store: BrokerSymbolStore) -> N
     first = _credible_master()
     AngelOneSymbologyResolver(store, fetch_master=lambda: first).refresh(today=TODAY)
     second = [
-        _angel_row(f"OTHER{i:04d}", str(i + 5000))
-        for i in range(MINIMUM_CREDIBLE_EQUITY_ROWS + 10)
+        _angel_row(f"OTHER{i:04d}", str(i + 5000)) for i in range(MINIMUM_CREDIBLE_EQUITY_ROWS + 10)
     ]
     AngelOneSymbologyResolver(store, fetch_master=lambda: second).refresh(today=TODAY)
     assert store.identifier_for(BrokerName.ANGEL_ONE, "SYM0000") is None
@@ -189,7 +188,5 @@ def test_coverage_makes_single_sourced_reconciliation_visible(
         BrokerName.ANGEL_ONE,
         [BrokerSymbol(BrokerName.ANGEL_ONE, "NSE", "RELIANCE", "2885", "RELIANCE-EQ", "EQ", TODAY)],
     )
-    coverage = coverage_against(
-        store, [BrokerName.ANGEL_ONE], ["RELIANCE", "INFY", "TCS"]
-    )
+    coverage = coverage_against(store, [BrokerName.ANGEL_ONE], ["RELIANCE", "INFY", "TCS"])
     assert coverage[BrokerName.ANGEL_ONE] == (1, 3)

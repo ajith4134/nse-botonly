@@ -122,8 +122,10 @@ class BarRecord:
 
     def __post_init__(self) -> None:
         for label, text in (
-            ("exchange", self.exchange), ("segment", self.segment),
-            ("tradingsymbol", self.tradingsymbol), ("bar_interval", self.bar_interval),
+            ("exchange", self.exchange),
+            ("segment", self.segment),
+            ("tradingsymbol", self.tradingsymbol),
+            ("bar_interval", self.bar_interval),
         ):
             if not isinstance(text, str) or not text.strip():
                 raise BarValidationError(
@@ -153,8 +155,10 @@ class BarRecord:
             )
 
         for label, price in (
-            ("open_price", self.open_price), ("high_price", self.high_price),
-            ("low_price", self.low_price), ("close_price", self.close_price),
+            ("open_price", self.open_price),
+            ("high_price", self.high_price),
+            ("low_price", self.low_price),
+            ("close_price", self.close_price),
         ):
             if not isinstance(price, Decimal):
                 raise BarValidationError(
@@ -308,12 +312,20 @@ class BitemporalBarStore:
                     " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     [
                         (
-                            bar.exchange, bar.segment, bar.tradingsymbol, bar.bar_interval,
-                            _utc_key(bar.bar_timestamp), _utc_key(bar.available_from),
+                            bar.exchange,
+                            bar.segment,
+                            bar.tradingsymbol,
+                            bar.bar_interval,
+                            _utc_key(bar.bar_timestamp),
+                            _utc_key(bar.available_from),
                             _offset_seconds(bar.bar_timestamp),
                             _offset_seconds(bar.available_from),
-                            bar.instrument_token, str(bar.open_price), str(bar.high_price),
-                            str(bar.low_price), str(bar.close_price), bar.volume,
+                            bar.instrument_token,
+                            str(bar.open_price),
+                            str(bar.high_price),
+                            str(bar.low_price),
+                            str(bar.close_price),
+                            bar.volume,
                             bar.open_interest,
                         )
                         for bar in bars
@@ -372,13 +384,17 @@ class BitemporalBarStore:
     @staticmethod
     def _to_record(row: tuple[object, ...]) -> BarRecord:
         return BarRecord(
-            exchange=str(row[0]), segment=str(row[1]), tradingsymbol=str(row[2]),
+            exchange=str(row[0]),
+            segment=str(row[1]),
+            tradingsymbol=str(row[2]),
             bar_interval=str(row[3]),
             bar_timestamp=_restore_offset(str(row[4]), int(str(row[6]))),
             available_from=_restore_offset(str(row[5]), int(str(row[7]))),
             instrument_token=int(str(row[8])),
-            open_price=Decimal(str(row[9])), high_price=Decimal(str(row[10])),
-            low_price=Decimal(str(row[11])), close_price=Decimal(str(row[12])),
+            open_price=Decimal(str(row[9])),
+            high_price=Decimal(str(row[10])),
+            low_price=Decimal(str(row[11])),
+            close_price=Decimal(str(row[12])),
             volume=int(str(row[13])),
             open_interest=None if row[14] is None else int(str(row[14])),
         )

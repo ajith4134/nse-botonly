@@ -78,9 +78,7 @@ def test_backfilled_data_is_admitted_despite_a_late_fetch_time() -> None:
     fetch time would block essentially the entire history from ever being replayed.
     """
     firewall = _firewall(NEXT_DAY)
-    ancient = ObservableRow(
-        "bhavcopy", date(2020, 1, 2), datetime(2026, 8, 11, 23, 0, tzinfo=UTC)
-    )
+    ancient = ObservableRow("bhavcopy", date(2020, 1, 2), datetime(2026, 8, 11, 23, 0, tzinfo=UTC))
     firewall.assert_observable(ancient)
     assert firewall.ledger.admitted == 1
 

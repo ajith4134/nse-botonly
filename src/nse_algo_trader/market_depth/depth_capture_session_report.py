@@ -312,9 +312,7 @@ def build_session_report(
     # one-session rows overstated bytes/row 5x in review, and that figure is what the
     # admission controller sizes the capture universe from.
     session_directory = tape_root / f"session_date={session_date.isoformat()}"
-    session_bytes = sum(
-        part.stat().st_size for part in session_directory.rglob("*.parquet")
-    )
+    session_bytes = sum(part.stat().st_size for part in session_directory.rglob("*.parquet"))
     return DepthCaptureSessionReport(
         session_date=session_date,
         tape_root=tape_root,
