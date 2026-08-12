@@ -8,6 +8,25 @@ Reconcile with the live task list at each session start.
 
 Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) · ⛔ blocked
 
+## Broker session + credential path (2026-08-12, opened by the `A.75` audit) — 🔴 OPEN
+
+- 🔴 **The entire Kite login path has no tests.** `broker_sessions/kite_totp_auto_login.py`,
+  `kite_access_token_store.py`, `authenticated_kite_client_builder.py`,
+  `broker_credentials/broker_api_credentials_loader.py` and `kite_login_credentials_loader.py` are all
+  live in the daily runner and none has a test file. This is the code holding the credentials for the
+  **only execution broker**, and `L3.13` has just demonstrated that a token store can round-trip
+  perfectly and still hand out clients that cannot authenticate. Owner: tasks `2.42`/`2.43`/`2.44`, now
+  `[~]`. Done when each has unit + adversarial tests and one R.05 rehydrate-and-call test like
+  `test_a_rehydrated_client_can_actually_talk_to_angel`.
+- 🔴 **A warning policy can silently disable a broker.** `SmartConnect.__init__` trips
+  `error::DeprecationWarning` (`ssl.OP_NO_TLSv1`); `_build_angel_one_client`'s blanket `except Exception`
+  turns that into `None`, which every caller reads as "the broker is unreachable". The `L3.13` real-data
+  test carries a `filterwarnings` mark as a local workaround. The general fix is to stop letting a
+  builder report a LOCAL defect as a REMOTE outage — the two need distinguishable answers (`A.74`).
+- 🔴 **`ANGEL_ONE_*` secrets reach the terminal through SmartAPI's own error logging.** On a failed call
+  the library logs the full request body, refresh token included. Nothing this project wrote leaked it,
+  and the daily runner's output goes to a file — which is the problem, not the mitigation.
+
 ## Wave 2 adapters (2026-08-11) — 🟢 ALL SIX LANDED, gate green
 
 All three of `research/207`'s BLOCKED verdicts were overturned (`A.53`, `A.54`, `A.55`) — see `O.40`.

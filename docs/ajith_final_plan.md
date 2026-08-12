@@ -2664,6 +2664,67 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.75 · 2026-08-12 · The tree was reconciled against this catalog and the todo, and the todo was found
+UNDER-claiming, not over-claiming.** A read-only audit matched all 58 modules, 33 test files and 215
+commits against the 93 `[x]`/`[~]` task lines. Four results, in order of how much they matter:
+
+**No false-done.** Every task claiming code has code. All 45 code-claiming ticks resolve to a module,
+script or systemd unit that exists on this host. The audit was designed to find the opposite and did not.
+
+**Seven modules were carrying no task.** `broker_credentials/broker_api_credentials_loader.py`,
+`broker_credentials/kite_login_credentials_loader.py`, `broker_sessions/kite_totp_auto_login.py`,
+`broker_sessions/kite_access_token_store.py`, `broker_sessions/authenticated_kite_client_builder.py`
+(all `L3.10`–`L3.12`, all shipped inside commit `f713ad7` whose subject cites `L0.20/L0.21` instead),
+`dashboard/dashboard_surface_screenshot_capture.py` (`L13.28`), and `broker_sessions/angel_one_session_store.py`
+(`L3.13`, uncommitted at audit time — now `A.74`). This is the R.06 failure in its quiet form: not dead
+code, but *live* code that no plan entry claims, so nothing tracks whether it is finished or tested.
+
+**Five of those seven have no tests at all** — the whole Kite login and credential path, which is the code
+that holds the credentials for the only execution broker. Recorded as a blocker, not fixed here.
+
+**The frontier is `L0.18` onward**, and `L0.20`–`L0.35` are `[~]`, not `[ ]` — partial work sits between
+the last strict tick and the next unstarted item, so "next unchecked task" is the wrong reading of the
+file. `L0.18` (Fyers), `L0.19` (Groww), `L0.31`–`L0.33` and the whole of `L1` (transaction costs, net-EV
+gate, sizing) have no code at all.
+
+*Method note, because it decides how much this is worth:* the audit grepped for each claimed artifact
+rather than trusting task titles, and ran `systemctl --user list-unit-files` for the two tasks whose
+artifact is a unit rather than a file. It did not run the code, so "exists" here means present and
+importable, never "works" — that remains what R.05 is for.
+
+**A.74 · 2026-08-12 · `L3.13` built, and the two things it got wrong were invisible to every test that
+did not talk to Angel.** The Angel session is now cached per exchange day instead of re-logged-in once
+per component. The feature is unremarkable; what it recorded is not.
+
+*First defect.* `generateSession` returns `jwtToken` as `"Bearer eyJ…"` and strips that prefix before
+assigning `self.access_token`. Storing the raw field and handing it back as `access_token=` builds
+`Authorization: Bearer Bearer eyJ…`, and Angel answers `AG8001 Invalid Token`. **Constructing the client
+never fails**, so the cache reported success and every client it produced was a dud — the failure surfaces
+only at the first authenticated call, in whatever component happens to make it. Normalisation now lives on
+the dataclass rather than the login path, so a file written by the broken version is repaired on read.
+
+*Second defect.* The module's own docstring asserted that Angel throttles repeated logins, inferred from
+two `None`s about thirty seconds apart. It does not. The builder was running before `.env` was loaded, so
+it returned the same `None` that a real broker outage returns. A direct login succeeded immediately once
+that was ruled out. The wrong claim is corrected in place and left visible, per the R.25 discipline.
+
+*Third finding, unfixed and recorded.* `SmartConnect.__init__` sets the deprecated `ssl.OP_NO_TLSv1`,
+which this project's `filterwarnings = ["error::DeprecationWarning"]` turns into an exception. The
+builder's blanket `except Exception` reads that as "Angel will not talk to us", so under the suite's own
+settings a real-data test skips itself while blaming the broker. The test carries a `filterwarnings` mark;
+the general problem — **a warning policy that can silently disable a broker** — is a BACKLOG item, not
+something this slice fixed.
+
+*What this changes about how a broker adapter is signed off.* Every one of these passed unit tests. The
+rule taken: a session or client cache is not verified by proving it stores and returns what it was given;
+it is verified by rehydrating from it and making one real authenticated call. That test now exists.
+
+*Also recorded here rather than silently:* an audit of the tree against `ajith_final_todo.md` found
+`L3.10`, `L3.11` and `L3.12` (Kite TOTP login, access-token store, credential loaders) already built and
+consumed by the daily runner, shipped inside commit `f713ad7` without citing their IDs and **with no test
+files at all**. They are now marked `[~]` with the gap named rather than left looking unbuilt or being
+quietly ticked. See `A.75`.
+
 **A.73 · 2026-08-11 · `L0.17` generalised from "ICICI stock-code resolver" to a broker symbology
 resolver, and Angel One built first because it is the one that can be verified.** Idea-intake verdict:
 SUPERIOR VERSION, ID kept. ICICI is one instance of a problem every broker has, and ICICI is

@@ -310,10 +310,10 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **2.39** Kill switch / trading control config — `L3.07`
 - [ ] **2.40** Corrigibility off-switch — `L3.08`
 - [ ] **2.41** Intraday square-off executor — `L3.09`
-- [ ] **2.42** Daily Kite token auto-refresh via TOTP — `L3.10`
-- [ ] **2.43** Kite access-token store + authenticated client builder — `L3.11`
-- [ ] **2.44** Broker credential loader — `L3.12`
-- [ ] **2.45** Angel One SmartAPI session (TOTP via pyotp) — `L3.13`
+- [~] **2.42** Daily Kite token auto-refresh via TOTP — `L3.10` · `broker_sessions/kite_totp_auto_login.py` exists and runs in the live loop, but shipped inside commit `f713ad7` without citing this ID and **has no test file** — R.11 gap, not done (`A.74`)
+- [~] **2.43** Kite access-token store + authenticated client builder — `L3.11` · `kite_access_token_store.py` + `authenticated_kite_client_builder.py` exist and are consumed by the daily runner; **no test file** — same R.11 gap (`A.74`)
+- [~] **2.44** Broker credential loader — `L3.12` · `broker_credentials/broker_api_credentials_loader.py` + `kite_login_credentials_loader.py` exist; **no test file** — same R.11 gap (`A.74`)
+- [x] **2.45** Angel One SmartAPI session (TOTP via pyotp) — `L3.13` · session cached per exchange day, tokens owner-only and repr-masked; two defects caught only by the real-data pass — the `"Bearer "` prefix that made every cached client a silent `AG8001`, and a wrong throttling diagnosis that was really an unloaded `.env` (`A.74`). 20 tests incl. an R.05 rehydrate-and-`getProfile` call
 - [ ] **2.46** Breeze session-token store + builder — `L3.14`
 - [ ] **2.47** Atomic multi-leg executor — `L3.15`
 - [ ] **2.48** Partial-fill tracking loop — `L3.16`
@@ -671,7 +671,7 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **5.37** Proactive assistant push — `L13.25`
 - [ ] **5.38** JARVIS system view — `L13.26`
 - [ ] **5.39** Dashboard delivery stack sourcing — `L13.27`
-- [ ] **5.40** Screenshot-verify loop — `L13.28`
+- [x] **5.40** Screenshot-verify loop — `L13.28` · `dashboard/dashboard_surface_screenshot_capture.py` + `scripts/capture_dashboard_screenshots.py`, tested, and run nightly by `nse-daily-operations`; built across `1a751b2`/`ec5392a`/`9cc592f` without citing this ID, found by the `A.75` audit
 - [ ] **5.41** THE DECISION-TRACE CONTRACT — `L13.29`
 - [ ] **5.42** Level 0 — `L13.30`
 - [ ] **5.43** Level 1 — `L13.31`

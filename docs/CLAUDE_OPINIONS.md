@@ -784,3 +784,54 @@ non-zero `ExecMainStatus`.
 **What would change my mind.** Nothing about the mechanism. What it changes is where I look first: the
 unit's exit status is authoritative and always present, whereas the log is a thing the unit must survive
 long enough to write. I had been treating the log as primary and the status as a formality.
+
+## O.52 · 2026-08-12 · A constructor that cannot fail is a place defects go to hide
+
+**Opinion.** `SmartConnect(api_key=..., access_token=...)` accepts any string and returns an object. It
+does not validate, does not call anything, and cannot fail. So the Angel session cache reported success
+while handing out clients that answered `AG8001 Invalid Token` on their first real use — because the
+stored `jwtToken` still carried the `"Bearer "` prefix that `generateSession` strips internally. Every
+unit test passed. They were testing a store, and the store was correct; what was wrong was the thing the
+store existed to produce.
+
+The general shape: wherever an object is constructed from credentials without any call being made,
+correctness has been *deferred to the first consumer* — and that consumer is usually far away, running
+unattended, and reports the failure as somebody else's outage.
+
+**Reasoning.** This is the same class as `O.50` (verifying the world changed rather than that my thing
+changed it), but the inversion is sharper. There I accepted weak downstream evidence. Here there was no
+downstream evidence at all until I went looking for it, and everything upstream was green. A green
+constructor is not weak evidence, it is *zero* evidence, and it is easy to mistake for the strong kind
+because an object came back.
+
+**Confidence: measured.** `getProfile` on the rehydrated client returned
+`{'success': False, 'message': 'Invalid Token', 'errorCode': 'AG8001'}` while the same call on a
+freshly-logged-in client returned the account name. The difference was one `"Bearer "` prefix.
+
+**What would change my mind.** Nothing about the diagnosis. What I would revise is the *fix's* scope: I
+normalised the token, which repairs this instance. The stronger fix is that no session cache is
+considered working until one authenticated call has been made through a rehydrated client — I wrote that
+test for Angel and did not write it for Kite, whose entire login path has no tests at all (BACKLOG,
+`A.75`). If the Kite path turns out to have the same defect, this opinion was too narrow, not wrong.
+
+## O.53 · 2026-08-12 · An audit that finds nothing false is evidence about the auditor too
+
+**Opinion.** I audited 58 modules against 93 completed tasks expecting to find work ticked that did not
+exist. There was none. What I found instead was the opposite error: seven live modules that **no task
+claimed at all**, five of them untested, including the whole Kite credential path. The todo was not
+lying about what was done; it was blind to work that had been done without being tracked.
+
+**Reasoning.** I have been treating R.06 (no orphans) as a rule about *dead* code — a file nothing
+imports. The real exposure is live code nothing *claims*: it runs in the daily loop, it holds broker
+credentials, and because no entry owns it, no entry asks whether it is tested or finished. Dead code is
+inert. Untracked live code is load-bearing and unattended. Every one of these seven shipped inside a
+commit whose subject cited a different entry ID, which is exactly how it stayed invisible.
+
+**Confidence: measured** for the inventory (grepped per artifact, `systemctl --user list-unit-files` for
+the two unit-backed tasks); **reasoned** for the claim that commit-subject drift is the mechanism — it
+fits all seven cases but I did not test the alternative that they were simply built ahead of schedule.
+
+**What would change my mind.** A second audit at a later date that finds false-done entries would mean
+this one was luck or too narrow. The concrete practice I am taking regardless: when a commit ships a
+module outside the entry named in its subject, the extra IDs go in the subject too, and the audit becomes
+periodic rather than something run once because the operator asked.
