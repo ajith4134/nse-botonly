@@ -23,15 +23,15 @@ from nse_algo_trader.nse_ingest.ingest_gap_backfill_planner import (
     measure_backfill_provenance,
 )
 from nse_algo_trader.nse_ingest.ingest_source_adapter import IngestRow
-from nse_algo_trader.nse_ingest.nse_source_fetcher import FetchStatus
-from nse_algo_trader.nse_ingest.nse_source_ingest_runner import NseSourceIngestRunner
-from tests.test_nse_ingest_core import (
-    SOURCE,
-    StubFetcher,
-    WellBehavedAdapter,
-    _outcome,
-    _payload_for,
+from nse_algo_trader.nse_ingest.nse_source_fetcher import (
+    FetchOutcome,
+    FetchStatus,
+    FetchTarget,
+    NseSourceFetcher,
+    PayloadContentCheck,
 )
+from nse_algo_trader.nse_ingest.nse_source_ingest_runner import NseSourceIngestRunner
+from tests.test_nse_ingest_core import SOURCE, WellBehavedAdapter, _outcome, _payload_for
 
 WINDOW_START = date(2026, 8, 3)
 WINDOW_END = date(2026, 8, 7)
@@ -57,6 +57,26 @@ def _url_for(day: date) -> str:
 def _store_a_day(store: BitemporalIngestStore, day: date, observed: datetime) -> None:
     fetch_id = store.record_fetch(SOURCE, _url_for(day), observed, "retrieved", "ok", 1)
     store.ingest_rows(SOURCE, [IngestRow({"x": 1}, day, ("A",))], observed, fetch_id)
+
+
+class _ScriptedNseSourceFetcher(NseSourceFetcher):
+    """A genuine `NseSourceFetcher` that returns scripted outcomes instead of fetching.
+
+    `NseSourceIngestRunner` is typed against the concrete `NseSourceFetcher` class, not a
+    protocol, so a stand-in that only duck-types `fetch` (like `test_nse_ingest_core`'s
+    `StubFetcher`) fails the type check even though it behaves correctly at runtime.
+    Subclassing is what makes "genuinely satisfies the type" and "runs correctly" the same
+    fact, with no cast standing between them.
+    """
+
+    def __init__(self, outcomes_by_url: dict[str, FetchOutcome]) -> None:
+        super().__init__()
+        self._outcomes_by_url = outcomes_by_url
+
+    def fetch(
+        self, target: FetchTarget, content_check: PayloadContentCheck | None = None
+    ) -> FetchOutcome:
+        return self._outcomes_by_url[target.url]
 
 
 @pytest.mark.unit
@@ -148,7 +168,7 @@ def test_backfill_refetches_only_what_is_worth_refetching(
         for target in adapter.fetch_targets([BLOCKED_DAY])
     }
     run = backfill_missing_dates(
-        NseSourceIngestRunner(StubFetcher(targets), store),  # type: ignore[arg-type]
+        NseSourceIngestRunner(_ScriptedNseSourceFetcher(targets), store),
         adapter,
         report,
     )
@@ -167,9 +187,9 @@ def test_backfill_returns_none_when_there_is_nothing_to_do(
     report = find_missing_dates(store, SOURCE, date(2026, 8, 3), date(2026, 8, 4))
     assert (
         backfill_missing_dates(
-            NseSourceIngestRunner(StubFetcher({}), store),
+            NseSourceIngestRunner(_ScriptedNseSourceFetcher({}), store),
             WellBehavedAdapter(),
-            report,  # type: ignore[arg-type]
+            report,
         )
         is None
     )
@@ -189,7 +209,7 @@ def test_a_backfill_is_bounded_so_it_cannot_become_a_scrape(
         for target in adapter.fetch_targets([entry.effective_date for entry in report.refetchable])
     }
     run = backfill_missing_dates(
-        NseSourceIngestRunner(StubFetcher(targets), store),  # type: ignore[arg-type]
+        NseSourceIngestRunner(_ScriptedNseSourceFetcher(targets), store),
         adapter,
         report,
         maximum_dates=BACKFILL_BATCH_CAP,

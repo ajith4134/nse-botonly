@@ -956,3 +956,73 @@ strike are part of the instrument identity and the trading symbol already encode
 **What would change my mind.** A non-zero count on the segment-pinned sweep after the options universe
 grows a second exchange, which would mean the key needs `exchange` as well as `segment`. The sweep is one
 query and belongs in the daily run rather than in my memory — logged in BACKLOG as such.
+
+## O.59 · 2026-08-12 · When the quantity is unobservable, the estimator's honesty matters more than its accuracy
+
+**Opinion.** `L0.32` cannot measure the host-minus-exchange offset. It can bound it from above, and it
+can measure the RATE at which it changes. The temptation was to report the bound as "the offset" and move
+on — every consumer wants a number, and 31.5 ms looks like one. I think the right call was to name the
+field `apparent_offset_seconds`, carry `offset_upper_bound_seconds` beside it, and put the reason in the
+page footer where a reader meets it. The engine is more useful bounded and labelled than precise and
+wrong.
+
+**Reasoning.** The skew is a difference of offsets, so the unknown constant cancels and drift IS
+measurable — to 0.16 ppm on one session and 16.3 ppm on the next. That asymmetry is the whole design: the
+thing the plan asked for ("detect drift") is measurable, and the thing that looks easier ("what is the
+offset") is not. An engine that reported both with equal confidence would be wrong exactly where a
+consumer would rely on it — correcting a timestamp.
+
+**Confidence: measured** for the arithmetic (the LP bound is provable and the tests assert the line never
+sits above an observation on random inputs), **reasoned** for the judgement that consumers are better
+served by a bound than a point estimate. I have not yet watched a consumer use it; the depth classifier is
+the first, and it uses the NTP bracket rather than the feed fit precisely because the feed fit is a bound.
+
+**What would change my mind.** A consumer that cannot act on a bound and ends up hardcoding a midpoint to
+get past it. That would mean the honesty was pushed one layer out rather than delivered, and the right
+answer would have been a point estimate with a stated error bar in the same object.
+
+## O.60 · 2026-08-12 · Real data breaks different things than tests do, and this time it broke the two parts I was most confident about
+
+**Opinion.** Both defects in `L0.32` were in the parts I would have signed off on from the tests alone:
+the Marzullo sweep (a textbook algorithm) and the drift series (an obvious "take the minimum per minute").
+Both were correct as algorithms and wrong as measurements. Marzullo returned an "intersection" of two
+disjoint intervals because I never asked what a majority of two means; the floor series alerted on
+illiquidity because I never asked what Kite's `exchange_timestamp` means for a stock that has not traded.
+
+**Reasoning.** A hermetic test asserts the code does what I thought the data was. Only the data can
+correct what I thought the data was. Both failures were about the SEMANTICS of an input — a field that
+means "last trade time" rather than "packet time", and a server count that means "no majority" rather
+than "two opinions" — and no amount of property testing over synthetic inputs generated from my own
+assumption can surface an assumption error.
+
+**Confidence: measured.** Nine spurious alerts and one fabricated consensus, both observed on the first
+real-data run, both now covered by a test that encodes the real case.
+
+**What would change my mind.** Nothing about the conclusion; the open question is whether it generalises
+into a habit worth naming — run every new engine on real data BEFORE writing the second half of its
+tests, so the tests encode the data's semantics rather than mine. I am inclined to that, and `R.05`
+already requires the real-data pass; what it does not require is that the pass happen EARLY.
+
+## O.61 · 2026-08-12 · The adversarial pass earns its cost on the parts that already passed their tests
+
+**Opinion.** `L0.32` had 70 passing tests, a written spec, ruff and mypy clean, and a real-data pass, and
+a fresh adversarial subagent still found seven reproduced defects — two of which would have made the
+engine useless in opposite directions (refusing constantly on a false alarm rate of 100%, and never
+refusing because the threshold was unreachable). `R.23(c)`'s review step is not a formality to be skipped
+when the tests are green; green tests are the condition under which it is most valuable, because they
+mean the remaining defects are the ones my own assumptions cannot see.
+
+**Reasoning.** Every finding was in a place where I had written a CLAIM in a docstring — "upward outliers
+cannot move this fit", "a rigorous upper bound", "a threshold that means a 1-in-100 false alarm rate".
+The tests asserted the behaviour I believed followed from those claims; nobody had attacked the claims
+themselves. An adversary instructed to REFUTE reads a confident docstring as a target, which is exactly
+the reading my own tests could not produce.
+
+**Confidence: measured.** Seven findings, all with reproducers I re-ran myself before fixing. And one fix
+was independently corroborated: restricting the LP objective to the hull moved the feed-derived skew from
++16.43 to -6.06 ppm against chrony's -6.917 — two measurement paths sharing no code agreeing to 0.85 ppm,
+where they had disagreed by 23.
+
+**What would change my mind.** A review pass that returns only style opinions or unreproduced
+speculation. The value here came from the instruction to RUN the attack and report only what reproduced;
+a review that cannot do that is worth much less, and I would rather spend the tokens on more tests.

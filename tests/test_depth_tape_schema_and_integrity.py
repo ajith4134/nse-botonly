@@ -569,3 +569,56 @@ def test_every_quote_field_survives_normalization() -> None:
     assert packet.total_sell_quantity == EXPECTED_TOTAL_SELL_QUANTITY
     assert packet.open_interest == EXPECTED_OPEN_INTEREST
     assert packet.average_traded_price_paise == EXPECTED_AVERAGE_TRADED_PRICE_PAISE
+
+
+@pytest.mark.unit
+def test_the_host_clock_error_changes_which_packets_are_called_out_of_session() -> None:
+    """`L0.32`'s output changing a real decision, asserted rather than claimed.
+
+    A packet received at 15:30:00.200 IST on a host running 300 ms fast was really received
+    at 15:29:59.900 — inside the session. The naive classifier calls it OUTSIDE_SESSION_
+    WINDOW; the one told what `L0.32` measured does not.
+    """
+    just_past_close = datetime(2026, 8, 11, 15, 30, 0, 200_000, tzinfo=IST).astimezone(UTC)
+    packet = _packet(exchange_time=just_past_close, receipt_time=just_past_close)
+    naive = DepthPacketIntegrityClassifier()
+    corrected = DepthPacketIntegrityClassifier(host_clock_error_seconds=0.300)
+    assert IntegrityFlag.OUTSIDE_SESSION_WINDOW & naive.classify(packet)
+    assert not (IntegrityFlag.OUTSIDE_SESSION_WINDOW & corrected.classify(packet))
+
+
+@pytest.mark.unit
+def test_a_constant_host_clock_error_cannot_change_the_staleness_flag() -> None:
+    """Measured while wiring `L0.32`, and it corrected the design.
+
+    The staleness threshold is a quantile of the staleness series, and quantiles are
+    shift-equivariant: subtracting a constant from every sample moves the threshold by the
+    same constant. So correcting staleness for a constant clock error is arithmetically a
+    no-op, and claiming it as a behaviour change would have been a false claim.
+    """
+    receipt = datetime(2026, 8, 11, 10, 0, tzinfo=IST).astimezone(UTC)
+    naive = DepthPacketIntegrityClassifier()
+    corrected = DepthPacketIntegrityClassifier(host_clock_error_seconds=0.300)
+    flags_seen = []
+    for one in (naive, corrected):
+        for sequence in range(MINIMUM_SAMPLES_FOR_STALENESS_MATURITY + 50):
+            one.classify(
+                _packet(
+                    exchange_time=receipt - timedelta(milliseconds=310),
+                    receipt_time=receipt,
+                    sequence=sequence,
+                    volume=sequence,
+                )
+            )
+        flags_seen.append(
+            one.classify(
+                _packet(
+                    exchange_time=receipt - timedelta(milliseconds=420),
+                    receipt_time=receipt,
+                    sequence=99_999,
+                    volume=99_999,
+                )
+            )
+            & IntegrityFlag.STALE_BEYOND_DERIVED_THRESHOLD
+        )
+    assert flags_seen[0] == flags_seen[1] == IntegrityFlag.STALE_BEYOND_DERIVED_THRESHOLD

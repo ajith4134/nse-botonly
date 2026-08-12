@@ -2664,6 +2664,110 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.83 · 2026-08-12 · The adversarial review of `L0.32` found seven real defects, two of them
+critical, and fixing one of them made the engine AGREE WITH CHRONY to 0.85 ppm.** `R.23(c)` puts a
+fresh-subagent adversarial pass between "implemented" and "done". It was not a formality: every finding
+below was reproduced by running code, and the engine had already passed 70 of its own tests.
+
+**Critical 1 — the calibrated threshold measured a statistic the detector did not compute.** The
+Page-Hinkley threshold was derived by permutation over a one-sided plain cumulative sum, while `river`'s
+detector applied a 0.9999 forgetting factor and tracked both directions. Measured on a 21,600-point null
+series with no change point in it: threshold 0.0354 against a statistic reaching 0.102 — **100 of 100
+shuffled null series fired** against a threshold claiming 1 in 100. Any Page-Hinkley alert escalates
+straight to REFUSE, so the engine would have refused constantly for a reason that did not exist. Fixed by
+dropping river's detector and running ONE function for both roles, so the two cannot diverge again;
+re-measured at **1 in 100**, as designed.
+
+**Critical 2 — the verdict ladder compared two different quantities.** Thresholds were quantiles of a
+per-session formula over the stored FITS; the live verdict compared a different sum built from the fit
+plus the NTP bracket. They shared one term. Measured: `refuse_above` 0.4658 s against a live worst case
+of 0.031 s for the identical fit — REFUSE-by-threshold was unreachable until the host's clock was 300 ms
+out. Fixed by storing the worst-case error that was ACTUALLY judged and deriving thresholds from that
+history, which also fixed the related finding that a session could raise its own bar (a 50-second-offset
+session moved its own REFUSE line from 0.46 s to 48.7 s).
+
+**Major — "an upward outlier cannot move the fit" was false, and the fix improved the estimate.** The LP
+objective summed residuals over EVERY point, so `mean(t)` across the whole cloud decided which hull edge
+won: three copies of a 4,931-second outlier moved a fitted offset from 1.000 s to -0.515 s and flipped the
+skew's sign. The objective now sums over the hull alone — late packets carry no information about the
+floor, so they get no vote. **Re-running the real tape, the 2026-08-12 skew moved from +16.43 ppm to
+-6.06 ppm against chrony's independently-measured -6.917 ppm.** Two measurement paths that share no code
+and no input now agree to **0.85 ppm**; before the fix they disagreed by 23. That agreement is the
+strongest evidence this engine has that it measures what it claims to.
+
+**Major — the offset "upper bound" was not one.** A session whose delay floor rises steeply late in the
+window produced `beta = -99.999 s` against a true offset of zero: the LP bounds a SUM, and nothing in it
+pins the intercept pointwise. The bound is now `min_i(lag_i - skew*t_i)`, which every observation
+individually supports — and because that is conditional on the rate estimate, the fit now also reports
+whether its skew is one a crystal oscillator could physically have (NTP's own 500 ppm clamp, RFC 5905
+s.7.2). An implausible rate reads IMMATURE: the line is describing the network, not a clock.
+
+**Major — three smaller ones, all fixed:** an unhandled `StatisticsError` crashed the whole session run
+when a change was detected at the final point; the falseticker branch answered before the
+impossible-physics check and turned a REFUSE into a DEGRADED on identical numbers; and a drift series too
+short to detect anything read as "no alerts", which the budget took as evidence of a steady clock.
+
+**Minor, fixed:** HiGHS's feasibility tolerance let the fitted line sit 15 microseconds above two of its
+own constraints (clamped exactly — 15 us is not nothing on a host whose chrony RMS offset is 39 us);
+NaN lags raised from inside scipy rather than as a refusal; collinear points were counted as hull
+vertices; the split-half maturity check sliced by list position rather than time (11x more optimistic on a
+shuffled input); and a reference bracket of any age was applied as today's correction, now bounded to 12
+hours and returned with its provenance so "unmeasured" stops looking like "measured zero".
+
+**Clean bills, genuinely attacked:** Marzullo matched a brute-force oracle on every nested, touching,
+staircase, disjoint-pair, identical and point-width interval set tried; the LP sign convention is correct
+and provably bounded; the hull reduction is exact for feasibility; and the permutation scheme is a valid
+null for the statistic it measures.
+
+**A.82 · 2026-08-12 · `L0.32` built as an ESTIMATOR of an unobservable quantity, not a monitor of a
+visible one — and the real data broke two of its parts before it shipped.** The plan entry is one line
+("detects host clock drift against exchange time") and the difficulty is hidden in "detects": nothing on
+this host observes exchange time. What the depth tape holds is a one-way delay contaminated by an unknown
+offset and truncated to whole seconds by the SDK, so the engine's job is to separate three quantities
+from their sum. Spec `docs/research/216`.
+
+*The algorithm is the published one for this measurement.* Moon-Skelly-Towsley (1999): fit the line that
+lies below every observation and as close to them as possible, solved with `scipy.optimize.linprog`
+(HiGHS). Averaging the lag would be biased by half a second by construction — on the real tape the median
+lag is 0.791 s against a delay floor of 0.263 s, and that gap is almost entirely the truncation residue.
+The constraint `delay + residue >= 0` is physics, and it makes the fit deliberately ASYMMETRIC: the
+tape's 4,931-second outlier cannot move it, while a millisecond-early packet is direct evidence.
+
+*The 15.9-million-row problem answered exactly rather than by sampling.* Because the exchange stamp is
+quantised to whole seconds, packets share exact time values, so per-second minima are an EXACT reduction
+of the LP; and since the LP's optimum is attained at two active constraints, only the lower convex hull
+can bind. 11,447,680 rows for 2026-08-11 reduce to 20,086 observations and a hull of **15 vertices**.
+
+*Measured on the real tape, both sessions:* 2026-08-11 offset <= 31.5 ms, skew +0.16 ppm, split-half
+disagreement 1.9 ms; 2026-08-12 offset <= 60.7 ms, skew +16.3 ppm. chrony reports -6.917 ppm for this
+host, so the feed-derived skew disagrees with the host's own account by ~7 and ~23 ppm — which is the
+engine's central output, because the difference is what separates "my clock moved" from "the route did".
+
+*Two defects the hermetic tests could not have produced.* (1) The NTP arm found the OCI metadata server
+at +0.19 ms and Cloudflare at -9 ms, intervals disjoint — and the Marzullo sweep happily named one of
+them a falseticker and returned the other's interval as "consensus". Two servers, one vote each, is not a
+majority; it now refuses. (2) Feeding the raw per-second delay floor to ADWIN produced nine "drift"
+alerts on 2026-08-11, every one of them Kite stamping each packet with its instrument's LAST TRADE, so an
+illiquid name reports its own illiquidity as delay. A minute is now only measurable by a packet generated
+in it.
+
+*What it changes today (`R.06`), after the first answer turned out to be arithmetically wrong.* The plan
+was to correct `DepthPacketIntegrityClassifier`'s staleness by the measured host error. The test written
+to demonstrate that FAILED, and it was right to: the threshold is a quantile of the same series, and
+quantiles are shift-equivariant, so subtracting a constant from every sample moves the threshold by the
+same constant and no flag can change. Measured over 1,050 packets — flag-for-flag identical. The
+correction was moved to where a constant error genuinely bites, an ABSOLUTE comparison:
+`_classify_session_window` tests the host's receipt instant against the exchange's 15:30 close, so a host
+300 ms fast flags real in-session packets as `OUTSIDE_SESSION_WINDOW`, and correcting it flips them back.
+The general rule, kept because it will recur: *a clock correction changes nothing measured relative to
+itself, and everything measured against an external boundary.* Queued consumer: the live execution path,
+where `REFUSE` becomes an order veto.
+
+*Two deliberate rejections.* A Kalman servo was specified and then dropped: it is optimal for Gaussian
+noise, and one-way delay is non-negative and heavy-tailed to the right — it would treat that 4,931-second
+packet as evidence. And the engine never STEERS the clock; chrony owns that, and two servos fighting is a
+worse failure than the drift.
+
 **A.81 · 2026-08-12 · `L0.31`'s observed-fact path built, and it closed three of the five uncovered
 families the same day — but the two that remain are BLOCKED, not deferred.** `A.80` declared a grade
 ladder with `OBSERVED_FROM_EXCHANGE_DATA` above `PRIMARY_CIRCULAR` and then shipped nothing that produced

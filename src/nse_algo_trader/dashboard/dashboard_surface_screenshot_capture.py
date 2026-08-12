@@ -29,7 +29,17 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8080"
 ACCESS_TOKEN_PATH = Path("~/.nse_algo_trader/dashboard_access_token.txt").expanduser()
 DEFAULT_OUTPUT_ROOT = Path("~/nse_archive/dashboard_screenshots").expanduser()
 
-ROUTES = ("/wall", "/regime", "/manifest", "/microstructure", "/rules")
+ROUTES = ("/wall", "/regime", "/manifest", "/microstructure", "/rules", "/clock")
+
+PAGE_LOAD_TIMEOUT_MILLISECONDS = 120_000
+"""Raised from playwright's 30 s default because a real surface crossed it.
+
+Measured 2026-08-12: `/microstructure` takes **31 s**, because it replays the depth tape on
+request and the tape keeps growing (the persisted-read-model debt already recorded in
+BACKLOG). Playwright then failed the whole capture, so an `R.08` obligation was being
+blocked by a known performance problem on an unrelated page. The bound stays finite — a
+page that takes two minutes is broken and should fail the capture — and the underlying
+replay-on-request debt is tracked, not papered over."""
 """Every route a human reads. `/healthz` is excluded deliberately — it returns plain text
 and has no visual claim to confirm.
 
@@ -139,7 +149,11 @@ def capture_dashboard(
                 page.on("console", _console_error_recorder(console_errors))
                 for route in ROUTES:
                     before = len(console_errors)
-                    response = page.goto(f"{base_url}{route}", wait_until="networkidle")
+                    response = page.goto(
+                        f"{base_url}{route}",
+                        wait_until="networkidle",
+                        timeout=PAGE_LOAD_TIMEOUT_MILLISECONDS,
+                    )
                     if response is not None and response.status >= FIRST_HTTP_ERROR_STATUS:
                         raise DashboardCaptureError(
                             f"{route} returned HTTP {response.status} — refusing to "

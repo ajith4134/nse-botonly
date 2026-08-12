@@ -8,6 +8,23 @@ Reconcile with the live task list at each session start.
 
 Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) · ⛔ blocked
 
+## `L0.32` clock integrity (2026-08-12, `A.82`/`A.83`) — 🟡 built + adversarially reviewed, three open
+
+- 🔴 **No NTP majority is reachable from this host today.** Of the three configured servers, the OCI
+  metadata service and Cloudflare disagree by ~9 ms with disjoint brackets, and `pool.ntp.org` is
+  intermittently unreachable. The engine correctly refuses to call that a consensus, so the verdict sits
+  at DEGRADED and `corrected()` stays unavailable. Fix is more independent servers (or a stratum-1 the VPC
+  can reach), not a code change — the refusal is right.
+- 🔴 **Consumer queued.** The live execution path does not exist, so `REFUSE` cannot yet veto an order.
+  `R.06` is met today by the depth classifier's corrected staleness and the `/clock` surface.
+- 🔴 **Two sessions of history is not a distribution.** The derived DEGRADED/REFUSE quantiles need at
+  least three recorded sessions and the store holds two, so the ladder reports IMMATURE until the daily
+  runner has accrued more. This is the `R.04` maturity gate working, and it closes by waiting.
+- ℹ️ **After the review's LP fix the 2026-08-12 skew is -6.06 ppm against chrony's -6.917** — 0.85 ppm
+  between two paths sharing no code (`A.83`). 2026-08-11 still disagrees by 7.08 ppm, which is worth
+  understanding: it is the session with the wider delay floor, so the likeliest explanation is route
+  asymmetry rather than the clock. One more session of history should separate them.
+
 ## `L0.31` point-in-time market rules (2026-08-12, `A.80`/`A.81`) — 🟡 built, two families uncovered
 
 - 🟢 **CLOSED 2026-08-12 — the observed-fact path is built and wired** (`A.81`).

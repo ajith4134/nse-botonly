@@ -14,6 +14,7 @@ import stat
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import NotRequired, Protocol, TypedDict, runtime_checkable
 
 import pytest
 
@@ -235,6 +236,27 @@ def test_no_token_ever_appears_in_a_repr() -> None:
     assert repr(EXCHANGE_DAY) in printed, "the non-secret field stays useful for debugging"
 
 
+class _AngelProfileResponse(TypedDict):
+    """The shape of `SmartConnect.getProfile`'s response — only the fields this test reads."""
+
+    status: bool
+    data: NotRequired[dict[str, object] | None]
+
+
+@runtime_checkable
+class _AngelClient(Protocol):
+    """The one method this test needs from `_build_angel_one_client`'s return value.
+
+    `run_daily_operations._build_angel_one_client` deliberately returns `object | None`
+    (`SmartApi` ships no type stubs, so it is wrapped at that one boundary rather than
+    leaking an untyped surface everywhere). This test is the one place that needs to call
+    into it for real, so it narrows with a runtime-checked structural protocol instead of
+    trusting an unchecked cast.
+    """
+
+    def getProfile(self, refresh_token: str) -> _AngelProfileResponse: ...  # noqa: N802
+
+
 @pytest.mark.real_data
 @pytest.mark.filterwarnings("default::DeprecationWarning")
 @pytest.mark.skipif(
@@ -269,6 +291,9 @@ def test_a_rehydrated_client_can_actually_talk_to_angel() -> None:
 
     rehydrated = _build_angel_one_client()  # second call: cache hit, no login
     assert rehydrated is not None
+    assert isinstance(rehydrated, _AngelClient), (
+        "a client `_build_angel_one_client` returns must expose `getProfile`"
+    )
     profile = rehydrated.getProfile(cached.refresh_token)
     assert profile.get("status") is True, f"rehydrated client refused: {profile}"
     assert (profile.get("data") or {}).get("name"), "authenticated call returned no identity"

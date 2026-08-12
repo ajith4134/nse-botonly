@@ -41,6 +41,9 @@ from nse_algo_trader.broker_credentials import (
 from nse_algo_trader.broker_sessions.kite_access_token_store import (
     KiteAccessTokenFileStore,
 )
+from nse_algo_trader.clock_integrity.timestamp_trust_budget import (
+    measured_host_clock_error_seconds,
+)
 from nse_algo_trader.market_depth.depth_capture_admission_controller import (
     DepthCaptureAdmissionController,
     InstrumentCaptureCandidate,
@@ -301,7 +304,9 @@ def main() -> int:
         calibration_cohort_size=arguments.calibration_cohort_size,
     )
     arguments.tape_root.mkdir(parents=True, exist_ok=True)
-    classifier = DepthPacketIntegrityClassifier()
+    classifier = DepthPacketIntegrityClassifier(
+        host_clock_error_seconds=measured_host_clock_error_seconds()
+    )
 
     # ---------------------------------------------------------------- calibration
     reader = MarketDepthTapeReader(arguments.tape_root)

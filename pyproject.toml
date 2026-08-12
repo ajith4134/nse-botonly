@@ -107,6 +107,7 @@ builtins-allowed-modules = ["types"]
 [tool.mypy]
 python_version = "3.12"
 files = ["src", "tests", "scripts"]
+mypy_path = "scripts"
 # scripts/ is the OPERATIONAL SPINE and was outside the gate entirely, so every
 # import there resolved to Any and no call was checked. That is exactly how
 # `store.ingest(..., observed_on=...)` shipped against a method taking `ingested_on`

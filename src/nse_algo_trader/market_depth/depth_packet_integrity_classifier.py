@@ -16,7 +16,7 @@ is river's `Quantile`, a streaming P² implementation with O(1) memory per instr
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, time
+from datetime import date, time, timedelta
 from zoneinfo import ZoneInfo
 
 from river import stats
@@ -90,11 +90,13 @@ class DepthPacketIntegrityClassifier:
         self,
         calendar: NseTradingSessionCalendar | None = None,
         depth_levels_per_side: int = DEPTH_LEVELS_PER_SIDE,
+        host_clock_error_seconds: float = 0.0,
     ) -> None:
         self._calendar = calendar or NseTradingSessionCalendar()
         self._depth_levels_per_side = depth_levels_per_side
         self._state_by_token: dict[int, InstrumentIntegrityState] = {}
         self._session_date_cache: dict[date, bool] = {}
+        self._host_clock_error_micros = host_clock_error_seconds * 1_000_000
 
     def state_for(self, instrument_token: int) -> InstrumentIntegrityState:
         return self._state_by_token.setdefault(instrument_token, InstrumentIntegrityState())
@@ -147,6 +149,14 @@ class DepthPacketIntegrityClassifier:
         staleness = packet.staleness_micros()
         if staleness is None:
             return IntegrityFlag.NONE
+        # NOT corrected for the host clock error, and the reason is arithmetic rather than
+        # oversight: the threshold is a QUANTILE of the same series, and quantiles are
+        # shift-equivariant. Subtracting a constant from every observation moves the
+        # threshold by exactly that constant, so the flag is invariant to a constant clock
+        # error. Measured while wiring `L0.32` in: a classifier told the host runs 300 ms
+        # fast produced flag-for-flag identical output. The correction belongs where an
+        # ABSOLUTE instant is compared against an external boundary — `_classify_session_
+        # window` — and it is applied there.
         threshold = state.derived_staleness_threshold_micros()
         # Learn from this observation only after testing against the existing
         # estimate, so a packet can never be the reason it is judged normal.
@@ -185,7 +195,18 @@ class DepthPacketIntegrityClassifier:
         return IntegrityFlag.DUPLICATE_OF_PREVIOUS_BOOK if is_duplicate else IntegrityFlag.NONE
 
     def _classify_session_window(self, packet: DepthPacket) -> IntegrityFlag:
-        receipt_ist = packet.receipt_time.astimezone(INDIA_MARKET_TIMEZONE)
+        """Where the host's clock error genuinely changes the answer.
+
+        This is an ABSOLUTE comparison — a host instant against the exchange's published
+        session boundary — so a host running fast pushes packets across the 15:30 edge and
+        flags real in-session data as outside it. Unlike the staleness quantile, this is not
+        shift-invariant: subtracting the error measured by `L0.32` moves packets back across
+        the boundary they never actually crossed.
+        """
+        corrected_receipt = packet.receipt_time - timedelta(
+            microseconds=self._host_clock_error_micros
+        )
+        receipt_ist = corrected_receipt.astimezone(INDIA_MARKET_TIMEZONE)
         if not self._is_trading_session(receipt_ist.date()):
             return IntegrityFlag.OUTSIDE_SESSION_WINDOW
         if not (

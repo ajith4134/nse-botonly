@@ -70,6 +70,9 @@ from nse_algo_trader.causal_leakage_firewall import (
     ObservableRow,
     derive_publication_lags,
 )
+from nse_algo_trader.clock_integrity.clock_integrity_session_runner import (
+    ClockIntegritySessionRunner,
+)
 from nse_algo_trader.corporate_action_adjustment_engine import (
     CorporateActionAdjustmentEngine,
 )
@@ -323,7 +326,7 @@ def _refresh_security_identity() -> str:
             for row in ingest.rows_for("nse_bhavcopy_cash", effective_date)
         ]
         recorded = identities.record(observations_from_bhavcopy_rows(rows))
-        return f"{recorded:,} new · {identities.describe()}"
+        return f"{recorded:,} new * {identities.describe()}"
 
 
 def _report_publication_schedules() -> str:
@@ -341,12 +344,12 @@ def _report_publication_schedules() -> str:
     known = ", ".join(
         f"{name}={lag.days}d" for name, lag in sorted(lags.items()) if lag.is_derivable
     )
-    detail = f"{len(lags)} sources · {known}"
+    detail = f"{len(lags)} sources * {known}"
     if unknown:
         # Not a failure: a static historical master legitimately has no schedule. It is
         # surfaced because the firewall BLOCKS these by default, so a silent one would
         # look like a source that simply had no data.
-        detail += f" · UNKNOWN (blocked in replay): {', '.join(unknown)}"
+        detail += f" * UNKNOWN (blocked in replay): {', '.join(unknown)}"
     return detail
 
 
@@ -380,7 +383,7 @@ def _verify_replay_leakage_guard(target_session: date) -> str:
             f"replaying {target_session} blocked NOTHING across {len(rows):,} rows — "
             "the leakage guard is not guarding"
         )
-    return f"replayed {target_session} over {len(rows):,} rows · {ledger.describe()}"
+    return f"replayed {target_session} over {len(rows):,} rows * {ledger.describe()}"
 
 
 KITE_HISTORICAL_REQUESTS_PER_SECOND = 3
@@ -553,11 +556,11 @@ def _reconcile_daily_bars(target_session: date) -> str:
         f"via {len(sources)} broker(s)"
     )
     if volume_disagreements:
-        detail += f" · {volume_disagreements} volume-only disagreements"
+        detail += f" * {volume_disagreements} volume-only disagreements"
     if price_disagreements:
-        detail += f" · PRICE DISAGREEMENTS: {', '.join(price_disagreements[:5])}"
+        detail += f" * PRICE DISAGREEMENTS: {', '.join(price_disagreements[:5])}"
     if failures:
-        detail += f" · {len(failures)} source issue(s): {failures[0]}"
+        detail += f" * {len(failures)} source issue(s): {failures[0]}"
     return detail
 
 
@@ -694,7 +697,7 @@ def _run_ingest(for_dates: Sequence[date]) -> str:
                     )
             except Exception as failure:  # noqa: BLE001 — one source must not stop the rest
                 summaries.append(f"{adapter.source_name}=FAILED({type(failure).__name__})")
-    return " · ".join(summaries)
+    return " * ".join(summaries)
 
 
 def _backfill_gaps(window_start: date, window_end: date) -> str:
@@ -725,7 +728,7 @@ def _backfill_gaps(window_start: date, window_end: date) -> str:
                 f"ESCALATE {len(escalations)} date(s) failing "
                 f">= {PERSISTENT_FAILURE_ATTEMPTS}x"
             )
-    return " · ".join(lines)
+    return " * ".join(lines)
 
 
 def _report_ingest_coverage() -> str:
@@ -739,7 +742,7 @@ def _report_ingest_coverage() -> str:
                 f"{source}: {report.total_rows:,} rows"
                 + (f", worst year {worst.year} {worst.coverage_fraction:.0%}" if worst else "")
             )
-    return " · ".join(parts)
+    return " * ".join(parts)
 
 
 def _report_universe() -> str:
@@ -778,8 +781,35 @@ def _report_bar_store() -> str:
     if not stored:
         return "empty"
     return (
-        f"{len(visible):,} bars visible as of now · {len(stored):,} stored "
+        f"{len(visible):,} bars visible as of now * {len(stored):,} stored "
         f"({len(stored) - len(visible):,} not yet actionable)"
+    )
+
+
+def _assess_clock_integrity() -> str:
+    """`L0.32`: fit the day's offset and skew, sample the reference, record the verdict.
+
+    Runs on the latest session the depth tape holds rather than on `target`: the tape is
+    written by the live recorder, so the newest session it has is the newest measurement
+    available, and asking for a session it never captured would report a clock failure
+    where there was only a day the recorder did not run.
+    """
+    result = ClockIntegritySessionRunner().run_latest_session()
+    if result is None:
+        return "no depth tape sessions — nothing to fit"
+    if result.fit is None:
+        return f"{result.session_date}: {result.unavailable_reason or 'no fit'}"
+    chrony_note = (
+        f" * {result.skew_disagreement_with_chrony_ppm:+.2f} ppm from chrony"
+        if result.skew_disagreement_with_chrony_ppm is not None
+        else ""
+    )
+    return (
+        f"{result.session_date}: {result.assessment.verdict.value} * "
+        f"offset ≤ {result.fit.apparent_offset_seconds * 1000:.1f}ms * "
+        f"skew {result.fit.skew_ppm:+.2f} ppm{chrony_note} * "
+        f"{len(result.alerts)} change point(s) * "
+        f"worst case {result.assessment.worst_case_error_seconds * 1000:.1f}ms"
     )
 
 
@@ -827,6 +857,7 @@ def main() -> int:
     _run_step(report, "broker symbology", _refresh_broker_symbology)
     _run_step(report, "bar reconciliation", lambda: _reconcile_daily_bars(target))
     _run_step(report, "bar store", _report_bar_store)
+    _run_step(report, "clock integrity", _assess_clock_integrity)
     # Last: the surface should be photographed AFTER the run has changed the state
     # it displays, so the capture shows the day that just happened.
     _run_step(report, "dashboard surfaces", _capture_dashboard_surfaces)

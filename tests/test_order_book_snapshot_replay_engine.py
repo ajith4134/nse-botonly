@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import NotRequired, TypedDict
 
 import pytest
 from hypothesis import given, settings
@@ -173,6 +174,7 @@ def test_micro_price_leans_toward_the_side_with_less_size() -> None:
     heavy_bid = micro_price_paise(
         best_bid_paise=10_000, best_bid_quantity=900, best_ask_paise=10_010, best_ask_quantity=100
     )
+    assert heavy_bid is not None, "both sides are present and uncrossed: a price must exist"
     assert heavy_bid > 10_005, "pressure is upward, so the fair price sits above the mid"
 
 
@@ -451,6 +453,7 @@ def test_queue_depletion_bounds_executions_by_the_inferred_sell_volume() -> None
         price_unchanged=True,
         inferred_executed_quantity=8,
     )
+    assert interval is not None, "the price held: a depletion decomposition is defined"
     assert interval.minimum_executed == 0
     assert interval.maximum_executed == 8
     assert interval.minimum_cancelled == 12
@@ -465,6 +468,7 @@ def test_a_growing_queue_has_no_depletion_to_decompose() -> None:
         price_unchanged=True,
         inferred_executed_quantity=0,
     )
+    assert interval is not None, "the price held: a depletion decomposition is defined"
     assert interval.maximum_executed == 0
     assert interval.maximum_cancelled == 0
 
@@ -492,6 +496,7 @@ def test_more_inferred_executions_than_depletion_is_clamped_not_negative() -> No
         price_unchanged=True,
         inferred_executed_quantity=40,
     )
+    assert interval is not None, "the price held: a depletion decomposition is defined"
     assert interval.maximum_executed == 5
     assert interval.minimum_cancelled == 0
 
@@ -516,7 +521,24 @@ def test_depth_imbalance_of_an_empty_level_is_none_not_zero() -> None:
 # ------------------------------------------------------------------ replay
 
 
-def _write_tape(tmp_path: Path, rows: list[dict[str, object]]) -> MarketDepthTapeReader:
+class _DepthTapeRow(TypedDict):
+    """One synthetic snapshot handed to `_write_tape`.
+
+    Only the touch prices/quantities are mandatory; everything else defaults the way a
+    fresh session would (no trade yet, zero cumulative volume, one shared token).
+    """
+
+    bid_price: int
+    bid_quantity: int
+    ask_price: int
+    ask_quantity: int
+    token: NotRequired[int]
+    last_price: NotRequired[int]
+    last_quantity: NotRequired[int]
+    volume: NotRequired[int]
+
+
+def _write_tape(tmp_path: Path, rows: list[_DepthTapeRow]) -> MarketDepthTapeReader:
     """Build a real Parquet tape with the production writer, not a mock."""
     from nse_algo_trader.market_depth.depth_tape_schema import DepthPacket
     from nse_algo_trader.market_depth.market_depth_tape_store import MarketDepthTapeStore
@@ -631,7 +653,12 @@ def test_an_unknown_instrument_raises_rather_than_yielding_nothing(tmp_path: Pat
 def test_a_duplicate_book_is_emitted_with_its_run_length_not_dropped(tmp_path: Path) -> None:
     """27% of the first live capture was duplicate books. Dropping them silently would
     make the gap to the next real change look like a fast market."""
-    identical = {"bid_price": 10_000, "bid_quantity": 100, "ask_price": 10_010, "ask_quantity": 100}
+    identical: _DepthTapeRow = {
+        "bid_price": 10_000,
+        "bid_quantity": 100,
+        "ask_price": 10_010,
+        "ask_quantity": 100,
+    }
     reader = _write_tape(
         tmp_path, [identical, identical, identical, {**identical, "bid_quantity": 120}]
     )

@@ -19,6 +19,7 @@ from __future__ import annotations
 import importlib
 import pkgutil
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -29,6 +30,15 @@ from fastapi.responses import (
     RedirectResponse,
 )
 
+from nse_algo_trader.clock_integrity.clock_offset_observation_store import (
+    ClockOffsetObservationStore,
+)
+from nse_algo_trader.clock_integrity.reference_clock_ntp_sampler import read_chrony_tracking
+from nse_algo_trader.clock_integrity.timestamp_trust_budget import TimestampTrustBudget
+from nse_algo_trader.dashboard.clock_integrity_surface_renderer import (
+    ClockIntegritySurfaceState,
+    render_clock_integrity_page,
+)
 from nse_algo_trader.dashboard.market_rule_coverage_surface_renderer import (
     render_market_rule_coverage_page,
 )
@@ -141,6 +151,15 @@ SURFACED_MODULES: frozenset[str] = frozenset(
         "nse_algo_trader.market_rules.point_in_time_market_rule_store",
         "nse_algo_trader.market_rules.nse_market_rule_history",
         "nse_algo_trader.dashboard.market_rule_coverage_surface_renderer",
+        "nse_algo_trader.clock_integrity.exchange_clock_offset_estimator",
+        "nse_algo_trader.clock_integrity.exchange_feed_delay_observation",
+        "nse_algo_trader.clock_integrity.depth_tape_delay_sampler",
+        "nse_algo_trader.clock_integrity.reference_clock_ntp_sampler",
+        "nse_algo_trader.clock_integrity.clock_offset_observation_store",
+        "nse_algo_trader.clock_integrity.clock_drift_change_detector",
+        "nse_algo_trader.clock_integrity.timestamp_trust_budget",
+        "nse_algo_trader.clock_integrity.clock_integrity_session_runner",
+        "nse_algo_trader.dashboard.clock_integrity_surface_renderer",
     }
 )
 """Modules that genuinely have a panel today. Declaring this is safe precisely BECAUSE
@@ -274,6 +293,39 @@ def build_dashboard_app() -> FastAPI:
             return _unauthorised_html()
         response = HTMLResponse(
             render_market_rule_coverage_page(seeded_nse_market_rule_store().coverage())
+        )
+        _remember_key(response, request)
+        return response
+
+    @app.get("/clock", response_class=HTMLResponse)
+    def clock_integrity_surface(request: Request) -> HTMLResponse:
+        """`L0.32`'s surface: the timestamp error budget, read off the recorded history.
+
+        The page renders whatever the store holds — no session is fitted on request. A
+        clock fit takes seconds of parquet reading, and a dashboard that silently refits on
+        every page load would report a different number to two readers refreshing at once.
+        """
+        if not _is_authorised(request):
+            return _unauthorised_html()
+        store = ClockOffsetObservationStore()
+        latest_fit = store.latest_fit()
+        consensus = store.latest_reference_consensus()
+        assessment = TimestampTrustBudget(store).assess(
+            fit=latest_fit.fit if latest_fit else None,
+            consensus=consensus,
+            alerts=store.alerts(session_date=latest_fit.session_date) if latest_fit else (),
+            at=datetime.now(UTC),
+        )
+        response = HTMLResponse(
+            render_clock_integrity_page(
+                ClockIntegritySurfaceState(
+                    assessment=assessment,
+                    fits=store.fits(),
+                    alerts=store.alerts(),
+                    consensus=consensus,
+                    chrony=read_chrony_tracking(),
+                )
+            )
         )
         _remember_key(response, request)
         return response

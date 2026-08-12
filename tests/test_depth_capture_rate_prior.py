@@ -16,6 +16,7 @@ wrong in a way that only shows up mid-session:
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
 
@@ -48,8 +49,14 @@ class FakeTapeReader:
         return dict(self._rates_by_session.get(session_date, {}))
 
 
+# The fixture hands each test a factory that installs a `FakeTapeReader` behind the
+# monkeypatch and returns it, so the test can both seed rates and later inspect what the
+# function under test actually read (`sessions_read`, the reassigned method, ...).
+InstallFakeTapeReader = Callable[[dict[date, dict[int, float]]], FakeTapeReader]
+
+
 @pytest.fixture
-def patch_reader(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
+def patch_reader(monkeypatch: pytest.MonkeyPatch) -> InstallFakeTapeReader:
     def install(rates_by_session: dict[date, dict[int, float]]) -> FakeTapeReader:
         reader = FakeTapeReader(rates_by_session)
         monkeypatch.setattr("record_live_depth_session.MarketDepthTapeReader", lambda _root: reader)
@@ -59,27 +66,33 @@ def patch_reader(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-de
 
 
 @pytest.mark.hermetic
-def test_an_empty_tape_yields_no_rates(patch_reader) -> None:  # type: ignore[no-untyped-def]
+def test_an_empty_tape_yields_no_rates(patch_reader: InstallFakeTapeReader) -> None:
     patch_reader({})
     assert measured_rates_from_tape(Path("/nonexistent"), SESSION_DATE) == {}
 
 
 @pytest.mark.hermetic
-def test_a_prior_session_supplies_the_rates_before_today_has_any(patch_reader) -> None:  # type: ignore[no-untyped-def]
+def test_a_prior_session_supplies_the_rates_before_today_has_any(
+    patch_reader: InstallFakeTapeReader,
+) -> None:
     """The 09:15 case. Without this the controller sizes 9,890 instruments with nothing."""
     patch_reader({YESTERDAY: {101: 2.0, 102: 0.5}})
     assert measured_rates_from_tape(Path("/t"), SESSION_DATE) == {101: 2.0, 102: 0.5}
 
 
 @pytest.mark.hermetic
-def test_todays_measurement_wins_over_the_prior_for_the_same_instrument(patch_reader) -> None:  # type: ignore[no-untyped-def]
+def test_todays_measurement_wins_over_the_prior_for_the_same_instrument(
+    patch_reader: InstallFakeTapeReader,
+) -> None:
     """Live evidence beats a prior; the prior only fills what live evidence lacks."""
     patch_reader({YESTERDAY: {101: 2.0, 102: 0.5}, TODAY: {101: 9.0}})
     assert measured_rates_from_tape(Path("/t"), SESSION_DATE) == {101: 9.0, 102: 0.5}
 
 
 @pytest.mark.adversarial
-def test_a_restart_keeps_the_universe_it_has_not_captured_yet(patch_reader) -> None:  # type: ignore[no-untyped-def]
+def test_a_restart_keeps_the_universe_it_has_not_captured_yet(
+    patch_reader: InstallFakeTapeReader,
+) -> None:
     """The trap that made the first version of this fix insufficient (`A.77`).
 
     After a restart, today's tape holds only the cohort the dead run captured. Returning
@@ -96,7 +109,9 @@ def test_a_restart_keeps_the_universe_it_has_not_captured_yet(patch_reader) -> N
 
 
 @pytest.mark.adversarial
-def test_a_nearer_prior_session_overrides_a_further_one(patch_reader) -> None:  # type: ignore[no-untyped-def]
+def test_a_nearer_prior_session_overrides_a_further_one(
+    patch_reader: InstallFakeTapeReader,
+) -> None:
     """Rates drift; a month-old session must not outvote yesterday."""
     patch_reader({LAST_WEEK: {101: 0.1, 999: 7.0}, YESTERDAY: {101: 5.0}})
     rates = measured_rates_from_tape(Path("/t"), SESSION_DATE)
@@ -105,7 +120,9 @@ def test_a_nearer_prior_session_overrides_a_further_one(patch_reader) -> None:  
 
 
 @pytest.mark.adversarial
-def test_a_future_dated_partition_is_never_read_as_a_prior(patch_reader) -> None:  # type: ignore[no-untyped-def]
+def test_a_future_dated_partition_is_never_read_as_a_prior(
+    patch_reader: InstallFakeTapeReader,
+) -> None:
     """A replay or a clock-skewed host can leave a later-dated partition on the tape.
 
     Reading it would size today's capture from data today cannot have — the same leakage
@@ -118,7 +135,9 @@ def test_a_future_dated_partition_is_never_read_as_a_prior(patch_reader) -> None
 
 
 @pytest.mark.adversarial
-def test_one_unreadable_session_does_not_lose_the_others(patch_reader) -> None:  # type: ignore[no-untyped-def]
+def test_one_unreadable_session_does_not_lose_the_others(
+    patch_reader: InstallFakeTapeReader,
+) -> None:
     """A half-written partition from a killed run must not zero the whole prior."""
     reader = patch_reader({LAST_WEEK: {101: 1.0}, YESTERDAY: {102: 2.0}})
     original_read = reader.instrument_packet_rates
