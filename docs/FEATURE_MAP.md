@@ -178,3 +178,46 @@ cloud VM by this project's own prior build).
 - **Todo `3.7` is titled literally "Name"** — generator bug; it is `L4.07`.
 - **Built but unticked:** `L11.01` `L11.02` `L11.03` `L11.06` `L5.05` (the `regime/` package) and
   `L4.09` `L4.10` (inside `order_book_snapshot_replay_engine`). Reconcile ticks; do NOT rebuild.
+
+---
+
+## LIVE CHECKLIST — F01 · "No signal reaches capital without clearing what it actually costs"
+
+`A.97`: building feature-by-feature is not achieved by grouping entries into a map, it is achieved
+by working THROUGH the map's list for the feature in hand. This is that list, kept current. **The
+feature does not close until every row is resolved and the four completion criteria below pass.**
+
+| Entry | What it is | State |
+|---|---|---|
+| `L1.01` | statutory + broker charges, point-in-time | ✅ built, adversarially reviewed, 13 defects fixed |
+| `L1.02` | the pre-trade gate — PASS / RESIZE / VETO / UNPRICEABLE | ✅ built |
+| `L1.03` | net-EV — edge against the complete hurdle | ✅ built inside `L1.02`; no multiplier, margin is the measured interval |
+| `L1.04` | per-segment minimum-edge floor | ✅ built + derived on 200 real instruments |
+| `L1.05` | fill / slippage model | ✅ built |
+| `L1.06` | market-impact model | ✅ built with `L1.05` as one engine (`A.92`) |
+| `L1.08` | options STT rate change + ITM exercise trap | ✅ delivered by `L1.01`, ticked (`A.97`) |
+| `L1.15` | dual intraday/delivery cost regime | ✅ delivered by `L1.01`, ticked (`A.97`) |
+| `L7.13` | — | ⛔ DROP → `L1.02`; the plan says "(see L1.02)" |
+| `L7.14` | — | ⛔ DROP → `L1.01` + `L3.05`; wiring, not an engine |
+| `L11.98` | — | ⛔ MERGE → `L11.106`, which states it more fully |
+| `L11.99` | range-width precondition | ✅ built |
+| `L11.106` | tradeable-unit denominator | ✅ built |
+| `L11.107` | minimum-ticket / flat-brokerage gate | ✅ built |
+| `L11.108` | live-spread liquidity gate | ✅ built |
+| — | priced-signal contract + strategy wiring | ✅ built inside the feature (`A.93`) |
+
+**All 14 entries are resolved in code.** What remains is the feature's own completion criteria:
+
+- [ ] **`R.08` surface** — `/costs` shows gate verdicts, precondition failures by name, and the
+      derived per-segment floors, measured from real state rather than hand-authored.
+- [x] **`R.06` loop wiring** — DONE. `_derive_per_segment_edge_floors` is a daily-runner step,
+      run for real: 170 instruments, `NSE-MIS` floor 8.9 bps (median 23.0), `NSE-CNC` 26.2 bps
+      (median 36.8). Bounded per run like the backfill is, with the examined count reported so a
+      truncation is visible rather than silent. A floor is a property of the market, so leaving it
+      un-refreshed would turn it into a stale filter that rejects newly-viable trades invisibly.
+- [ ] **`R.23(c)` adversarial review** in a fresh subagent, run BEFORE the execution gate this
+      time. `L1.01` was signed off without one and the review then found 5 critical defects.
+- [ ] **`R.05` real-data pass** at the strategy's own horizon — bar store, not depth-tape mids.
+      `O.74` records why the first end-to-end run does NOT establish what it appears to.
+
+Only when those four pass do all fourteen entries tick together.

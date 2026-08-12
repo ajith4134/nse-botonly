@@ -280,7 +280,13 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       "does this clear cost" and "does it clear cost by enough" are the same comparison against
       different hurdles, and splitting them would ship a gate whose answer the next entry
       immediately replaces.*
-- [ ] **1.37** Net-EV gate — `L1.03` — *see `1.36`; the two close together.*
+- [ ] **1.37** Net-EV gate — `L1.03` · built inside `cost_gate/pre_trade_cost_gate.py` with `1.36`,
+      because "does this clear cost" and "does it clear cost by ENOUGH" are the same comparison against
+      different hurdles. The plan's `edge > cost x 1.5-2` is implemented WITHOUT a multiplier: the
+      required hurdle is statutory cost plus the PESSIMISTIC end of the measured execution interval, so
+      the margin is the uncertainty itself and scales with it — 1.2 bps at 500 units, 18.1 bps at 5,000,
+      measured. `GateDecision.net_edge_bps` and `.shortfall_bps` are the net-EV outputs. *Closes with
+      F01.*
 
       *(Both inside feature **THE COST REALITY FILTER** — `A.93`. Nothing here ticks until a real
       signal on real data is actually vetoed or resized by real modelled cost, visible on
@@ -340,7 +346,13 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **1.39** Fill / slippage model — `L1.05` — *IN PROGRESS, and building as ONE engine with
       `1.40` per `A.92`: with a real five-level book the size-dependence IS the calculation, so
       splitting them would ship a size-blind model the second entry replaces wholesale.*
-- [ ] **1.40** Market-impact fill model — `L1.06` — *see `1.39`; the two close together.*
+- [ ] **1.40** Market-impact fill model — `L1.06` · built inside
+      `execution_fill/market_impact_estimator.py` with `1.39` (`A.92`). Size-dependent by construction:
+      the square-root curve is ANCHORED to the book-walk's own measured cost at visible depth, so the
+      coefficient is derived from the instrument's own data and sigma cancels — no literature constant
+      is imported. The exponent stays uncertain because this tape cannot fit it (measured R-squared
+      0.010-0.070), so the output is an interval that widens with extrapolation and has width exactly
+      zero at the anchor. *Closes with F01.*
 
       *(Both sit inside the feature **THE COST REALITY FILTER** — `A.93` — with `L1.01` (done),
       `L1.02`, `L1.03`, `L1.04` and the minimal priced-signal contract the gate needs. The feature

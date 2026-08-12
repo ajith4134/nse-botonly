@@ -81,6 +81,12 @@ from nse_algo_trader.consolidated_feed.cross_broker_quote_tape import CrossBroke
 from nse_algo_trader.corporate_action_adjustment_engine import (
     CorporateActionAdjustmentEngine,
 )
+from nse_algo_trader.cost_gate.per_segment_edge_floor import (
+    EdgeFloorError,
+    SegmentEdgeFloor,
+    SegmentEdgeFloorStore,
+    derive_segment_floor,
+)
 from nse_algo_trader.dashboard.dashboard_surface_screenshot_capture import (
     DEFAULT_BASE_URL,
     DEFAULT_OUTPUT_ROOT,
@@ -92,6 +98,10 @@ from nse_algo_trader.dashboard.dashboard_surface_screenshot_capture import (
 )
 from nse_algo_trader.deep_history.deep_history_archive_loader import (
     DeepHistoryArchiveLoader,
+)
+from nse_algo_trader.execution_fill.execution_fill_model import (
+    ExecutionFillError,
+    ExecutionFillModel,
 )
 from nse_algo_trader.historical_bars.angel_one_historical_bar_source import (
     AngelOneHistoricalBarSource,
@@ -114,6 +124,10 @@ from nse_algo_trader.kite_instrument_master import (
     InstrumentMasterStore,
     fetch_instrument_dump,
     parse_instrument_dump,
+)
+from nse_algo_trader.market_depth.market_depth_tape_store import MarketDepthTapeReader
+from nse_algo_trader.market_depth.order_book_snapshot_replay_engine import (
+    book_snapshots_from_table,
 )
 from nse_algo_trader.nse_ingest.atm_implied_volatility_adapter import (
     AtmImpliedVolatilityAdapter,
@@ -162,7 +176,10 @@ from nse_algo_trader.security_identity_record_store import (
 from nse_algo_trader.transaction_cost.charge_reconciliation_ledger import (
     ChargeReconciliationLedger,
 )
-from nse_algo_trader.transaction_cost.chargeable_market_segments import ChargeableSegment
+from nse_algo_trader.transaction_cost.chargeable_market_segments import (
+    ChargeableSegment,
+    TradeLeg,
+)
 from nse_algo_trader.transaction_cost.nse_transaction_cost_engine import (
     TradeSpecification,
     TransactionCostError,
@@ -184,6 +201,21 @@ of a host that bot-blocks. When it truncates, the report says so."""
 NSE_SESSION_CLOSE_IST = dt_time(15, 30)
 """Continuous trading ends. An exchange fact, and the boundary that decides whether
 today's files can exist yet."""
+
+DEPTH_TAPE_ROOT = Path("~/nse_archive/depth_tape").expanduser()
+"""Where the real order-book tape lives — the input the edge floors are derived from."""
+
+MAXIMUM_INSTRUMENTS_PER_FLOOR_RUN = 400
+"""A bound on the nightly floor derivation, for the same reason the backfill has one: a
+universe that keeps growing must not turn one nightly run into an unbounded scan. The count
+actually examined is reported, so a truncation is visible rather than silent."""
+
+MINIMUM_SNAPSHOTS_FOR_A_USABLE_INSTRUMENT = 300
+"""Below this an instrument barely quoted, and its hurdle says more about the capture than
+about the market."""
+
+LEGS_PER_ROUND_TRIP = Decimal(2)
+"""Execution cost is paid entering and leaving, like the spread it is made of."""
 
 PERSISTENT_FAILURE_ATTEMPTS = 3
 """`R.21` three strikes, applied to acquisition: a date that has failed this often will
@@ -936,6 +968,91 @@ def _representative_trade_for(segment: ChargeableSegment, target: date) -> Trade
     )
 
 
+def _derive_per_segment_edge_floors(target: date) -> str:
+    """`L1.04`: re-derive the screening floor for each segment from the day's real book.
+
+    A floor is a property of the market, not a constant, so it has to be re-measured as the
+    market changes — a floor derived once and left alone becomes a stale filter that quietly
+    rejects trades that have since become viable, and nobody sees a rejected signal.
+
+    Sized as a fraction of each instrument's OWN visible depth rather than a fixed quantity, so
+    a liquid and an illiquid name are asked the same QUESTION instead of the same number.
+    Instruments the book cannot price are skipped rather than defaulted; a segment that ends up
+    with too few priced instruments refuses to publish a floor at all.
+    """
+    reader = MarketDepthTapeReader(DEPTH_TAPE_ROOT)
+    sessions = reader.session_dates()
+    if not sessions:
+        return "no depth tape captured yet, so no floor can be derived"
+    session = max(session for session in sessions if session <= target) if any(
+        session <= target for session in sessions
+    ) else sessions[0]
+
+    cost_engine = default_transaction_cost_engine()
+    fill_model = ExecutionFillModel()
+    hurdles: dict[ChargeableSegment, list[Decimal]] = {}
+    examined = 0
+    for token in reader.instrument_tokens(session)[:MAXIMUM_INSTRUMENTS_PER_FLOOR_RUN]:
+        table = reader.read_instrument_window(
+            token,
+            datetime(2000, 1, 1, tzinfo=UTC),
+            datetime(2100, 1, 1, tzinfo=UTC),
+            session_date=session,
+        )
+        snapshots = book_snapshots_from_table(table)
+        if len(snapshots) < MINIMUM_SNAPSHOTS_FOR_A_USABLE_INSTRUMENT:
+            continue
+        snapshot = snapshots[len(snapshots) // 2]
+        mid = snapshot.mid_paise
+        if mid is None or mid <= 0:
+            continue
+        visible = sum(
+            level.quantity
+            for level in snapshot.asks
+            if level.quantity > 0 and level.price_paise > 0
+        )
+        if visible <= 0:
+            continue
+        quantity = max(1, visible // 2)
+        for segment in (ChargeableSegment.EQUITY_INTRADAY, ChargeableSegment.EQUITY_DELIVERY):
+            try:
+                trade = TradeSpecification(
+                    segment=segment,
+                    quantity=quantity,
+                    entry_price_paise=Decimal(mid),
+                    exit_price_paise=Decimal(mid),
+                    trade_date=target,
+                )
+                statutory = cost_engine.price_round_trip(trade).exact_bps_of_turnover
+                fill = fill_model.price_fill(snapshot, TradeLeg.BUY, quantity)
+                hurdles.setdefault(segment, []).append(
+                    statutory + fill.upper_cost_bps * LEGS_PER_ROUND_TRIP
+                )
+            except (TransactionCostError, ExecutionFillError):
+                continue
+        examined += 1
+
+    store = SegmentEdgeFloorStore()
+    derived: list[SegmentEdgeFloor] = []
+    refused: list[str] = []
+    for segment, values in hurdles.items():
+        try:
+            derived.append(derive_segment_floor(segment, values, session_date=target))
+        except EdgeFloorError as failure:
+            refused.append(f"{segment.value}: {failure}")
+    store.record(derived)
+    summary = " · ".join(
+        f"{floor.segment.value} floor {floor.floor_bps:.1f}bps "
+        f"(median {floor.median_hurdle_bps:.1f}, n={floor.instrument_count})"
+        for floor in derived
+    )
+    if refused:
+        summary += f" · REFUSED {len(refused)}: {'; '.join(refused)}"
+    if not derived:
+        raise RuntimeError(f"no segment floor could be derived from {examined} instruments")
+    return f"{examined} instruments · {summary}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -987,6 +1104,11 @@ def main() -> int:
         report,
         "transaction costs",
         lambda: _price_the_days_transaction_costs(target),
+    )
+    _run_step(
+        report,
+        "edge floors",
+        lambda: _derive_per_segment_edge_floors(target),
     )
     # Last: the surface should be photographed AFTER the run has changed the state
     # it displays, so the capture shows the day that just happened.
