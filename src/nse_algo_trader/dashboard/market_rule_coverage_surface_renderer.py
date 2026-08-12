@@ -90,11 +90,24 @@ _GRADE_COLUMNS: tuple[tuple[EvidenceGrade, str], ...] = (
 
 def _status(coverage: FamilyCoverage) -> tuple[str, str, int]:
     """Badge class, word, and a sort rank with the worst first."""
-    if coverage.record_count == 0:
+    if coverage.record_count == 0 and coverage.observed_window is None:
         return "badge-uncovered", "uncovered", 0
+    if coverage.record_count == 0:
+        return "badge-partial", "observed only", 1
     if coverage.holes:
         return "badge-partial", "holes", 1
     return "badge-covered", "covered", 2
+
+
+def _grade_cell(coverage: FamilyCoverage, grade: EvidenceGrade) -> str:
+    """The count, or — for a lazy observational source — the terms the facts exist on."""
+    if (
+        grade is EvidenceGrade.OBSERVED_FROM_EXCHANGE_DATA
+        and coverage.observed_window is not None
+        and not coverage.grade_counts.get(grade, 0)
+    ):
+        return "<span class=muted>on demand</span>"
+    return str(coverage.grade_counts.get(grade, 0) or "<span class=muted>·</span>")
 
 
 def _row(coverage: FamilyCoverage) -> str:
@@ -105,19 +118,31 @@ def _row(coverage: FamilyCoverage) -> str:
         if coverage.is_open_ended
         else (coverage.latest.isoformat() if coverage.latest else "—")
     )
-    holes = (
-        ", ".join(f"{start.isoformat()}→{end.isoformat()}" for start, end in coverage.holes) or "—"
+    # A family answered by observation has no holes to list; what a reader needs there is
+    # WHICH source is answering, so the column carries that instead of a dash.
+    holes_note = (
+        coverage.observed_by
+        if coverage.observed_window is not None
+        else (
+            ", ".join(
+                f"{start.isoformat()}→{end.isoformat()}" for start, end in coverage.holes
+            )
+            or "—"
+        )
     )
+    # A lazy source materialises nothing until a symbol is asked for, so its grade count is
+    # legitimately zero — but a blank observed cell next to an "observed only" badge reads
+    # as a contradiction. The cell says on what terms the facts exist instead of counting
+    # objects that deliberately do not.
     grade_cells = "".join(
-        f"<td>{coverage.grade_counts.get(grade, 0) or '<span class=muted>·</span>'}</td>"
-        for grade, _ in _GRADE_COLUMNS
+        f"<td>{_grade_cell(coverage, grade)}</td>" for grade, _ in _GRADE_COLUMNS
     )
     return (
         f"<tr><td>{escape(coverage.family.value)}</td>"
         f'<td><span class="badge {badge_class}">{word}</span></td>'
         f"<td>{escape(earliest)}</td><td>{escape(latest)}</td>"
         f"<td>{coverage.record_count}</td>{grade_cells}"
-        f"<td>{escape(holes)}</td></tr>"
+        f"<td>{escape(holes_note)}</td></tr>"
     )
 
 
@@ -126,8 +151,8 @@ def render_market_rule_coverage_page(
 ) -> str:
     """The whole surface, self-contained. Every number is read off the real store."""
     ordered = sorted(coverage_by_family.values(), key=lambda c: (_status(c)[2], c.family.value))
-    uncovered = sum(1 for c in ordered if c.record_count == 0)
-    with_holes = sum(1 for c in ordered if c.record_count and c.holes)
+    uncovered = sum(1 for c in ordered if not c.has_any_source)
+    with_holes = sum(1 for c in ordered if c.holes)
     earliest_dates = [c.earliest for c in ordered if c.earliest is not None]
     grade_headers = "".join(f"<th>{label}</th>" for _, label in _GRADE_COLUMNS)
 
@@ -157,7 +182,7 @@ expiry weekday to an old replay returns a plausible number and a wrong conclusio
 
 <div class="panel">
 <table><thead><tr><th>Family</th><th>State</th><th>Earliest</th><th>Latest</th>
-<th>Facts</th>{grade_headers}<th>Holes</th></tr></thead>
+<th>Facts</th>{grade_headers}<th>Holes / source</th></tr></thead>
 <tbody>{"".join(_row(coverage) for coverage in ordered)}</tbody></table>
 </div>
 

@@ -229,3 +229,38 @@ class PointInTimeMarketRuleStore:
 - **No margin calculation.** The margin *regime* dates are carried; computing SPAN is `L7`.
 - **No news/announcement history** — `research/61` §4, a separate acquisition target with a hard
   pre-2010 blocker.
+
+## 10. As built — the observational source (added 2026-08-12, `A.81`)
+
+§2 argued the observed grade should exist and §9 left populating it out of the first slice. It was built
+the same day, because a grade with no producer is a promise rather than a design.
+
+**`InstrumentMasterRuleObserver`** (`src/nse_algo_trader/market_rules/instrument_master_rule_observer.py`)
+satisfies an `ObservationalRuleSource` protocol the store queries at resolve time:
+
+```python
+def families(self) -> frozenset[RuleFamily]: ...
+def observation_window(self) -> tuple[date, date] | None: ...
+def records_for(self, family: RuleFamily, scope: RuleScope) -> tuple[MarketRuleRecord, ...]: ...
+```
+
+- **Lazy by arithmetic, not by preference.** Materialising a record per symbol per family over 227,535
+  rows / 106,436 symbols would put a quarter-million objects in a list every later query scans linearly.
+  Asked per resolved symbol instead: **measured 0.02s** against the full table.
+- **Change detection is run-compression.** Consecutive equal daily observations collapse to one interval;
+  a change closes the old run at the day the NEW value first appeared (the boundary that cannot be wrong
+  in the direction that puts a stale rule on a real trading day) and opens a new one. The final run stays
+  open-ended, or every query for today would refuse one day after the last ingest.
+- **The key is `(tradingsymbol, segment)`, and the real-data pass is what proved it.** A symbol-only
+  query sees RELIANCE twice — 0.10 on NSE, 0.05 on BSE — and reads one day as a rule that changed and
+  changed back, which the interval validation rejected outright. Two values for one day is an ambiguous
+  question, so the source declines it and the caller pins the segment. Full-universe sweep: **1,668
+  ambiguous symbol-days symbol-only, 0 segment-pinned** (`O.58`).
+- **Honest boundary, carried in the data.** `effective_from` is the first day OBSERVED (2026-08-11 on
+  this host), never the day the rule began. `observation_window()` reports it so `/rules` can show it,
+  and pre-capture dates still refuse.
+
+**Coverage after this slice: 14 of 16.** `tick_size` and `lot_size` are *observed only*; `session_hours`
+was seeded from `research/61` §2.6 at Grade B (absence-of-change, not a circular). The two that remain —
+`per_stock_price_band`, `dynamic_price_band` — are the §2 blocker verbatim: no circular exists, so
+forward capture is the only route and more reading will not close them.

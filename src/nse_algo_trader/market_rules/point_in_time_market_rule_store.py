@@ -38,6 +38,7 @@ from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 from itertools import pairwise
+from typing import Protocol
 
 _WEEKDAY_NUMBER_BY_NAME = {
     "MONDAY": 0,
@@ -278,6 +279,18 @@ class FamilyCoverage:
     holes: tuple[tuple[date, date], ...]
     record_count: int
     grade_counts: Mapping[EvidenceGrade, int]
+    observed_window: tuple[date, date] | None = None
+    observed_by: str = ""
+
+    @property
+    def has_any_source(self) -> bool:
+        """Compiled facts OR a live observational source counts as coverage.
+
+        Without this a family answered entirely by observation reads as uncovered on the
+        dashboard, which is the opposite of true — and it is the exact failure mode the
+        coverage report exists to prevent, just pointed the other way.
+        """
+        return self.record_count > 0 or self.observed_window is not None
 
 
 def _sort_key(record: MarketRuleRecord) -> tuple[int, int, date, str]:
@@ -297,11 +310,43 @@ def _sort_key(record: MarketRuleRecord) -> tuple[int, int, date, str]:
     )
 
 
+class ObservationalRuleSource(Protocol):
+    """A source that DERIVES rule facts from data the exchange actually published.
+
+    Registered rather than imported in bulk, and consulted lazily per (family, scope).
+    The reason is size: the instrument master holds 227,535 dated rows across ~105,000
+    symbols, and materialising a record per symbol per family would put hundreds of
+    thousands of objects in a list that every query then scans. A source is asked only
+    about the symbol being resolved, which is one indexed lookup.
+    """
+
+    def families(self) -> frozenset[RuleFamily]:
+        """Which families this source can speak to at all."""
+        ...
+
+    def records_for(self, family: RuleFamily, scope: RuleScope) -> tuple[MarketRuleRecord, ...]:
+        """Every fact this source can derive for one family and scope."""
+        ...
+
+    def observation_window(self) -> tuple[date, date] | None:
+        """The dates this source observed, for the coverage report. None when it saw none."""
+        ...
+
+    def describe(self) -> str:
+        """One line naming the source, for provenance in the coverage report."""
+        ...
+
+
 @dataclass
 class PointInTimeMarketRuleStore:
     """Compiled rule facts, and the reconciliation that makes them answerable."""
 
     _records: list[MarketRuleRecord] = field(default_factory=list)
+    _sources: list[ObservationalRuleSource] = field(default_factory=list)
+
+    def register_source(self, source: ObservationalRuleSource) -> None:
+        """Add a derived-fact source, consulted lazily on every matching query."""
+        self._sources.append(source)
 
     def add(self, record: MarketRuleRecord) -> None:
         """Facts arrive out of order and over months; nothing here depends on the order."""
@@ -319,9 +364,13 @@ class PointInTimeMarketRuleStore:
     def _applicable(
         self, family: RuleFamily, scope: RuleScope, known_as_of: date | None
     ) -> list[MarketRuleRecord]:
+        candidates = list(self._records)
+        for source in self._sources:
+            if family in source.families():
+                candidates.extend(source.records_for(family, scope))
         return [
             record
-            for record in self._records
+            for record in candidates
             if record.family is family
             and record.scope.covers(scope)
             and (known_as_of is None or record.recorded_at <= known_as_of)
@@ -492,17 +541,38 @@ class PointInTimeMarketRuleStore:
         """
         return {family: self._coverage_for(family) for family in RuleFamily}
 
+    def _observation_for(self, family: RuleFamily) -> tuple[tuple[date, date] | None, str]:
+        """The widest window any registered source observed for this family."""
+        windows: list[tuple[date, date]] = []
+        describers: list[str] = []
+        for source in self._sources:
+            if family not in source.families():
+                continue
+            window = source.observation_window()
+            if window is not None:
+                windows.append(window)
+                describers.append(source.describe())
+        if not windows:
+            return None, ""
+        return (
+            (min(start for start, _ in windows), max(end for _, end in windows)),
+            "; ".join(describers),
+        )
+
     def _coverage_for(self, family: RuleFamily) -> FamilyCoverage:
         records = [record for record in self._records if record.family is family]
+        observed_window, observed_by = self._observation_for(family)
         if not records:
             return FamilyCoverage(
                 family=family,
-                earliest=None,
-                latest=None,
-                is_open_ended=False,
+                earliest=observed_window[0] if observed_window else None,
+                latest=observed_window[1] if observed_window else None,
+                is_open_ended=observed_window is not None,
                 holes=(),
                 record_count=0,
                 grade_counts={},
+                observed_window=observed_window,
+                observed_by=observed_by,
             )
         intervals = sorted((record.effective_from, record.effective_to) for record in records)
         merged: list[tuple[date, date | None]] = []
@@ -523,12 +593,14 @@ class PointInTimeMarketRuleStore:
         latest_ends = [end for _, end in merged if end is not None]
         return FamilyCoverage(
             family=family,
-            earliest=merged[0][0],
+            earliest=min(merged[0][0], observed_window[0]) if observed_window else merged[0][0],
             latest=max(latest_ends) if latest_ends else None,
-            is_open_ended=any(end is None for _, end in merged),
+            is_open_ended=any(end is None for _, end in merged) or observed_window is not None,
             holes=holes,
             record_count=len(records),
             grade_counts=Counter(record.grade for record in records),
+            observed_window=observed_window,
+            observed_by=observed_by,
         )
 
     def families_with_facts(self) -> tuple[RuleFamily, ...]:

@@ -8,26 +8,34 @@ Reconcile with the live task list at each session start.
 
 Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) · ⛔ blocked
 
-## `L0.31` point-in-time market rules (2026-08-12, `A.80`) — 🟡 built, five families uncovered
+## `L0.31` point-in-time market rules (2026-08-12, `A.80`/`A.81`) — 🟡 built, two families uncovered
 
-- 🔴 **Five of sixteen families have no facts at all**, so every query against them refuses:
-  `tick_size`, `lot_size`, `per_stock_price_band`, `dynamic_price_band`, `session_hours`. Ranked by how
-  cheaply they close: `tick_size` and `session_hours` have readable circular chains (`research/61` §2.3,
-  §2.6) and are a reading job; `lot_size` has essentially no compiled history beyond NIFTY;
-  `per_stock_price_band` is the **hard** one — decided ad hoc daily by NSE Surveillance, in no circular,
-  archive unconfirmed.
-- 🔴 **`tick_size` is uncovered on purpose.** Seeding a flat ₹0.05 for 2003-2024 would be a guess with a
-  citation attached, which is worse than a refusal. Close it by reading the NSE Master Circular §3.3
-  chain, including the Jun-2024 move to price-linked tiers.
-- 🔴 **The observed-fact path is designed but not wired.** `market_data.instrument_master` has 227,535
-  dated rows of real tick/lot sizes; diffing consecutive `ingested_on` snapshots would generate
-  `OBSERVED_FROM_EXCHANGE_DATA` records automatically and detect a rule change the day it happens. The
-  grade exists and outranks documentary evidence; nothing populates it yet.
+- 🟢 **CLOSED 2026-08-12 — the observed-fact path is built and wired** (`A.81`).
+  `InstrumentMasterRuleObserver` derives tick-size and lot-size history from the daily snapshots by
+  compressing consecutive equal observations into runs and splitting on change. Lazy per symbol (0.02s
+  against 227,535 rows), so nothing is materialised. `tick_size` and `lot_size` moved from **uncovered**
+  to **observed only**, and `session_hours` was seeded from `research/61` §2.6. Five uncovered families
+  are now two.
+- ⛔ **Two families remain uncovered, and both are genuinely blocked, not deferred:**
+  `per_stock_price_band` and `dynamic_price_band`. NSE Surveillance decides the 2/5/10/20% band per stock
+  ad hoc daily; it appears in **no circular at all**, only in daily security-master files whose historical
+  archive is unconfirmed (`research/61` §2.4). Forward capture is the only route — the same "record it
+  forward" conclusion `research/72` reached for depth. Needs a daily band-capture adapter, which is a
+  separate slice.
+- 🔴 **The documentary tick-size chain is still unread.** Observation covers 2026-08-11 forward only;
+  2003-2024 (including the Jun-2024 move to price-linked tiers) needs the NSE Master Circular §3.3 chain.
+  Until then any pre-capture date refuses — which is correct, and is the gap being named rather than
+  filled with a guess.
 - 🔴 **Consumer queued.** `L1.01` (transaction-cost engine, spec `research/164`) is the reason this
   exists and does not exist yet. `R.06` is met by the `/rules` surface, not by a load-bearing caller.
 - ℹ️ **Persistence deferred.** The store is in-memory and rebuilt per request from the seeded table,
   which is correct while the table is ~30 facts. It needs a SQLite table once circular-reading starts
-  producing facts faster than a Python module wants to hold them.
+  producing facts faster than a Python module wants to hold them. The observed families need no
+  persistence at all — the observer is lazy, so there is nothing materialised to persist (`A.81`).
+- 🔴 **The instrument-key ambiguity sweep belongs in the daily run, not in a one-off.** Measured today:
+  1,668 symbol-days ambiguous under a symbol-only key, **0** with `segment` pinned (`O.58`). A non-zero
+  segment-pinned count would mean the key needs `exchange` too, and the check is one SQL query — it
+  should run daily rather than be re-derived by hand the next time a rule timeline looks wrong.
 
 ## `L0.22` order-book replay (2026-08-12, `A.79`) — 🟡 built, three open
 

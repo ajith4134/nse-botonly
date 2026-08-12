@@ -375,7 +375,43 @@ def regime_milestone_facts() -> tuple[MarketRuleRecord, ...]:
     )
 
 
-def seeded_nse_market_rule_store() -> PointInTimeMarketRuleStore:
+def session_hour_facts() -> tuple[MarketRuleRecord, ...]:
+    """Session hours and the pre-open window (`research/61` §2.6).
+
+    The continuous session has been 09:15-15:30 since 1994 and `research/61` grades that a
+    Grade-B **unverified negative** — an absence-of-change argument rather than a circular
+    saying so. That grade is carried honestly rather than upgraded because the fact is
+    convenient, and `effective_from` starts at the pre-open reform date rather than 1994,
+    because that is the earliest date a source was actually read for.
+    """
+    return (
+        _fact(
+            RuleFamily.SESSION_HOURS,
+            "09:15-15:30",
+            date(2010, 10, 18),
+            kind=RuleValueKind.TIME_RANGE,
+            source=(
+                "NSE continuous session 09:15-15:30, stated alongside SEBI CIR/MRD/DP/21/2010's "
+                "pre-open window; secondary and argued from absence of change, not a circular"
+            ),
+            source_date=date(2010, 7, 15),
+            grade=EvidenceGrade.SECONDARY_TRIANGULATED,
+        ),
+        _fact(
+            RuleFamily.SESSION_HOURS,
+            "09:00-09:15",
+            date(2010, 10, 18),
+            scope=RuleScope(segment="PRE_OPEN"),
+            kind=RuleValueKind.TIME_RANGE,
+            source="SEBI CIR/MRD/DP/21/2010 — 15-minute pre-open call auction",
+            source_date=date(2010, 7, 15),
+        ),
+    )
+
+
+def seeded_nse_market_rule_store(
+    *, observe_instrument_master: bool = True
+) -> PointInTimeMarketRuleStore:
     """Every fact `research/61` established, loaded and reconciled.
 
     Deliberately NOT every family: the ones with no admissible source stay uncovered, and
@@ -388,4 +424,14 @@ def seeded_nse_market_rule_store() -> PointInTimeMarketRuleStore:
     store.extend(expiry_weekday_facts())
     store.extend(contract_value_and_charge_facts())
     store.extend(regime_milestone_facts())
+    store.extend(session_hour_facts())
+    if observe_instrument_master:
+        # Tick and lot sizes are NOT seeded from circulars, deliberately: the exchange
+        # publishes them daily and an observed fact outranks a documentary one (`A.80`).
+        # The observer is lazy, so registering it costs nothing until a symbol is asked for.
+        from nse_algo_trader.market_rules.instrument_master_rule_observer import (
+            InstrumentMasterRuleObserver,
+        )
+
+        store.register_source(InstrumentMasterRuleObserver())
     return store

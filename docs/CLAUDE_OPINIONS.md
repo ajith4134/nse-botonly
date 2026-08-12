@@ -932,3 +932,27 @@ is cheap: one property test.
 a green test red for a reason that is not my defect. That would make the pattern a maintenance cost
 rather than a free check. I would keep it regardless for anything implementing a NAMED algorithm from a
 paper, where the reference's reading of the paper is the thing I want to check mine against.
+
+## O.58 · 2026-08-12 · A snapshot table is not a rule history until you say what its key is
+
+**Opinion.** The defect the real-data pass found in `InstrumentMasterRuleObserver` was not a bug in the
+change detector — it was an under-specified key. `tradingsymbol` alone is not an identity: RELIANCE is in
+every instrument-master snapshot twice, at a 0.10 tick on NSE and 0.05 on BSE. Any "derive history by
+diffing consecutive snapshots" design is silently wrong until the query key is the FULL key the exchange
+actually keys on. Refusing an ambiguous day is the right response, not picking one row.
+
+**Reasoning.** The wrong-key failure produces a plausible artefact rather than an error: two values
+stamped with one date read as a rule that changed and changed back within a day. Here it surfaced only
+because `MarketRuleRecord` validates its own interval and a zero-length interval is illegal — the
+type caught what the query did not. Swept the full table afterwards to size it: **1,668 symbol-days are
+ambiguous under a symbol-only key, and 0 are ambiguous once `segment` is pinned**, across 227,535 rows
+and 106,436 symbols. So the discipline is not merely sufficient for RELIANCE; it is sufficient
+everywhere in the table, and the residual ambiguity is exactly zero.
+
+**Confidence: measured.** The 1,668/0 split is a query I ran against the real store, not an estimate.
+What I have NOT measured is whether `segment` is the complete key for OPTIONS rows, where expiry and
+strike are part of the instrument identity and the trading symbol already encodes them.
+
+**What would change my mind.** A non-zero count on the segment-pinned sweep after the options universe
+grows a second exchange, which would mean the key needs `exchange` as well as `segment`. The sweep is one
+query and belongs in the daily run rather than in my memory — logged in BACKLOG as such.

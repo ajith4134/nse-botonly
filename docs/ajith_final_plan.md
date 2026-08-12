@@ -2664,6 +2664,46 @@ SOTA analog is a depth *comparison*, not an import — but no spec may plan to d
 runnable reference is needed, `zipline-reloaded` installs and is the one to read (accepting that it
 downgrades pandas and collides with `vectorbt`, so it is read, not adopted).
 
+**A.81 · 2026-08-12 · `L0.31`'s observed-fact path built, and it closed three of the five uncovered
+families the same day — but the two that remain are BLOCKED, not deferred.** `A.80` declared a grade
+ladder with `OBSERVED_FROM_EXCHANGE_DATA` above `PRIMARY_CIRCULAR` and then shipped nothing that produced
+it. `InstrumentMasterRuleObserver` is that producer: it reads the daily instrument-master snapshots,
+compresses consecutive equal observations into runs, and splits a run at the first day a new value
+appears. It is a slowly-changing-dimension build done on read.
+
+*Lazy, and the arithmetic decided it.* 227,535 dated rows across ~105,000 symbols. Materialising a record
+per symbol per family would put a quarter of a million objects in a list every query then scans linearly.
+So it is registered as an `ObservationalRuleSource` and asked only about the symbol being resolved —
+**measured at 0.02s** for one symbol against the full table. The persistence question in BACKLOG answers
+itself: nothing needs persisting because nothing is materialised.
+
+*The real-data pass found a defect no hermetic test could have.* A trading symbol is **not unique across
+exchanges**: RELIANCE is in every snapshot twice, at a 0.10 tick on NSE and 0.05 on BSE. A symbol-only
+query therefore saw two values stamped with one date, and the change detector read that as a rule
+changing and changing back within a day — producing a zero-length interval the store rejected outright.
+Two values for one day is not a change, it is an ambiguous question, so the source declines it and the
+caller pins the segment. The failure was loud only because `MarketRuleRecord` validates its own interval;
+without that check it would have produced a silently wrong timeline.
+
+*Sized across the whole universe rather than the one symbol that exposed it (`R.09`):* **1,668
+symbol-days are ambiguous under a symbol-only key and 0 are ambiguous with `segment` pinned**, over
+227,535 rows and 106,436 symbols. The pinning discipline is not a RELIANCE-shaped patch — it removes the
+ambiguity everywhere in the table. Recorded as `O.58`.
+
+*Result:* `tick_size` and `lot_size` moved from uncovered to **observed only**; `session_hours` was
+seeded from `research/61` §2.6 at the Grade-B it actually has (an absence-of-change argument, not a
+circular). Five uncovered families are now two.
+
+*The two that remain are a hard blocker and are recorded as one.* `per_stock_price_band` and
+`dynamic_price_band` are decided ad hoc daily by NSE Surveillance and **appear in no circular at all** —
+they exist only in daily security-master files whose historical archive is unconfirmed (`research/61`
+§2.4). This is the same shape as `research/72`'s depth conclusion: **record it forward or do without.**
+Not a compilation project, and not something more reading will fix.
+
+*Also honest about what observation cannot do:* it covers 2026-08-11 forward, because that is when this
+host began capturing. The 2003-2024 documentary tick-size chain is still unread, so any pre-capture date
+still refuses — correctly.
+
 **A.80 · 2026-08-12 · `L0.31` built as a store that would rather REFUSE than substitute, and the
 refusals cover most of Indian market history.** A replay of 2019 applying 2026's STT rate returns a
 plausible number and a wrong conclusion; the same for today's expiry weekday applied to the nine years
