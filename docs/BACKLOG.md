@@ -29,6 +29,10 @@ Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) ·
   by design. No trader loop exists until `F04`; the named future consumer is `F04`'s paper loop.
 - 🔴 **The watchdog's reconciliation probe is an injected seam with nothing injected yet.** Wiring
   `BrokerTruthReconciler` into it belongs with `F04`, where a loop exists to halt.
+- 🔴 **`docs/SYSTEM_MAP.md` describes the pre-reset system and has not been regenerated.** It is
+  marked stale at the top rather than left to mislead. The generator that built it from the AST
+  import graph is itself gone with the reset, so regenerating means rebuilding the extractor —
+  worth doing once `F04` gives the tree its loop, not before.
 
 ## `L0.34` deep history (2026-08-12, `A.88`) — 🟡 loaded, four open
 

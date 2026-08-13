@@ -1,5 +1,14 @@
 # SYSTEM MAP — the living architecture & data-flow map
 
+> ⚠️ **STALE FOR THE REBUILD, 2026-08-13.** Everything below describes the system as it stood
+> BEFORE the 2026-08-10 reset (`A.26`) — 353 modules across packages that no longer exist in
+> `src/`. It is kept because its runtime flows and its maintenance ledger are still the best record
+> of what the archived system did and why. **For what exists today, read `docs/FEATURE_MAP.md`**,
+> which `A.94` made the build document. The current tree is 140 modules; `F01` (the cost reality
+> filter) and `F02` (the order path, `src/nse_algo_trader/order_path/`) are the two features
+> complete under the rebuild. Regenerating this map from the new tree is tracked in `BACKLOG.md`.
+
+
 **This is the single source of truth for how this project is built and how
 data flows through it.** Read THIS first — before opening any source file.
 A fresh agent (on any server) should be able to understand the whole system
