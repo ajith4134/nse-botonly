@@ -28,7 +28,17 @@ Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) ·
 
 Decisions taken (`A.108`); no code written. What the next session starts from:
 
-- 🔴 **The simulated venue is the risk, not the loop.** `A.108` decision 2 routes every paper order
+- 🟢 **Venue design settled 2026-08-13 by SOURCING, not by preference** (`docs/research/228` §4-5).
+  `zipline` 3.1.1 and `backtrader` 1.9.78 are both ALREADY INSTALLED here and their fill models were
+  introspected directly — `VolumeShareSlippage(volume_limit=0.025, price_impact=0.1)`,
+  `VolatilityVolumeShare`, and `BackBroker`'s `slip_perc`/`slip_limit`/`filler`. Both are BAR-based:
+  they infer impact from volume because they have no book. **This project has the book** — 1.3 GB of
+  recorded L2 depth at `~/nse_archive/depth_tape`, already read by `market_depth_tape_store` and
+  replayed by `order_book_snapshot_replay_engine`. Filling against the real recorded ladder is
+  strictly better evidence than estimating what that ladder would have done. `nautilus_trader`
+  1.231.0 stays the SOTA analog to match on behaviour (`R.23a`), not a dependency: adopting it means
+  a Rust build plus its whole domain model alongside `F02`'s.
+- 🔴 **The simulated venue is still the risk, and now it is a BUILD risk rather than a design one.** `A.108` decision 2 routes every paper order
   through `F02`'s real journal and state machine to a venue adapter that simulates the exchange. If
   that adapter fills everything at the touch, every paper P&L is optimistic by the full spread plus
   impact and cannot be compared against `F01`'s cost model — which is what graduation reads. SOTA
