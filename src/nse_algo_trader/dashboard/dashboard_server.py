@@ -107,6 +107,9 @@ from nse_algo_trader.market_depth.order_book_snapshot_replay_engine import (
 from nse_algo_trader.market_rules.nse_market_rule_history import (
     seeded_nse_market_rule_store,
 )
+from nse_algo_trader.order_path.kite_order_execution_venue import (
+    exchange_algo_identifier_from_environment,
+)
 from nse_algo_trader.order_path.order_intent_journal import (
     DEFAULT_JOURNAL_PATH,
     OrderIntentJournal,
@@ -539,13 +542,24 @@ def build_dashboard_app() -> FastAPI:
         The journal is opened read-only in effect: if the file does not exist yet the page renders
         the empty state rather than creating it, because opening a journal creates it and a
         dashboard that writes a database on page load is a side effect nobody asked for.
+
+        The exchange's algo audit-trail identifier is read from the environment here — the same
+        source the live venue reads it from, so the page reports what orders will actually carry
+        rather than a second opinion. Reading it costs nothing and opens nothing; it is a fact
+        about this host's configuration (`docs/research/223` §4), and until the `M6` review it had
+        no reader anywhere in the system, so an unset identifier was discoverable only by asking
+        the exchange months later.
         """
         if not _is_authorised(request):
             return _unauthorised_html()
         now = datetime.now(IST)
+        algo_identifier = exchange_algo_identifier_from_environment()
         if not DEFAULT_JOURNAL_PATH.exists():
             state = empty_order_path_surface_state(
-                session_date=now.date(), measured_at=now, journal_path=DEFAULT_JOURNAL_PATH
+                session_date=now.date(),
+                measured_at=now,
+                journal_path=DEFAULT_JOURNAL_PATH,
+                exchange_algo_identifier=algo_identifier,
             )
         else:
             with OrderIntentJournal(DEFAULT_JOURNAL_PATH) as journal:
@@ -553,6 +567,7 @@ def build_dashboard_app() -> FastAPI:
                     journal,
                     measured_at=now,
                     journal_path=DEFAULT_JOURNAL_PATH,
+                    exchange_algo_identifier=algo_identifier,
                 )
         response = HTMLResponse(render_order_path_page(state))
         _remember_key(response, request)

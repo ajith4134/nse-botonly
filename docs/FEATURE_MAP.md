@@ -299,3 +299,17 @@ Opened 2026-08-13 (`A.99`). Greenfield: there is no order, position, trade or fi
       real-FILL lifecycle probe is **DEFERRED by operator decision to after the project completes**
       and is carried in `BACKLOG.md` as an OPEN BLOCKER, surfaced at every sign-off. `F02` closes
       with this criterion explicitly unmet and says so in those words.
+
+      *Run for real 2026-08-13 with the market open: the authenticated session answered `orders()`,
+      `trades()` and `positions()` and returned **zero rows from all three** — the account is empty.
+      That verifies the calls, the auth and the reconciler's behaviour on an empty session, and
+      **nothing** about normalising populated rows: statuses, the paise/rupee conversion,
+      `t1_quantity`, the positions-and-holdings union. The two must not be conflated in any later
+      summary, and `BACKLOG.md` says so in those words.*
+
+**`F02` CLOSED 2026-08-13**, with one completion criterion knowingly unmet and named. Fifteen
+entries tick together; `L9.14` was added mid-feature and ticks with them. Open against the feature
+and carried in `BACKLOG.md`: the real-fill probe, the populated-row normalisation it would verify,
+the trader-loop heartbeat (consumer `F04`), the watchdog's reconciliation probe (consumer `F04`),
+persisting a `ReconciliationReport` so `/orders` can render one, and the absent exchange algo
+identifier (operator).

@@ -5,7 +5,7 @@ system believes about its orders the same as what the broker did?** Everything o
 from the write-ahead journal (`L3.02`) and from the last reconciliation report (`L3.03`); nothing
 is typed in, and nothing is a status a human maintains by hand.
 
-Four properties are load-bearing, and each one is a way this page could lie while looking healthy:
+Six properties are load-bearing, and each one is a way this page could lie while looking healthy:
 
 * **An absent average fill price renders as ABSENT, never as zero.** `OrderRecord` returns `None`
   when nothing has filled, precisely so a zero cost basis can never enter the book, and a surface
@@ -23,6 +23,16 @@ Four properties are load-bearing, and each one is a way this page could lie whil
   by operator decision (`docs/BACKLOG.md`, `F02` order path). Every claim below about the fill path
   therefore rests on a hermetic harness. A page that omitted that would let a feature LOOK finished
   while its largest verification is still open.
+* **An order this build cannot read back is a ROW, not a 500 and not a gap.** The journal's fold
+  can raise on a single damaged or unrecognised row, and this page used to let that raise take the
+  whole surface with it — including the in-flight queue and the inferred ledger, which is what an
+  operator needs at exactly that moment (`M5`). Every intent is now folded behind its own guard and
+  an unfoldable one draws a `COULD NOT BE READ` row carrying the exception. It is not dropped
+  either: a missing row would say, with this page's full authority, that the order does not exist.
+* **The exchange's algo identifier says whether it is being sent.** The venue omits `algo_id` when
+  the operator has configured none, which is right — inventing one would be far worse. But the
+  omission had no reader anywhere in the system (`M6`), so it is stated at the top of this page,
+  with the circular that requires it, as an operator action rather than as a footnote.
 
 Counts are never carried as text: the lifecycle census, the verdict tallies and the disagreement
 list are folded out of the objects passed in, so a state that appears tomorrow appears here, and a
@@ -214,7 +224,9 @@ td.reason{white-space:normal;color:var(--text-secondary);}
    as the blocker band, because an unreadable order is an order nobody can account for. */
 .tile-critical{border:2px solid __CRITICAL__;}
 .tile-critical .tile-value{color:__CRITICAL__;}
-tr.unreadable td{background:rgba(192,57,43,0.07);}
+/* The same critical ink as a rule down the left of the row, rather than a second colour value:
+   one definition of "critical" on this page, used in three places. */
+tr.unreadable td:first-child{box-shadow:inset 4px 0 0 __CRITICAL__;}
 tr.inferred td{color:var(--text-muted);}
 .muted{color:var(--text-muted);}
 .mono-id{font-size:12px;color:var(--text-secondary);}
@@ -489,9 +501,71 @@ def _open_blocker_banner() -> str:
     )
 
 
+def _exchange_algo_identifier_section(identifier: str | None) -> str:
+    """Whether the orders this system sends carry the exchange's audit-trail identifier.
+
+    **Why this is on the page at all** (`M6` adversarial review). The venue reads the identifier
+    from the environment and omits `algo_id` when it is unset, which is the correct behaviour —
+    a fabricated audit-trail identifier is worse than none, because it is indistinguishable from
+    a real one in the exchange's own records. But the omission was invisible. The venue's
+    `carries_exchange_algo_identifier` property was referenced nowhere outside its own module, so
+    the only way to discover that months of orders went out untagged was an exchange query. A
+    compliance gap that can only be found by the regulator is not a gap this system is managing.
+
+    **Why ABSENT is critical and not the dashed absent badge.** Everything else on this page that
+    wears `badge-absent` is the absence of an OBSERVATION — no fill, no horizon, nothing inferred.
+    This is the absence of a CONFIGURATION, and it has a consequence that runs the other way: the
+    orders are still sent, and they are sent untagged. It is styled like the thing it is.
+    """
+    if identifier is not None:
+        status_cell = '<span class="badge badge-good">PRESENT</span>'
+        detail = (
+            f"Every order this venue sends carries <code>algo_id</code>. The identifier is relayed "
+            f"from <code>{escape(EXCHANGE_ALGO_IDENTIFIER_ENV_VAR)}</code> exactly as the exchange "
+            f"issued it and is never manufactured here. It is a different field, with a different "
+            f"purpose, from the wire tag this system computes to find its own orders."
+        )
+        value_cell = f'<span class="mono-id">{escape(identifier)}</span>'
+    else:
+        status_cell = '<span class="badge badge-critical">ABSENT</span>'
+        detail = (
+            f"<strong>Every order this system sends today goes out with no "
+            f"<code>algo_id</code>.</strong> The identifier is issued by the exchange and relayed "
+            f"by this system — omitting it is correct, and inventing one would be far worse — so "
+            f"this is an OPERATOR action, not a defect: set "
+            f"<code>{escape(EXCHANGE_ALGO_IDENTIFIER_ENV_VAR)}</code> to the identifier the "
+            f"exchange issued for this flow. Until then the audit trail the circular requires does "
+            f"not exist for any order in the journal below. Tracked in "
+            f"<code>docs/BACKLOG.md</code> under <code>F02</code> order path."
+        )
+        value_cell = _absent(
+            "not configured",
+            "the environment variable is unset on this host, so the venue omits the parameter "
+            "rather than sending a value nobody issued",
+        )
+    return (
+        f'<div class="panel"><table><thead><tr><th>exchange algo identifier</th>'
+        f"<th>value</th><th>what that means for the orders below</th></tr></thead><tbody>"
+        f"<tr><td>{status_cell}</td><td>{value_cell}</td>"
+        f'<td class="reason">{detail}</td></tr>'
+        f'<tr><td class="muted">the obligation</td>'
+        f'<td colspan="2" class="reason">{escape(_EXCHANGE_ALGO_TAGGING_CIRCULAR)}</td></tr>'
+        f"</tbody></table></div>"
+    )
+
+
 def _tiles(state: OrderPathSurfaceState) -> str:
-    """Four counts, each folded out of the data rather than carried as a sentence."""
+    """Counts, each folded out of the data rather than carried as a sentence."""
     report = state.reconciliation
+    unreadable_count = len(state.unreadable_orders)
+    # Shown at zero as well as above it, and only styled critical when it is not zero. Zero here is
+    # a MEASUREMENT — every intent of the session folded — and is worth stating; a hidden tile
+    # would mean the page looked identical whether or not the check had been made at all.
+    unreadable_tile = (
+        f'<div class="tile{" tile-critical" if unreadable_count else ""}">'
+        f'<div class="tile-value">{escape(_format_quantity(unreadable_count))}</div>'
+        f'<div class="tile-label">intents this build could NOT read back</div></div>'
+    )
     disagreement_tile = (
         f'<div class="tile"><div class="tile-value">'
         f"{escape(_format_quantity(len(report.disagreements)))}</div>"
@@ -504,7 +578,7 @@ def _tiles(state: OrderPathSurfaceState) -> str:
     return (
         f'<div class="tiles">'
         f'<div class="tile"><div class="tile-value">'
-        f"{escape(_format_quantity(len(state.orders)))}</div>"
+        f"{escape(_format_quantity(len(state.orders) + unreadable_count))}</div>"
         f'<div class="tile-label">intents recorded this session</div></div>'
         f'<div class="tile"><div class="tile-value">'
         f"{escape(_format_quantity(len(state.open_orders)))}</div>"
@@ -515,6 +589,7 @@ def _tiles(state: OrderPathSurfaceState) -> str:
         f'<div class="tile"><div class="tile-value">'
         f"{escape(_format_quantity(len(state.in_flight_submissions)))}</div>"
         f'<div class="tile-label">submissions with no outcome written</div></div>'
+        f"{unreadable_tile}"
         f"{disagreement_tile}"
         f"</div>"
     )
@@ -561,8 +636,50 @@ def _order_row(order: OrderRecord) -> str:
     )
 
 
+_ORDER_TABLE_COLUMNS = 13
+"""How many columns the intent table has. Read by the unreadable row, which spans the middle of it.
+
+Named rather than typed twice: a column added to the table and not to the span produces a row that
+silently mis-aligns, and a mis-aligned row is one a reader skips.
+"""
+
+_UNREADABLE_ROW_SPAN = _ORDER_TABLE_COLUMNS - 2
+"""The middle of the row: everything between the intent id and the failure text."""
+
+
+def _unreadable_order_row(unreadable: UnreadableOrder) -> str:
+    """The row an order gets when this build cannot fold it back — never a gap in the table.
+
+    A dropped row is not a smaller failure than a 500, it is a quieter one: the table would then
+    say, with the page's full authority, that this order does not exist. So the row is drawn, it
+    says COULD NOT BE READ in words, and it carries the exception verbatim — the exception being
+    the only thing on the row that tells anyone what to do about it.
+    """
+    intent_cell = (
+        f'<td class="mono-id">{escape(unreadable.intent_id[:12])}</td>'
+        if unreadable.intent_id
+        else "<td>"
+        + _absent(
+            "no intent id",
+            "the journal could not be asked which intents this session holds, so this failure "
+            "cannot be attributed to one order",
+        )
+        + "</td>"
+    )
+    return (
+        f'<tr class="unreadable">'
+        f"{intent_cell}"
+        f'<td colspan="{_UNREADABLE_ROW_SPAN}">'
+        f'<span class="badge badge-critical">{escape(_UNREADABLE_WORD)}</span> '
+        f"this intent is recorded in the journal and this build could not fold it back into an "
+        f"order, so nothing below about it — state, quantities, fills — is known.</td>"
+        f'<td class="reason">{escape(unreadable.failure_sentence)}</td>'
+        f"</tr>"
+    )
+
+
 def _orders_section(state: OrderPathSurfaceState) -> str:
-    if not state.orders:
+    if not state.orders and not state.unreadable_orders:
         return _empty_note(
             f"No intent is recorded for {state.session_date.isoformat()}. That is a statement "
             f"about the journal at {state.journal_path}, not about this page: an intent is "
@@ -574,7 +691,11 @@ def _orders_section(state: OrderPathSurfaceState) -> str:
             f"its first placement; until then this page has nothing to show and says so rather "
             f"than drawing an empty table that looks like a quiet day."
         )
-    rows = "".join(_order_row(order) for order in state.orders)
+    # Unreadable first, deliberately: they are the rows a reader must not scroll past, and a table
+    # sorted by insertion time would bury them among the orders that folded perfectly well.
+    rows = "".join(
+        _unreadable_order_row(unreadable) for unreadable in state.unreadable_orders
+    ) + "".join(_order_row(order) for order in state.orders)
     return (
         f'<div class="panel"><table><thead><tr>'
         f"<th>intent</th><th>symbol</th><th>side</th><th>state</th><th>evidence</th>"
@@ -756,8 +877,12 @@ def _reconciliation_section(report: ReconciliationReport | None) -> str:
             "No reconciliation report was supplied to this page, so nothing here has been checked "
             "against the broker. This is deliberately NOT rendered as zero disagreements: the "
             "reconciler needs a live broker session, and 'I could not ask' and 'there is nothing "
-            "there' are the same answer only to a system that doubles positions. The reconciler "
-            "runs at every start of the order path and its report appears here when it has."
+            "there' are the same answer only to a system that doubles positions. And this section "
+            "cannot yet populate for a second reason, stated here rather than left to look like a "
+            "quiet day: the daily runner DOES reconcile the order path every day, but it folds the "
+            "report into a one-line summary and keeps nothing, so there is no last report for any "
+            "reader to load. Persisting it is an open item in docs/BACKLOG.md under F02 order "
+            "path; until it is done, this page will say exactly this."
         )
     counts = report.counts_by_verdict()
     count_tiles = "".join(
@@ -851,6 +976,14 @@ rows and the last reconciliation report, so an order that changes changes here.<
 
 {_open_blocker_banner()}
 
+<h2>The exchange's algo audit-trail identifier — carried, or not carried</h2>
+<p class="sub">The identifier is the exchange's, not this system's: it is relayed when the operator
+has configured one and OMITTED when they have not, because an invented audit-trail identifier is
+indistinguishable from a real one in the exchange's records and is therefore worse than none. What
+must never happen is the omission being invisible, which is why it is stated here rather than left
+to be discovered in an exchange query.</p>
+{_exchange_algo_identifier_section(state.exchange_algo_identifier)}
+
 {_tiles(state)}
 
 <h2>Every intent of the session — what was asked, what was sent, what came back</h2>
@@ -858,7 +991,10 @@ rows and the last reconciliation report, so an order that changes changes here.<
 has, the cell reads <span class="badge badge-absent">no fill</span> and never <code>0</code> — a
 zero there would be a fabricated cost basis, which is precisely what the order record refuses to
 produce. A row whose history this system had to invent is muted and carries
-<span class="badge badge-absent">{_INFERRED_WORD}</span>.</p>
+<span class="badge badge-absent">{_INFERRED_WORD}</span>. An intent the journal holds that this
+build could not fold back into an order is shown FIRST, as a
+<span class="badge badge-critical">{_UNREADABLE_WORD}</span> row carrying the exception that
+stopped it — never omitted, because an omitted row would say this order does not exist.</p>
 {_orders_section(state)}
 
 <h2>What was INFERRED rather than observed</h2>

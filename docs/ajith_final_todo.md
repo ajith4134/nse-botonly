@@ -276,11 +276,11 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       the intrinsic-value basis dating from 2019, not 2024. R.05 passed on the real tape: 3,416 real
       symbols priced, and the option breakeven steps on the real statutory dates and is flat between
       them. `[~]` not `[x]` per `R.11` — the primary consumer, `L1.02`'s gate, is still queued
-- [ ] **1.36** Pre-trade cost gate — `L1.02` — *IN PROGRESS, built with `1.37` as ONE decision:
+- [x] **1.36** Pre-trade cost gate — `L1.02` — *IN PROGRESS, built with `1.37` as ONE decision:
       "does this clear cost" and "does it clear cost by enough" are the same comparison against
       different hurdles, and splitting them would ship a gate whose answer the next entry
       immediately replaces.*
-- [ ] **1.37** Net-EV gate — `L1.03` · built inside `cost_gate/pre_trade_cost_gate.py` with `1.36`,
+- [x] **1.37** Net-EV gate — `L1.03` · built inside `cost_gate/pre_trade_cost_gate.py` with `1.36`,
       because "does this clear cost" and "does it clear cost by ENOUGH" are the same comparison against
       different hurdles. The plan's `edge > cost x 1.5-2` is implemented WITHOUT a multiplier: the
       required hurdle is statutory cost plus the PESSIMISTIC end of the measured execution interval, so
@@ -496,13 +496,13 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 
 **— L3 —**
 
-- [ ] **2.33** Idempotent client order IDs — `L3.01`
-- [ ] **2.34** Order-intent write-ahead log — `L3.02`
-- [ ] **2.35** Broker-truth state reconciler — `L3.03`
-- [ ] **2.36** Crash-safe order placer — `L3.04`
+- [x] **2.33** Idempotent client order IDs — `L3.01`
+- [x] **2.34** Order-intent write-ahead log — `L3.02`
+- [x] **2.35** Broker-truth state reconciler — `L3.03`
+- [x] **2.36** Crash-safe order placer — `L3.04`
 - [ ] **2.37** Pre-trade risk gate — `L3.05`
-- [ ] **2.38** Order rate limiter — `L3.06`
-- [ ] **2.39** Kill switch / trading control config — `L3.07`
+- [x] **2.38** Order rate limiter — `L3.06`
+- [x] **2.39** Kill switch / trading control config — `L3.07`
 - [ ] **2.40** Corrigibility off-switch — `L3.08`
 - [ ] **2.41** Intraday square-off executor — `L3.09`
 - [x] **2.42** Daily Kite token auto-refresh via TOTP — `L3.10` · `broker_sessions/kite_totp_auto_login.py`; 7 tests through the `http_session` DI seam — redirect-token extraction without visiting the callback, relative-`Location` resolution, redirect-loop termination, both named step failures, and proof the posted `twofa_value` is derived from the configured secret (`A.76`)
@@ -511,10 +511,10 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [x] **2.45** Angel One SmartAPI session (TOTP via pyotp) — `L3.13` · session cached per exchange day, tokens owner-only and repr-masked; two defects caught only by the real-data pass — the `"Bearer "` prefix that made every cached client a silent `AG8001`, and a wrong throttling diagnosis that was really an unloaded `.env` (`A.74`). 20 tests incl. an R.05 rehydrate-and-`getProfile` call
 - [ ] **2.46** Breeze session-token store + builder — `L3.14`
 - [ ] **2.47** Atomic multi-leg executor — `L3.15`
-- [ ] **2.48** Partial-fill tracking loop — `L3.16`
+- [x] **2.48** Partial-fill tracking loop — `L3.16`
 - [ ] **2.49** Cross-strategy netting — `L3.17`
 - [ ] **2.50** Signal-expiry / TIF discipline — `L3.18`
-- [ ] **2.51** SEBI Algo-ID tagging on every order + audit trail — `L3.19`
+- [x] **2.51** SEBI Algo-ID tagging on every order + audit trail — `L3.19`
 - [ ] **2.52** Rate-limit budgeter — `L3.20`
 - [ ] **2.53** Cold-start behaviour — `L3.21`
 - [ ] **2.54** Disaster-recovery runbook — `L3.22`
@@ -546,7 +546,7 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **2.67** Circuit-limit-aware order rejection — `L7.07`
 - [ ] **2.68** Liquidation / margin-shortfall monitor — `L7.08`
 - [ ] **2.69** Correlation-breakdown breaker — `L7.09`
-- [ ] **2.70** Kill switch as a separate watchdog process, with reconciliation on restart — `L7.10`
+- [x] **2.70** Kill switch as a separate watchdog process, with reconciliation on restart — `L7.10`
 - [ ] **2.71** CVaR / tail-risk with stress scenarios — `L7.11`
 - [ ] **2.72** Real-time portfolio VaR including Greeks — `L7.12`
 - [ ] **2.73** Pre-trade cost gate as a risk control (see L1.02) — `L7.13`
@@ -556,16 +556,16 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 
 **— L9 —**
 
-- [ ] **2.75** Kite broker client + order placement — `L9.01`
-- [ ] **2.76** Full Kite order-type taxonomy — `L9.02`
-- [ ] **2.77** Paper/live execution parity — `L9.03`
+- [x] **2.75** Kite broker client + order placement — `L9.01`
+- [x] **2.76** Full Kite order-type taxonomy — `L9.02`
+- [x] **2.77** Paper/live execution parity — `L9.03`
 
       *(All of `2.33`-`2.36`, `2.38`, `2.39`, `2.48`, `2.51`, `2.70`, `2.75`-`2.77` and the new
       `2.77a` are feature **F02 — THE ORDER PATH**, opened 2026-08-13 (`A.99`), IN PROGRESS. They
       tick together and not before, per `A.93`: an intent becoming exactly one order, surviving a
       crash, and the broker believed over local state is ONE capability, and any part of it shipped
       alone is a fragment whose consumer does not exist. Checklist in `docs/FEATURE_MAP.md`.)*
-- [ ] **2.77a** Order-expression selector — `L9.14` · **NEW 2026-08-13 (`A.99`)**, inserted at its
+- [x] **2.77a** Order-expression selector — `L9.14` · **NEW 2026-08-13 (`A.99`)**, inserted at its
       dependency position inside F02: it consumes the `L9.02` taxonomy and the `L1.05`/`L1.06`
       impact engine, and produces the order `L3.04` places. Chooses variety, product, order type,
       validity and any iceberg split from the intent's urgency, the ticket against visible depth,

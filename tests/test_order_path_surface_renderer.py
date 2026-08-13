@@ -14,6 +14,13 @@ one of those ways is a real defect in shipped order-management code (`docs/resea
   reads as zero, and a horizon of zero is the claim that any unseen order may be abandoned at once.
 - `test_the_open_blocker_banner_is_on_the_page` — `F02` closes with its `R.05` real-fill pass
   explicitly unmet; a page that hid that would let the feature look finished.
+- `test_one_unreadable_order_does_not_take_the_page_down_and_is_not_dropped` — the whole surface
+  used to raise on one unfoldable order, which is a 500 at the moment the in-flight queue and the
+  inferred ledger are most needed (`M5`). Dropping the row silently would be the quieter version
+  of the same lie.
+- `test_an_absent_exchange_algo_identifier_is_stated_with_the_circular_that_requires_it` — the
+  venue omits `algo_id` when none is configured, correctly; the omission had no reader anywhere in
+  the system, so it was discoverable only by an exchange query months later (`M6`).
 
 The journal is REAL in every test — a live SQLite write-ahead log in `tmp_path`, folded back the
 way production folds it. A hand-built `OrderRecord` would test the renderer against a shape the
@@ -22,6 +29,7 @@ journal may not actually produce.
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from html import escape
@@ -45,10 +53,14 @@ from nse_algo_trader.order_path.broker_order_facility_facts import (
     OrderVariety,
 )
 from nse_algo_trader.order_path.broker_truth_reconciler import (
+    _MINIMUM_OBSERVATIONS_FOR_A_HORIZON,
     OrderReconciliation,
     ReconciliationReport,
     ReconciliationVerdict,
     visibility_horizon_from_observed_delays,
+)
+from nse_algo_trader.order_path.kite_order_execution_venue import (
+    EXCHANGE_ALGO_IDENTIFIER_ENV_VAR,
 )
 from nse_algo_trader.order_path.order_intent_journal import OrderIntentJournal
 from nse_algo_trader.order_path.order_lifecycle_state_machine import (
@@ -65,6 +77,14 @@ pytestmark = pytest.mark.unit
 _DECIDED_AT = datetime(2026, 8, 13, 10, 15, 30, tzinfo=UTC)
 _SESSION = date(2026, 8, 13)
 _MEASURED_AT = datetime(2026, 8, 13, 11, 0, 0, tzinfo=UTC)
+
+_A_CONFIGURED_ALGO_IDENTIFIER = "4444444444440"
+"""The shape NSE's own FAQ gives sub-threshold API flow: twelve `4`s and a `0`, `2` or `4`.
+
+A realistic value rather than `"x"`, because the assertion that matters is that the page prints the
+identifier it was handed — and a value that could not be a real one would let an escaping or
+truncation defect pass unseen (`docs/research/223` §4).
+"""
 
 
 def _intent(*, symbol: str = "RELIANCE", quantity: int = 100) -> TradingIntent:
@@ -176,12 +196,15 @@ def _page_from(
     path: Path,
     *,
     reconciliation: ReconciliationReport | None = None,
+    exchange_algo_identifier: str | None = None,
 ) -> str:
+    """The page as the route builds it. The identifier defaults to ABSENT — this host's state."""
     state = build_order_path_surface_state(
         journal,
         measured_at=_MEASURED_AT,
         journal_path=path,
         reconciliation=reconciliation,
+        exchange_algo_identifier=exchange_algo_identifier,
     )
     return render_order_path_page(state)
 
@@ -270,6 +293,8 @@ def test_the_evidence_an_inference_rests_on_is_printed_in_full(tmp_path: Path) -
             journal_path=tmp_path / "inferred.sqlite3",
             journal_exists=True,
             recorded_session_dates=(_SESSION,),
+            unreadable_orders=(),
+            exchange_algo_identifier=None,
         )
     )
     assert "no trade accounts for the difference" in page
@@ -294,13 +319,26 @@ def test_an_unestablished_horizon_explains_itself_rather_than_rendering_blank(
 
 
 def test_an_established_horizon_shows_its_value_and_what_it_rests_on(tmp_path: Path) -> None:
-    """Once measured, both halves must be visible: a horizon without its N cannot be judged."""
+    """Once measured, both halves must be visible: a horizon without its N cannot be judged.
+
+    The observations come from that many DISTINCT orders, which the journal now requires: one
+    observation per intent is enforced by its schema, because a single order re-observed on every
+    reconciliation pass recorded its AGE rather than its appearance delay and inflated the horizon
+    until nothing could ever be resolved. Twenty observations of one order is exactly the shape
+    that rule exists to refuse, so this test seeds twenty orders rather than twenty re-readings.
+
+    The count is read from the estimator's own minimum rather than typed, so a change to the
+    quantile moves this test with it instead of leaving it asserting a stale number.
+    """
     journal, path = _journal_with_one_unfilled_intent(tmp_path)
     try:
-        (order,) = journal.orders_for_session(_SESSION)
-        for index in range(25):
+        for index in range(_MINIMUM_OBSERVATIONS_FOR_A_HORIZON):
+            observed = _intent(symbol=f"HORIZON{index:02d}")
+            journal.record_intent(
+                observed, _expression(), OrderNamespace.SIMULATED, at=_DECIDED_AT
+            )
             journal.record_visibility_delay(
-                order.intent_id,
+                observed.intent_id,
                 submitted_at=_DECIDED_AT,
                 first_seen_at=_DECIDED_AT.replace(second=31 + index % 20),
             )
@@ -309,7 +347,7 @@ def test_an_established_horizon_shows_its_value_and_what_it_rests_on(tmp_path: P
         journal.close()
     assert "measured visibility horizon" in page
     assert "appearance delays it rests on" in page
-    assert "25" in page
+    assert str(_MINIMUM_OBSERVATIONS_FOR_A_HORIZON) in page
     assert "NOT ESTABLISHED" not in page
 
 
@@ -382,7 +420,10 @@ def test_the_lifecycle_census_counts_every_state_including_the_empty_ones(
     journal, path = _journal_with_one_unfilled_intent(tmp_path)
     try:
         state = build_order_path_surface_state(
-            journal, measured_at=_MEASURED_AT, journal_path=path
+            journal,
+            measured_at=_MEASURED_AT,
+            journal_path=path,
+            exchange_algo_identifier=None,
         )
     finally:
         journal.close()
@@ -402,7 +443,10 @@ def test_an_in_flight_submission_with_no_outcome_is_surfaced(tmp_path: Path) -> 
         (order,) = journal.orders_for_session(_SESSION)
         journal.record_submission_started(order.intent_id, at=_DECIDED_AT)
         state = build_order_path_surface_state(
-            journal, measured_at=_MEASURED_AT, journal_path=path
+            journal,
+            measured_at=_MEASURED_AT,
+            journal_path=path,
+            exchange_algo_identifier=None,
         )
         page = render_order_path_page(state)
     finally:
@@ -439,6 +483,140 @@ def test_a_hostile_reason_string_cannot_inject_markup(tmp_path: Path) -> None:
     assert page.count("&lt;script&gt;") >= 2, "both the reason and the broker's words are escaped"
 
 
+def _journal_with_one_readable_and_one_unreadable_intent(tmp_path: Path) -> tuple[Path, str, str]:
+    """Two real intents, one of which this build can no longer fold back into an order.
+
+    The damage is applied the way it actually arrives: a row on disk carrying an `OrderExpression`
+    this build's enums do not recognise — a journal written by an earlier or later build, or one
+    restored across a schema change. It is written through a second SQLite connection rather than
+    through the journal's API precisely because the journal's API would refuse to produce it, and
+    what is under test is what happens when the file nevertheless contains it.
+
+    Returns the journal path and the two intent ids, readable first.
+    """
+    path = tmp_path / "one_bad_row.sqlite3"
+    journal = OrderIntentJournal(path)
+    readable = _intent(symbol="RELIANCE")
+    unreadable = _intent(symbol="INFY")
+    for intent in (readable, unreadable):
+        journal.record_intent(
+            intent, _expression(), OrderNamespace.SIMULATED, at=_DECIDED_AT
+        )
+        journal.record_event(
+            intent.intent_id, LifecycleEvent.SUBMITTED, EventSource.LOCAL, at=_DECIDED_AT
+        )
+    journal.close()
+
+    with sqlite3.connect(path) as damage:
+        damage.execute(
+            "UPDATE order_intent SET expression_json = ? WHERE intent_id = ?",
+            ('{"variety": "iceberg_v2_from_a_later_build"}', unreadable.intent_id),
+        )
+    return path, readable.intent_id, unreadable.intent_id
+
+
+@pytest.mark.adversarial
+def test_one_unreadable_order_does_not_take_the_page_down_and_is_not_dropped(
+    tmp_path: Path,
+) -> None:
+    """`M5` — one unfoldable order used to be an HTTP 500 for the WHOLE surface.
+
+    `OrderIntentJournal.orders_for_session` folds every intent of the session and is all-or-
+    nothing, so a single row this build cannot interpret raised out of the state builder, out of
+    the route, and out as a 500. What went down with it is the point: the in-flight submission
+    queue and the inferred-event ledger are on this page, and they are exactly what an operator
+    needs at the moment something in the journal has gone wrong.
+
+    Two claims, and neither alone is enough:
+
+    * the page RENDERS, and the readable order is still on it — a surface that fails closed on one
+      bad row is not safer than one that fails open, it is just blind;
+    * the unreadable order is a VISIBLE row carrying the exception, not a dropped one. A dropped
+      row is the quieter version of the same lie: the table would then state, with this page's full
+      authority, that the order does not exist.
+    """
+    path, readable_intent_id, unreadable_intent_id = (
+        _journal_with_one_readable_and_one_unreadable_intent(tmp_path)
+    )
+    journal = OrderIntentJournal(path)
+    try:
+        # The precondition IS the defect: the journal's own fold still raises, as it should.
+        with pytest.raises(Exception, match="iceberg_v2_from_a_later_build"):
+            journal.orders_for_session(_SESSION)
+
+        state = build_order_path_surface_state(
+            journal,
+            measured_at=_MEASURED_AT,
+            journal_path=path,
+            exchange_algo_identifier=None,
+        )
+        page = render_order_path_page(state)
+    finally:
+        journal.close()
+
+    assert len(state.orders) == 1
+    assert state.orders[0].intent_id == readable_intent_id
+    assert len(state.unreadable_orders) == 1
+    assert state.unreadable_orders[0].intent_id == unreadable_intent_id
+
+    # The count of intents recorded is the one number that must not shrink when a row goes bad.
+    assert len(state.orders) + len(state.unreadable_orders) == 2
+
+    assert page.startswith("<!doctype html>")
+    assert "RELIANCE" in page, "the readable order must survive its neighbour"
+    assert "COULD NOT BE READ" in page
+    assert escape(unreadable_intent_id[:12]) in page, (
+        "the unreadable order is named, so an operator can go and look at the row"
+    )
+    assert "iceberg_v2_from_a_later_build" in page, (
+        "the exception text is the only part of the row that says what to do about it"
+    )
+    # And the sections a 500 used to take with it are still there.
+    assert "the crash-recovery queue" in page
+    assert "Lifecycle census" in page
+
+
+@pytest.mark.adversarial
+def test_an_absent_exchange_algo_identifier_is_stated_with_the_circular_that_requires_it(
+    tmp_path: Path,
+) -> None:
+    """`M6` — omitting `algo_id` is correct; the omission being INVISIBLE was the defect.
+
+    `NSE_EXCHANGE_ALGO_IDENTIFIER` is unset on this host, so `kite_order_execution_venue` leaves
+    `algo_id` off every order — rightly, because the identifier belongs to the exchange and a
+    fabricated one is indistinguishable from a real one in the exchange's own records. But
+    `carries_exchange_algo_identifier` was referenced nowhere outside its own module, so the gap
+    was discoverable only by an exchange query months later.
+
+    The row must therefore name three things, and the test asserts all three: the STATE (ABSENT in
+    a word, not a colour), the CIRCULAR that makes it matter, and the environment variable an
+    operator has to set. A row saying only "absent" would be a status nobody can act on.
+    """
+    journal, path = _journal_with_one_unfilled_intent(tmp_path)
+    try:
+        absent_page = _page_from(journal, path, exchange_algo_identifier=None)
+        present_page = _page_from(
+            journal, path, exchange_algo_identifier=_A_CONFIGURED_ALGO_IDENTIFIER
+        )
+    finally:
+        journal.close()
+
+    assert "ABSENT" in absent_page
+    assert "NSE/INVG/67858" in absent_page
+    assert "All algo orders (Below and above the threshold) shall be tagged" in absent_page
+    assert EXCHANGE_ALGO_IDENTIFIER_ENV_VAR in absent_page
+    assert "BACKLOG.md" in absent_page
+    # Above the tables it qualifies: an operator must meet it before reading the orders it applies
+    # to, for the same reason the open blocker is not a footnote.
+    assert absent_page.index("ABSENT") < absent_page.index("Every intent of the session")
+
+    # And a configured identifier reads differently — otherwise the row is decoration, not a
+    # measurement of this host.
+    assert "PRESENT" in present_page
+    assert _A_CONFIGURED_ALGO_IDENTIFIER in present_page
+    assert present_page != absent_page
+
+
 def test_a_journal_that_does_not_exist_says_so_rather_than_drawing_an_empty_table(
     tmp_path: Path,
 ) -> None:
@@ -446,7 +624,10 @@ def test_a_journal_that_does_not_exist_says_so_rather_than_drawing_an_empty_tabl
     missing = tmp_path / "never_written.sqlite3"
     page = render_order_path_page(
         empty_order_path_surface_state(
-            session_date=_SESSION, measured_at=_MEASURED_AT, journal_path=missing
+            session_date=_SESSION,
+            measured_at=_MEASURED_AT,
+            journal_path=missing,
+            exchange_algo_identifier=None,
         )
     )
     assert "has never been created" in page

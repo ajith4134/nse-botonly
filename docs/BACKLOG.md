@@ -19,6 +19,28 @@ Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) ·
 
 ## `F02` order path (2026-08-13, `A.99`) — 🟡 open
 
+- ⛔ **`NSE_EXCHANGE_ALGO_IDENTIFIER` is not set, so every order this system sends goes out with no
+  `algo_id`.** NSE/INVG/67858 (2025-05-05) para G: *"All algo orders (Below and above the
+  threshold) shall be tagged with a unique identifier provided by the Exchange in order to
+  establish audit trail"* (`docs/research/223` §4). The identifier is ISSUED BY THE EXCHANGE and
+  merely relayed by `kite_order_execution_venue`, which is why it is read from the environment and
+  why the parameter is OMITTED rather than filled with a guess — a fabricated audit-trail
+  identifier is worse than none, being indistinguishable from a real one in the exchange's own
+  records. **Operator action: obtain the identifier for this flow and put it in `.env` as
+  `NSE_EXCHANGE_ALGO_IDENTIFIER`.** Until then the audit trail the circular requires does not
+  exist for any order in the journal. Found by the `M6` adversarial review, whose finding was not
+  the omission (that is correct) but its INVISIBILITY: `carries_exchange_algo_identifier` had no
+  reader outside its own module, so the gap was discoverable only by an exchange query months
+  later. It is now a row at the top of `/orders`, PRESENT or ABSENT with the circular named.
+- 🔴 **Nothing persists a `ReconciliationReport`, so `/orders` can never show one.** The daily
+  runner reconciles the order path every day (`_reconcile_order_path` in
+  `scripts/run_daily_operations.py`) and folds the whole report into a one-line summary string;
+  the report object is then discarded. The `/orders` surface therefore renders "no reconciliation has run" every time, which
+  is the honest answer and not a substitute for the section working. Found by the `M5` adversarial
+  review. The fix is a store the runner writes the report to and the route reads the last one
+  from — deliberately NOT invented while the reconciler itself was being edited elsewhere, because
+  a serialiser written against a moving dataclass is the next defect. The page now says exactly
+  this in the section rather than implying a report will appear on its own.
 - ⛔ **The real-FILL lifecycle probe is DEFERRED by operator decision** (`A.99`, 2026-08-13, to be
   run after the project is complete). `F02`'s `R.05` pass is READ-ONLY: real `orders()`,
   `order_history()`, `trades()`, `positions()` and real rejection responses. Nothing in the feature
@@ -38,6 +60,13 @@ Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) ·
   by design. No trader loop exists until `F04`; the named future consumer is `F04`'s paper loop.
 - 🔴 **The watchdog's reconciliation probe is an injected seam with nothing injected yet.** Wiring
   `BrokerTruthReconciler` into it belongs with `F04`, where a loop exists to halt.
+- 🔴 **Nothing persists a `ReconciliationReport`, so `/orders` can never render one.** The daily
+  runner reconciles every day and folds the whole report into a one-line summary string, then
+  discards the object. The page's reconciliation section is therefore permanently "no reconciliation
+  has run" — which it now says, with the real reason, rather than implying a report will appear by
+  itself. Fix: a small store the runner writes and the route reads. Deliberately not built during
+  `F02` because the report dataclass was being edited at the time, and a serialiser written against
+  a moving dataclass is the next defect.
 - 🔴 **`docs/SYSTEM_MAP.md` describes the pre-reset system and has not been regenerated.** It is
   marked stale at the top rather than left to mislead. The generator that built it from the AST
   import graph is itself gone with the reset, so regenerating means rebuilding the extractor —

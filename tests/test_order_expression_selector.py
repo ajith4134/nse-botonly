@@ -365,6 +365,79 @@ def test_an_iceberg_leg_count_comes_from_the_ladder_and_the_expression_carries_i
 
 
 @pytest.mark.unit
+@pytest.mark.adversarial
+def test_every_iceberg_leg_count_divides_its_clip_so_the_venue_can_encode_it() -> None:
+    """`M/2` — the selector used to propose icebergs the wire provably could not carry.
+
+    The reproduction, verbatim: a 100-unit clip against a 45-unit visible ladder gave
+    `ceil(100 / 45) = 3` legs, and `100 % 3 == 1`. Kite takes a per-LEG quantity, so
+    `kite_order_execution_venue._iceberg_quantity_for` refuses the order outright rather than
+    rounding a leg off its own initiative — correctly, because the rounding changes the size
+    actually sent. The order therefore died AT SUBMISSION, after every cost in it had been priced
+    and after it had won the ranking, on roughly two leg counts in three.
+
+    Asserted as the venue's own arithmetic (`quantity % legs == 0`) rather than as an expected leg
+    count, so this test keeps meaning the same thing if the ladder, the scorer or the leg search
+    changes. It is swept over a range of clips and depths because the defect was arithmetic and a
+    single pair of numbers would only prove that one pair is now safe.
+    """
+    for visible_per_rung in (15, 20, 45):
+        for quantity in (100, 120, 175, 200, 360, 600, 1_000):
+            thin = book(
+                bids=tuple((price, visible_per_rung) for price in (9_990, 9_980, 9_970)),
+                asks=tuple((price, visible_per_rung) for price in (10_010, 10_020, 10_030)),
+                total_buy_quantity=visible_per_rung * 100,
+                total_sell_quantity=visible_per_rung * 100,
+            )
+            choice = selector(touch_rate="40").select(
+                ExpressionSelectionRequest(intent=intent(quantity=quantity), snapshot=thin)
+            )
+            iceberg = _by_family(choice.scored, ExpressionFamily.ICEBERG_AGGRESSIVE)
+            if iceberg is None:
+                # No candidate at all is the OTHER half of the fix: where no leg count both fits
+                # the ladder and divides the clip, the family is excluded WITH ITS REASON rather
+                # than emitted and refused at the wire.
+                excluded = {entry.family: entry for entry in choice.excluded}
+                assert ExpressionFamily.ICEBERG_AGGRESSIVE in excluded, (
+                    f"clip {quantity} against {visible_per_rung * 3} visible produced neither an "
+                    f"iceberg candidate nor a recorded exclusion — a silently dropped family"
+                )
+                assert excluded[ExpressionFamily.ICEBERG_AGGRESSIVE].reason
+                continue
+            legs = iceberg.expression.iceberg_legs
+            assert legs is not None
+            assert quantity % legs == 0, (
+                f"a {quantity}-unit clip across {legs} legs does not divide evenly, which is "
+                f"exactly what the venue refuses to encode"
+            )
+            assert iceberg.expression.disclosed_quantity == quantity // legs
+            # And the leg must still fit inside what the snapshot can actually see, which is the
+            # constraint the leg count existed for in the first place.
+            assert quantity // legs <= visible_per_rung * 3
+
+
+@pytest.mark.unit
+@pytest.mark.adversarial
+def test_a_clip_no_leg_count_can_divide_yields_no_iceberg_rather_than_an_unsendable_one() -> None:
+    """A prime clip larger than the ladder has no encodable split at all, and must say so.
+
+    101 units is prime, so no leg count between two and the facility's fifty divides it; every
+    conceivable iceberg for it needs a fractional leg. The right answer is no candidate plus a
+    recorded reason — not a candidate that wins the ranking and is then refused at submission.
+    """
+    choice = selector(touch_rate="40").select(
+        ExpressionSelectionRequest(intent=intent(quantity=101), snapshot=thin_book())
+    )
+    assert _by_family(choice.scored, ExpressionFamily.ICEBERG_AGGRESSIVE) is None
+    excluded = {entry.family: entry for entry in choice.excluded}
+    assert ExpressionFamily.ICEBERG_AGGRESSIVE in excluded
+    refusal = excluded[ExpressionFamily.ICEBERG_AGGRESSIVE]
+    assert "divides a 101-unit clip exactly" in refusal.reason
+    assert refusal.source, "an exclusion on a facility fact must carry the facility's source"
+    assert choice.chosen.iceberg_legs is None
+
+
+@pytest.mark.unit
 def test_a_cover_order_appears_only_on_equity_intraday_and_only_with_a_stop() -> None:
     """`CO` is NSE equity intraday only, and it imposes a stop the intent never asked for."""
     without_stop = selector().select(request())

@@ -40,6 +40,7 @@ from nse_algo_trader.order_path.order_lifecycle_state_machine import (
 from nse_algo_trader.order_path.order_record import OrderExpression, OrderRecord
 from nse_algo_trader.order_path.simulated_order_execution_venue import (
     MAXIMUM_MODIFICATIONS_PER_ORDER,
+    SIMULATED_ORDER_DIGEST_HEX_LENGTH,
     SIMULATED_ORDER_ID_PREFIX,
     SIMULATED_POSITION_VIEW,
     SIMULATED_TRADE_ID_PREFIX,
@@ -187,14 +188,32 @@ class TestTheIdNamespaceIsUnmistakable:
         assert not is_simulated_broker_order_id("")
 
     def test_ids_are_unique_and_deterministic_across_a_session(self) -> None:
+        """Three placements of a byte-identical order record still get three distinct ids.
+
+        The venue is not the idempotency guard — the journal is — so it must be able to issue an
+        id for the same order record twice. Asserted on the SHAPE rather than on three literal
+        ids: `SIM-ORD-<session>-<content digest>-<placement>`, where the digest is what makes a
+        restart safe and the placement ordinal is what separates two placements within one
+        process. A literal expectation here would have to be rewritten every time the content
+        hashed changes, which is precisely the assertion that stops catching anything.
+        """
         venue = SimulatedOrderExecutionVenue()
         ids = [venue.place(_order()) for _ in range(3)]
         assert len(set(ids)) == 3
-        assert ids == [
-            f"{SIMULATED_ORDER_ID_PREFIX}20260813-000001",
-            f"{SIMULATED_ORDER_ID_PREFIX}20260813-000002",
-            f"{SIMULATED_ORDER_ID_PREFIX}20260813-000003",
-        ]
+        for placement, order_id in enumerate(ids, start=1):
+            prefix, session_stamp, digest, ordinal = (
+                SIMULATED_ORDER_ID_PREFIX,
+                *order_id.removeprefix(SIMULATED_ORDER_ID_PREFIX).split("-"),
+            )
+            assert prefix == SIMULATED_ORDER_ID_PREFIX
+            assert session_stamp == _SESSION.strftime("%Y%m%d")
+            assert len(digest) == SIMULATED_ORDER_DIGEST_HEX_LENGTH
+            assert int(digest, 16) >= 0, "the digest half must be readable hexadecimal"
+            assert int(ordinal) == placement
+        # The digest is a function of the order's content, so identical content hashes identically
+        # and only the placement ordinal moves. That is the whole design, stated as an assertion.
+        digests = {order_id.rsplit("-", maxsplit=1)[0] for order_id in ids}
+        assert len(digests) == 1
 
     def test_two_venues_driven_identically_produce_identical_ids(self) -> None:
         """Determinism, stated as a test: no clock and no randomness anywhere in the path."""
@@ -202,6 +221,68 @@ class TestTheIdNamespaceIsUnmistakable:
         assert [first.place(_order()) for _ in range(2)] == [
             second.place(_order()) for _ in range(2)
         ]
+
+    @pytest.mark.adversarial
+    def test_a_restarted_session_cannot_reissue_an_id_it_already_used(self) -> None:
+        """`M/4` — the defect: ids were keyed on an in-memory counter plus the session date.
+
+        The FIRST order of every process was `SIM-ORD-<date>-000001`. Restart a paper session
+        mid-morning — a crash, a redeploy, an operator stopping the loop — and the next order
+        placed reissued the id the morning's first order already held. Two DIFFERENT orders then
+        shared an identifier, which is the one thing an identifier exists to make impossible: the
+        journal keys fills, order history and reconciliation verdicts on it, so the second order
+        would inherit the first one's fills.
+
+        Reproduced exactly as a restart is: a second venue instance with no memory of the first,
+        on the same session date, placing different orders. Every id from both processes must be
+        distinct, and the assertion is on the whole set rather than on one pair so that "the
+        counters happen to have diverged" cannot pass for "the ids are unique".
+        """
+        before_restart_venue = SimulatedOrderExecutionVenue()
+        before_restart = [
+            before_restart_venue.place(_order(symbol=symbol))
+            for symbol in ("RELIANCE", "INFY", "TCS")
+        ]
+
+        # The process dies here. Nothing of the venue survives — that is what makes it a restart.
+        after_restart_venue = SimulatedOrderExecutionVenue()
+        after_restart = [
+            after_restart_venue.place(_order(symbol=symbol))
+            for symbol in ("HDFCBANK", "ITC", "SBIN")
+        ]
+
+        assert set(before_restart).isdisjoint(after_restart), (
+            "a restarted paper session reissued an order id from before the restart"
+        )
+        assert len(set(before_restart + after_restart)) == len(before_restart + after_restart)
+        # The placement ordinals DO repeat across the restart — they are for readability, not for
+        # uniqueness — which is why the content digest has to be the part that carries identity.
+        assert [order_id.rsplit("-", maxsplit=1)[1] for order_id in before_restart] == [
+            order_id.rsplit("-", maxsplit=1)[1] for order_id in after_restart
+        ]
+
+    @pytest.mark.adversarial
+    def test_a_restarted_session_cannot_reissue_a_trade_id_either(self) -> None:
+        """The trade id carried the identical defect, and a repeated one mis-attributes a fill.
+
+        A trade id is how a fill finds its order in the journal. Keyed on a process-local counter,
+        the first fill after a restart reused the first fill of the morning, which attaches real
+        filled quantity to the wrong order — the same class of damage as a repeated order id, one
+        level down. Deriving it from the ORDER's id plus the fill's position within that order
+        makes it unique wherever the order id is, and greppable back to its parent besides.
+        """
+        before_restart_venue = SimulatedOrderExecutionVenue()
+        before_restart_venue.observe_book(book())
+        before_restart_venue.place(_order(symbol="RELIANCE"))
+        before_restart = [trade.broker_trade_id for trade in _poll(before_restart_venue, 3)]
+
+        after_restart_venue = SimulatedOrderExecutionVenue()
+        after_restart_venue.observe_book(book())
+        after_restart_venue.place(_order(symbol="INFY"))
+        after_restart = [trade.broker_trade_id for trade in _poll(after_restart_venue, 3)]
+
+        assert before_restart and after_restart
+        assert set(before_restart).isdisjoint(after_restart)
 
     def test_trade_ids_carry_their_own_prefix(self) -> None:
         venue = SimulatedOrderExecutionVenue()
