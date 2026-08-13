@@ -1606,3 +1606,24 @@ only a real order closes it.
 
 **What would change my mind:** the operator running the deferred probe. One filled and squared-off
 ticket would convert most of this from judgement to measurement.
+
+## O.81 · 2026-08-13 · Paper trading should not need the same ceremony as live capital
+
+**Opinion:** the trading control latch is right to be latched by default and right to make LIVE
+unreachable without an operator key, but requiring the SAME operator ceremony to release the latch
+for PAPER trading is a mistake, and the mistake is a safety one rather than a convenience one.
+
+**Reasoning:** `R.22`'s two keys exist for real money. As built (`trading_control_latch.py:595`),
+`release_latch` demands an `OperatorAuthorization` — the arming-key file plus a typed phrase — even
+when the intended mode is paper. `F04`'s paper loop therefore cannot run at all until the operator
+performs a ceremony designed for arming live capital. The predictable consequence is the operator
+releasing the latch once and leaving it released, which leaves `arm_live_trading` as the ONLY thing
+between the system and live money — a single key where the design intends two. A cheaper, still
+explicit, still recorded paper release keeps the expensive ceremony rare and therefore meaningful.
+
+**Confidence: reasoned.** The mechanism was read and the ceremony run end to end by the agent that
+built it; the failure mode I am predicting is human behaviour, which I have not observed here.
+
+**What would change my mind:** the operator saying they want one ceremony for both, or evidence
+that paper releases are so rare that the friction never accumulates. Either way this is the
+operator's call and is recorded, not acted on.
