@@ -15,11 +15,13 @@ an operator while looking perfectly healthy:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
 
 import pytest
 
+from nse_algo_trader.cost_gate.mean_reversion_edge_calibrator import ReversionCapture
 from nse_algo_trader.cost_gate.per_segment_edge_floor import SegmentEdgeFloor, derive_segment_floor
 from nse_algo_trader.dashboard.transaction_cost_surface_renderer import (
     PreconditionFailureRow,
@@ -241,3 +243,117 @@ def test_the_page_still_shows_what_it_cannot_price(rendered_page: str) -> None:
     """
     assert "CANNOT price" in rendered_page or "cannot price" in rendered_page.lower()
     assert "2024-10-01" in rendered_page
+
+
+# ------------------------------------------------------- the measured-edge panel (`L1.16`)
+
+
+def calibration_of(
+    mean_bps: str, *, bucket: str, standard_error: str = "5", median: str = ""
+) -> ReversionCapture:
+    """A calibration row shaped like the ones the real fit produced."""
+    from nse_algo_trader.cost_gate.mean_reversion_edge_calibrator import CalibrationMaturity
+
+    return ReversionCapture(
+        deviation_bucket=Decimal(bucket),
+        horizon_bars=5,
+        event_count=10_814,
+        mean_captured_bps=Decimal(mean_bps),
+        median_captured_bps=Decimal(median or mean_bps),
+        standard_error_bps=Decimal(standard_error),
+        mean_captured_sigma=Decimal("0.06"),
+        fitted_through=date(2026, 7, 1),
+        maturity=CalibrationMaturity.DEVIATION_BUCKET,
+    )
+
+
+def page_with_calibrations(calibrations: Sequence[ReversionCapture]) -> str:
+    from nse_algo_trader.dashboard.dashboard_server import (
+        TRANSACTION_COST_DISPLAY_ASSUMPTIONS,
+        TRANSACTION_COST_DISPLAY_CEILING_BPS,
+    )
+    from nse_algo_trader.market_rules.nse_market_rule_history import seeded_nse_market_rule_store
+    from nse_algo_trader.transaction_cost.charge_reconciliation_ledger import (
+        ChargeReconciliationLedger,
+    )
+    from nse_algo_trader.transaction_cost.nse_transaction_cost_engine import (
+        NseTransactionCostEngine,
+    )
+
+    store = seeded_nse_market_rule_store(observe_instrument_master=False)
+    return render_transaction_cost_page(
+        build_transaction_cost_surface_state(
+            NseTransactionCostEngine(store),
+            ChargeReconciliationLedger(),
+            TRANSACTION_COST_DISPLAY_ASSUMPTIONS,
+            priced_on=date(2026, 8, 12),
+            cost_bps_ceiling=TRANSACTION_COST_DISPLAY_CEILING_BPS,
+            rule_store=store,
+            calibrations=calibrations,
+        )
+    )
+
+
+@pytest.mark.unit
+def test_a_cell_that_continues_rather_than_reverts_is_shown_not_suppressed() -> None:
+    """The finding a reader is least likely to go looking for must be impossible to miss.
+
+    3.5-sigma deviations measurably CONTINUE at short horizons. A page that showed only the
+    positive cells would leave a reader believing the edge grows with depth — which is exactly
+    the assumption the replaced edge formula encoded, arriving back through the front end.
+    """
+    html = page_with_calibrations(
+        [calibration_of("24.68", bucket="3"), calibration_of("-17.51", bucket="3.5")]
+    )
+    assert "CONTINUES" in html
+    assert "-17.51" in html
+    assert "1 continue rather than revert" in html
+
+
+@pytest.mark.unit
+def test_a_cell_whose_lower_bound_spans_zero_never_reads_as_a_confirmed_edge() -> None:
+    """"Cannot tell" and "can tell" must not render alike.
+
+    Asserted on the HEADLINE as well as the row, because the headline is what a reader acts on:
+    the largest mean in the real fit belongs to a cell whose interval spans zero, and promoting
+    it would advertise an edge the evidence does not support.
+    """
+    html = page_with_calibrations(
+        [
+            # The real five-bar fit: 2.0 sigma has the LARGEST mean and a lower bound of
+            # -12.99, so its interval spans zero (t = 1.79). 3.0 sigma is smaller and credible.
+            calibration_of("110.48", bucket="2", standard_error="61.7", median="18"),
+            calibration_of("24.68", bucket="3", standard_error="5", median="8"),
+        ]
+    )
+    assert "NOT SIGNIFICANT" in html
+    # 24.68 is the smaller mean but the only credible one, so it must be the cell headlined.
+    assert "Strongest credible cell: 3 sigma" in html
+    assert "110.48" in html, "the weak cell is still SHOWN, just not promoted"
+
+
+@pytest.mark.unit
+def test_a_tail_carried_edge_is_labelled_as_one() -> None:
+    """A mean far above its median needs many more trades to realise than the headline implies."""
+    html = page_with_calibrations(
+        [calibration_of("37.0", bucket="2.5", standard_error="5", median="5.5")]
+    )
+    assert "TAIL-CARRIED" in html
+    assert "6.7x" in html
+
+
+@pytest.mark.unit
+def test_no_calibration_reads_as_a_refusal_not_as_an_absence_of_edge() -> None:
+    """A blank panel would say "no edge"; the truth is "nothing has been measured"."""
+    html = page_with_calibrations([])
+    assert "No reversion calibration was supplied" in html
+    assert "would have to be assumed" in html
+
+
+@pytest.mark.adversarial
+def test_every_cell_failing_significance_is_stated_rather_than_left_to_the_reader() -> None:
+    """If nothing is credible the page must say so outright, not present a table to interpret."""
+    html = page_with_calibrations(
+        [calibration_of("10", bucket="3", standard_error="40", median="3")]
+    )
+    assert "no measurable edge anywhere on this fit" in html

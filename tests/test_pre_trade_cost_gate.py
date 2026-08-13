@@ -17,15 +17,20 @@ from decimal import Decimal
 
 import pytest
 
+from nse_algo_trader.cost_gate.mean_reversion_edge_calibrator import (
+    CalibrationMaturity,
+    ReversionCapture,
+)
 from nse_algo_trader.cost_gate.pre_trade_cost_gate import (
     GateVerdict,
     PreTradeCostGate,
 )
 from nse_algo_trader.cost_gate.priced_signal import (
     EdgeBasis,
+    EdgeConfidence,
     PricedSignal,
     PricedSignalError,
-    edge_from_mean_reversion_decision,
+    edge_from_calibrated_reversion,
 )
 from nse_algo_trader.cost_gate.tradeable_ticket_preconditions import PreconditionName
 from nse_algo_trader.execution_fill.execution_fill_model import ExecutionFillModel
@@ -131,32 +136,62 @@ def test_resizing_keeps_the_claim_and_changes_only_the_size() -> None:
     assert smaller.edge_basis is original.edge_basis
 
 
-@pytest.mark.unit
-def test_the_mean_reversion_adapter_turns_a_deviation_into_a_falsifiable_claim() -> None:
-    """The one existing strategy, given an edge — and labelled a hypothesis, not a fact."""
-    edge = edge_from_mean_reversion_decision(
-        deviation=3.0,
-        deviation_band=1.0,
-        conviction=0.5,
-        reference_price_paise=Decimal(100_000),
-        band_width_paise=Decimal(1_000),
+def capture(mean_bps: str, *, bucket: str = "3", horizon: int = 5, events: int = 5_000,
+            standard_error: str = "5") -> ReversionCapture:
+    """A calibration row shaped like the ones the archive actually produced."""
+    return ReversionCapture(
+        deviation_bucket=Decimal(bucket),
+        horizon_bars=horizon,
+        event_count=events,
+        mean_captured_bps=Decimal(mean_bps),
+        median_captured_bps=Decimal(mean_bps) / 3,
+        standard_error_bps=Decimal(standard_error),
+        mean_captured_sigma=Decimal("0.06"),
+        fitted_through=date(2026, 7, 1),
+        maturity=CalibrationMaturity.DEVIATION_BUCKET,
     )
-    # Excess of 2 band-widths x 1,000 paise = 2,000 paise on 100,000 = 200 bps, halved by
-    # conviction.
-    assert edge == Decimal(100)
+
+
+@pytest.mark.unit
+def test_the_mean_reversion_adapter_claims_the_measured_reversion_scaled_by_conviction() -> None:
+    """The edge is now a fitted coefficient, not a restatement of how far price travelled."""
+    edge = edge_from_calibrated_reversion(
+        capture("24.68"), deviation=3.0, conviction=0.5
+    )
+    assert edge == Decimal("12.34")
 
 
 @pytest.mark.adversarial
-def test_a_deviation_inside_its_own_band_claims_no_edge() -> None:
-    """The engine is not claiming a reversion to capture, so there is nothing to price."""
-    with pytest.raises(PricedSignalError, match="no reversion to capture"):
-        edge_from_mean_reversion_decision(
-            deviation=0.5,
-            deviation_band=1.0,
-            conviction=1.0,
-            reference_price_paise=Decimal(100_000),
-            band_width_paise=Decimal(1_000),
+def test_a_negative_measured_reversion_is_refused_rather_than_priced() -> None:
+    """Real buckets came out negative — 3.5 sigma continues rather than reverts at short horizons.
+
+    Refused at the adapter rather than returned as a negative edge, so it surfaces as "this
+    strategy has no measurable edge here" instead of being vetoed downstream as though the
+    transaction cost were what killed it. Those are different facts and lead to different fixes.
+    """
+    with pytest.raises(PricedSignalError, match="no edge to price"):
+        edge_from_calibrated_reversion(
+            capture("-17.51", bucket="3.5"), deviation=3.5, conviction=1.0
         )
+
+
+@pytest.mark.adversarial
+def test_a_calibration_from_another_deviation_bucket_is_refused() -> None:
+    """Capture is non-monotone and changes sign, so a neighbouring bucket is not evidence."""
+    with pytest.raises(PricedSignalError, match="non-linear in depth"):
+        edge_from_calibrated_reversion(capture("24.68", bucket="3"), deviation=2.5, conviction=1.0)
+
+
+@pytest.mark.property
+def test_the_conservative_claim_never_exceeds_the_expected_one() -> None:
+    """If it did, every gate downstream would be reading the interval backwards."""
+    row = capture("24.68", standard_error="9.8")
+    expected = edge_from_calibrated_reversion(row, deviation=3.0, conviction=1.0)
+    conservative = edge_from_calibrated_reversion(
+        row, deviation=3.0, conviction=1.0, price_uncertainty=EdgeConfidence.CONSERVATIVE
+    )
+    assert conservative < expected
+    assert conservative == row.lower_confidence_bps
 
 
 # ------------------------------------------------------------------------- the gate

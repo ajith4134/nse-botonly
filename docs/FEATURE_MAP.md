@@ -48,7 +48,7 @@ Size: small ≤6 entries · medium 7–14 · large 15+.
 
 | # | Capability | Entries | Size | Blocked? |
 |---|---|---|---|---|
-| **F01** | No signal reaches capital without clearing what it actually costs to trade | 14 | med-lg | no — **in flight** |
+| **F01** | No signal reaches capital without clearing what it actually costs to trade | 15 | med-lg | ✅ **CLOSED** 2026-08-12 |
 | **F02** | An intent becomes exactly one order, survives a crash, broker believed over local state | 15 | large | no — greenfield |
 | **F03** | Nothing sizes itself; capital, risk and lot structure decide size, and a gate can refuse | 14 | med-lg | no |
 | **F04** | ⭐ A trading day runs itself end to end and leaves an auditable ledger | 13 | med-lg | self-unblocks `L0.12` |
@@ -96,7 +96,7 @@ Size: small ≤6 entries · medium 7–14 · large 15+.
 
 **Critical path to a working paper loop: F01 → F02 → F03 → F04.**
 
-1. **F01** cost reality filter — in flight; buildable on real data today.
+1. **F01** cost reality filter — ✅ CLOSED 2026-08-12; grew `L1.16` when the `R.05` pass found the edge formula, not the strategy, was the defect.
 2. **F02** order path — **pulled ~90 entries ahead of the plan.** There is no order, position,
    trade or fill type anywhere, so every gate above `L1` has nothing to gate. Building `L2`'s 32
    validation entries first produces 32 more consumer-queued fragments.
@@ -205,8 +205,9 @@ feature does not close until every row is resolved and the four completion crite
 | `L11.107` | minimum-ticket / flat-brokerage gate | ✅ built |
 | `L11.108` | live-spread liquidity gate | ✅ built |
 | — | priced-signal contract + strategy wiring | ✅ built inside the feature (`A.93`) |
+| `L1.16` | **reversion edge calibration** — added mid-feature | ✅ built; the `R.05` pass proved the edge FORMULA was the defect, so the feature grew an engine rather than closing around a wrong number |
 
-**All 14 entries are resolved in code.** What remains is the feature's own completion criteria:
+**All 15 entries are resolved in code.** What remains is the feature's own completion criteria:
 
 - [x] **`R.08` surface** — DONE. `/costs` now shows the hurdle DECOMPOSED (statutory vs
       execution, with the uncertainty component held apart — the design's central property made
@@ -226,7 +227,24 @@ feature does not close until every row is resolved and the four completion crite
       `BACKLOG.md` with their measurements (`A.98`). Four of the five criticals were protected by
       a passing test that asserted the defect — the strongest argument yet for why this pass must
       come from somewhere that did not write the assumptions.
-- [ ] **`R.05` real-data pass** at the strategy's own horizon — bar store, not depth-tape mids.
-      `O.74` records why the first end-to-end run does NOT establish what it appears to.
+- [x] **`R.05` real-data pass** at the strategy's own horizon — DONE, and it changed the feature.
+      Fed real daily closes from the `L0.34` archive, the median claimed edge came out at **4.81
+      bps** — barely above the seconds-scale run `O.74` had dismissed as a timescale artefact. By
+      `O.74`'s own stated criterion that was a finding about the strategy. It was not. Decomposing
+      the gap first showed the cause was `edge_from_mean_reversion_decision` itself: it computed the
+      expected move as the deviation's excess beyond its own entry band, and since the band is the
+      90th percentile of that same distribution, the excess is small **by construction** (median
+      deviation 2.44σ, band 1.96σ, excess 0.48σ). That is an unstated **exit rule** inside a
+      valuation formula — the `R.03` defect — not a hypothesis about markets.
 
-Only when those four pass do all fourteen entries tick together.
+      Replaced with `L1.16`, a coefficient fitted to **150,364 real reversion events across 379
+      symbols**, strictly causally. Measured mean capture: 34.1 bps at 1 bar (t 5.42), 40.4 at 5
+      (t 5.69), 27.7 at 10 (t 2.66) — so the family clears the 8.9-bps `NSE-MIS` floor by about
+      four times, and the old formula had understated it roughly sevenfold. **The per-bucket
+      structure matters more than the pooled number:** capture is NOT monotone in deviation depth
+      and changes sign (3.5σ CONTINUES rather than reverts at short horizons), so any formula linear
+      in depth is wrong in sign somewhere. 10 tests on real archive data, 28 unit/adversarial, 5 on
+      the surface. Standard errors are optimistic (`M10`) and that caveat is carried openly.
+
+Only when those four pass do all fifteen entries tick together. **They do.** `F01` is closed;
+`O.74` is corrected in place with the original left visible, and `M10`–`M12` are recorded.

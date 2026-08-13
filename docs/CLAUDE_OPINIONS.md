@@ -1375,3 +1375,153 @@ the strategy was designed for, that IS a finding about the strategy, and the rig
 to loosen the gate but to record that this family does not clear costs on this universe — which is
 exactly the kind of conclusion `L2`'s gatekeeper exists to reach, and exactly the kind that a system
 without a cost gate never reaches at all.
+
+---
+
+### CORRECTION · 2026-08-12 (same day) · the timescale was not the explanation
+
+I ran the test I named above, and **the reasoning in the paragraphs above is wrong**. The original
+is left standing because the way it was wrong is more instructive than the conclusion.
+
+Fed real daily closes from the `L0.34` archive, the median claimed edge came out at **4.81 bps**
+against the 0.0–3.1 bps of the seconds-scale run. Barely more than 1.5x. By my own stated criterion
+that was a finding about the strategy, and I very nearly recorded it as one.
+
+It is not. Before writing it up I decomposed the gap, and the cause was neither the timescale nor
+the strategy: it was **`edge_from_mean_reversion_decision` itself**. That function computed the
+expected move as `|deviation| - band` — the excess beyond the entry trigger. The band is the 90th
+percentile of the same deviation distribution, so the excess beyond it is small **by construction**:
+median deviation 2.44σ, median band 1.96σ, excess 0.48σ. The formula was structurally incapable of
+reporting a large edge, whatever the market did.
+
+That is not a hypothesis about mean reversion. It is an unstated **exit rule** — "the position
+unwinds to the band edge and stops" — sitting inside a valuation formula, which is precisely the
+defect `R.03` exists to catch and which I did not recognise when I wrote it. Assume exit at the mean
+instead and the identical signal claims 5.9x more, with nothing in the data to arbitrate between
+them.
+
+**What the archive actually says**, from 150,364 measured reversion events across 379 symbols,
+strictly causally (band from past deviations only, outcome from future bars only):
+
+| horizon | mean captured | t | vs `NSE-MIS` floor 8.9 bps |
+|---|---|---|---|
+| 1 bar | 34.1 bps | 5.42 | clears |
+| 5 bars | 40.4 bps | 5.69 | clears |
+| 10 bars | 27.7 bps | 2.66 | clears |
+
+So the strategy family **does** clear the intraday floor in gross terms at its own horizon, by about
+four times, and the seconds-scale run had understated it roughly seven-fold. My "reasoned" call that
+the timescale explained the tiny edges was directionally right and quantitatively irrelevant: the
+timescale accounts for maybe 1.8x of a 7x gap.
+
+**And the per-bucket structure is the part I would have missed entirely** had I stopped at the
+pooled number:
+
+| deviation | 1 bar | 3 bars | skew (mean/median) |
+|---|---|---|---|
+| 2.0σ | +203.6 bps | +164.3 | **19.7** |
+| 2.5σ | +37.0 | +29.2 | 6.8 |
+| 3.0σ | +24.7 | +22.7 | 3.3 |
+| 3.5σ | **−2.1** | **−17.5** | −0.6 |
+| 4.0σ | +16.6 | +32.5 | 3.5 |
+
+The edge is **not monotone in deviation depth and changes sign**. Deeper is not better; 3.5σ moves
+continue rather than revert at short horizons. Any formula linear in depth — which the replaced one
+was — is therefore wrong in *sign* somewhere, and no amount of recalibrating its coefficient repairs
+that. Separately, the 2σ bucket's mean is carried almost entirely by a thin tail (skew 19.7): the
+typical trade there earns almost nothing while a handful carry the result, which is a materially
+different risk proposition from an edge that arrives reliably, at identical mean.
+
+**What I got wrong, precisely.** Not the conclusion — the *method*. I diagnosed a suspicious number
+by reaching for the most available explanation (the timescale, which I already knew was
+compromised), and I wrote that explanation into an opinion with a falsification test attached. The
+test would have "passed" in the sense of confirming a finding, and the finding would have been
+false, because both the probe AND the fair test shared a broken formula that neither could see. **A
+falsification criterion that reuses the suspect component tests everything except the thing most
+likely to be wrong.** The decomposition that actually found it — comparing two candidate exit rules
+against each other on the same data — cost one query and was not part of my plan.
+
+**Confidence: measured** on every number in the tables; they come from a strictly causal walk whose
+look-ahead guard is asserted against real archive dates. **Reasoned** that the excess-over-band
+formula was the dominant cause rather than a contributing one, on the strength of the 5.9x
+decomposition. **Caveat I am carrying openly:** these standard errors are plain `s/√n`, and reversion
+events overlap in time and cluster across instruments on the same day, so the true effective sample
+is smaller than 150,364 and every `t` above is optimistic. The 2.66 at ten bars would likely not
+survive a cluster-robust estimator. Logged as `M10`.
+
+**What would change my mind now.** A cluster-robust standard error that collapses the t-statistics
+below 2 — in which case the honest reading reverts to "no measurable edge", and I would want it
+recorded that the point estimates were real but the confidence was not. Also: these are **gross**
+captures. A round trip pays the hurdle at entry and again at exit, so a 40-bps capture against an
+8.9-bps floor is closer to 40 against ~18 than the table suggests, and the 3.5σ and 10-bar cells
+have no margin left at all.
+
+## O.75 · 2026-08-12 · A falsification test that reuses the suspect component tests nothing
+
+**Opinion.** The most dangerous verification I can write is one whose failure mode I have already
+named. `O.74` named the timescale, attached a falsification criterion to it, and I ran that test.
+It "worked" — it produced a number, the number was bad, and the bad number pointed exactly where I
+had predicted. Had I written it up there, `F01` would have closed around a **false finding**, with
+a real-data test, a recorded confidence level and a passing suite standing behind it.
+
+**Reasoning.** The probe and the fair test differed in one input (depth-tape mids versus daily
+bars) and shared everything else — including `edge_from_mean_reversion_decision`, which was the
+actual defect. A test varying only the variable I suspected could not distinguish "the timescale
+was wrong" from "the formula is structurally incapable of reporting a large edge", because both
+produce a small number in both runs. The decomposition that found it took one query and was not
+in my plan: price the *same* events under two different exit rules and compare. The moment the
+two disagreed by 5.9x, the formula — not the market — was obviously the variable carrying the
+result.
+
+The general shape: **when a measurement comes out surprising, the first thing to vary is the
+measuring instrument, not the subject.** I did the opposite, and I did it while believing I was
+being rigorous, because the instrument was something I had written and tested and therefore did
+not think of as a hypothesis. It was one. `|deviation| - band` is a *claim* about where a position
+exits, and it was never labelled as one, so it was never on the list of things that could be wrong.
+
+This also explains why `R.23(c)`'s "review from somewhere that did not write the assumptions" keeps
+paying: `F01`'s review found four criticals each protected by a passing test I had written. Same
+mechanism, one layer down. A test I write encodes my model; when my model is wrong, the test
+certifies the error.
+
+**Confidence: measured** that this specific near-miss happened, with both numbers on record.
+**Reasoned** that the general rule follows — this is one instance, and I am generalising from it
+because the same mechanism produced the `F01` review findings independently, which is a second
+instance rather than a restatement.
+
+**What would change my mind.** Cases where varying the instrument first is wasteful — a
+well-established measurement with a long track record probably should not be re-derived every time
+it says something unwelcome. The rule I would actually defend is narrower: **any component I wrote
+during this same feature is a hypothesis, not an instrument, and must be varied before its output
+is believed.** `edge_from_mean_reversion_decision` was four days old when I trusted it to
+adjudicate a strategy.
+
+## O.76 · 2026-08-12 · The strategy has an edge; the confidence in it is the weak part
+
+**Opinion.** Intraday mean reversion on NSE cash clears the transaction-cost floor at its own
+horizon — 40.4 bps mean capture at five bars against an 8.9-bps `NSE-MIS` floor — but I would not
+size a position on the strength of that number today, and the reason is not the point estimate.
+
+**Reasoning.** Three things about the measurement are weaker than the headline:
+
+1. **The standard errors are wrong in a known direction.** Plain `s/sqrt(n)` on events that overlap
+   in time and cluster by session. The true effective sample is smaller than 150,364 and every `t`
+   is inflated. `M10`. The ten-bar cell at `t = 2.66` is the one I expect to disappear.
+2. **Half the cells are not distinguishable from zero anyway** — 10 of 20 — and three of them
+   measurably CONTINUE rather than revert. The tradeable surface is much smaller than "the strategy
+   works", and the gate now refuses per cell, which is the correct shape of that answer.
+3. **The strongest cells are tail-carried.** 2σ at one bar has a mean nearly twenty times its
+   median. Realising that mean needs a trade count and a drawdown tolerance nobody has sized.
+
+Against that: the sign structure is stable and interpretable, the causality guard is asserted on
+real dates rather than documented, and the whole thing is now refutable — a nightly re-fit will
+show drift, and a cluster-robust estimator will either survive or not.
+
+**Confidence: measured** on the point estimates. **Judgement only** on whether this is tradeable,
+and my judgement is not yet — not because the edge looks absent but because the uncertainty is
+mis-stated in a direction that flatters it, and I would rather fix `M10` than act on a `t` I know
+to be optimistic.
+
+**What would change my mind.** A cluster-robust fit leaving the five-bar cells above `t = 3`. That
+would move this from "measured but not trusted" to "worth sizing", and `L2`'s gatekeeper is where
+that decision belongs, not here.

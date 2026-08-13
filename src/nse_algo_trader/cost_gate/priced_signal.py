@@ -14,12 +14,16 @@ that the claim is explicit, attributable and falsifiable — an edge nobody can 
 nobody can disprove.
 
 **Why the adapter is separate from the contract.** `PricedSignal` demands an edge and does not
-care where it came from. `edge_from_mean_reversion_decision` is ONE way to produce it, from the
-one strategy that exists, and it is deliberately simple and deliberately marked
-`STRATEGY_HYPOTHESIS`: a mean-reversion engine that says price is N band-widths from the mean is
-claiming the reversion is worth roughly that distance. That claim may be worth nothing. It is
-written down so it can be measured rather than assumed, and every other strategy will bring its
-own adapter with its own basis.
+care where it came from. `edge_from_calibrated_reversion` is ONE way to produce it, from the one
+strategy that exists, and every other strategy will bring its own adapter with its own basis.
+
+**Corrected 2026-08-12.** That adapter was previously `edge_from_mean_reversion_decision`, which
+derived the edge from the decision alone: expected move = the deviation's excess beyond its own
+entry band. The claim it encoded was never a market hypothesis — it was an unstated exit rule, and
+`R.03` forbids a policy constant living inside a valuation formula. It is replaced by a coefficient
+measured on 38,456 real reversion events. The measurement moved the claim by roughly seven-fold at
+a five-bar horizon, which changed the verdict rather than the decimal place, so the original is
+recorded here rather than quietly dropped.
 """
 
 from __future__ import annotations
@@ -29,6 +33,10 @@ from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 
+from nse_algo_trader.cost_gate.mean_reversion_edge_calibrator import (
+    ReversionCapture,
+    deviation_bucket_of,
+)
 from nse_algo_trader.transaction_cost.chargeable_market_segments import ChargeableSegment, TradeLeg
 
 _BASIS_POINTS = Decimal(10_000)
@@ -36,6 +44,19 @@ _BASIS_POINTS = Decimal(10_000)
 
 class PricedSignalError(Exception):
     """The signal cannot be priced, and guessing the missing part would fabricate an edge."""
+
+
+class EdgeConfidence(StrEnum):
+    """Which end of a calibrated estimate the signal claims.
+
+    Separated from `EdgeBasis` because they answer different questions. `EdgeBasis` says how the
+    estimate was ARRIVED AT; this says how much of the estimate's own uncertainty the claim
+    absorbs. A calibrated model claimed at its optimistic end and a calibrated model claimed at
+    its lower bound share a basis and are not the same claim.
+    """
+
+    EXPECTED = "expected"
+    CONSERVATIVE = "conservative"
 
 
 class EdgeBasis(StrEnum):
@@ -133,47 +154,64 @@ class PricedSignal:
         )
 
 
-def edge_from_mean_reversion_decision(
+def edge_from_calibrated_reversion(
+    capture: ReversionCapture,
     *,
     deviation: float,
-    deviation_band: float | None,
     conviction: float,
-    reference_price_paise: Decimal,
-    band_width_paise: Decimal,
+    price_uncertainty: EdgeConfidence = EdgeConfidence.EXPECTED,
 ) -> Decimal:
-    """Turn the one existing strategy's output into an edge claim, in basis points.
+    """Turn the one existing strategy's output into an edge claim, from measured reversion.
 
-    **The claim:** a mean-reversion engine that reports price sitting `deviation` band-widths
-    away from its mean is asserting that reversion is worth approximately that distance. The
-    expected move is therefore the excess beyond the band — the part that has to unwind for the
-    signal to be right — scaled by the engine's own conviction.
+    **What replaced what, and why (corrected 2026-08-12).** This function previously computed the
+    expected move as `(|deviation| - band) * band_width`: the excess beyond the entry trigger. That
+    was never a measurement. It is an **exit rule** — "the position unwinds to the band edge and
+    stops" — and nothing established it. Exiting at the mean instead makes the identical signal
+    claim 5.9x more, and the formula offered no way to choose. Under `R.03` a policy constant
+    hiding inside a valuation formula is exactly the defect to remove, so it was removed.
 
-        edge_bps = (|deviation| - band) * band_width / reference_price * 10,000 * conviction
+    The edge is now the **measured** expected reversion for a deviation of this depth, from
+    `mean_reversion_edge_calibrator`, which walked 38,456 real events across 600 symbols of the
+    deep-history archive and recorded what actually came back. The old formula understated it by
+    roughly seven-fold at a five-bar horizon (5.6 bps against a measured 40.4), which is not a
+    rounding difference — it is the difference between a strategy that fails the intraday floor and
+    one that clears it by four times.
 
-    **Why conviction scales rather than gates.** The engine already refuses to emit below its own
-    threshold, so conviction arriving here is a magnitude, and a half-convinced signal claiming a
-    full move would be overstating exactly where it is least sure.
+    **Conviction still scales, and still does not gate.** The engine refuses below its own
+    threshold, so conviction arriving here is a magnitude. A half-convinced signal claiming the
+    full calibrated move would be overstating precisely where it is least sure.
 
-    **This is a hypothesis and is labelled one.** Nothing has established that mean reversion on
-    this universe pays the distance it travels, or pays at all. The value of writing it down is
-    that it becomes measurable: `L2`'s gatekeeper compares claimed edge against realised outcome,
-    and a strategy whose claims do not survive that comparison is refused promotion. An edge that
-    stays in someone's head cannot be refuted.
+    **`price_uncertainty` chooses which end of the estimate to claim.** `EXPECTED` uses the fitted
+    mean. `CONSERVATIVE` uses the lower confidence bound, so the claim survives the calibration
+    being two standard errors optimistic — which is what a gate should demand before committing
+    real capital, and why the choice is explicit at the call site rather than buried here.
 
     Raises:
-        PricedSignalError: the deviation does not exceed its own band, so the engine is not
-            claiming any reversion to capture.
+        PricedSignalError: the calibration does not cover this deviation's depth, or the edge it
+            implies is not positive. A non-positive edge is refused rather than returned so it
+            surfaces as "this strategy has no measurable edge here" rather than being vetoed
+            downstream as though transaction cost were the reason.
     """
-    if band_width_paise <= 0:
-        raise PricedSignalError(f"band width must be positive, got {band_width_paise}")
-    if reference_price_paise <= 0:
-        raise PricedSignalError(f"reference price must be positive, got {reference_price_paise}")
-    band = Decimal(str(deviation_band)) if deviation_band is not None else Decimal(0)
-    excess = abs(Decimal(str(deviation))) - band
-    if excess <= 0:
+    if not 0 <= conviction <= 1:
+        raise PricedSignalError(f"conviction must be in [0, 1], got {conviction}")
+    expected_bucket = deviation_bucket_of(Decimal(str(deviation)))
+    if capture.deviation_bucket != expected_bucket:
         raise PricedSignalError(
-            f"deviation {deviation} does not exceed its band {deviation_band}; the engine is "
-            f"claiming no reversion to capture, so there is no edge to price"
+            f"calibration is for {capture.deviation_bucket} sigma deviations but this signal is "
+            f"at {expected_bucket}; reversion is measurably non-linear in depth, so a calibration "
+            f"from another bucket is not a substitute"
         )
-    move_paise = excess * band_width_paise
-    return move_paise / reference_price_paise * _BASIS_POINTS * Decimal(str(conviction))
+    basis = (
+        capture.mean_captured_bps
+        if price_uncertainty is EdgeConfidence.EXPECTED
+        else capture.lower_confidence_bps
+    )
+    edge = basis * Decimal(str(conviction))
+    if edge <= 0:
+        raise PricedSignalError(
+            f"the measured reversion for {expected_bucket} sigma deviations over "
+            f"{capture.horizon_bars} bars implies an edge of {edge} bps "
+            f"({capture.describe()}); there is no edge to price, and this is a finding about the "
+            f"strategy rather than a cost verdict"
+        )
+    return edge

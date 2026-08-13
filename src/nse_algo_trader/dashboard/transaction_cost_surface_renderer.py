@@ -95,6 +95,7 @@ from html import escape
 from itertools import pairwise
 
 from nse_algo_trader.cost_gate.gate_decision_log import LoggedGateDecision
+from nse_algo_trader.cost_gate.mean_reversion_edge_calibrator import ReversionCapture
 from nse_algo_trader.cost_gate.per_segment_edge_floor import SegmentEdgeFloor
 from nse_algo_trader.cost_gate.pre_trade_cost_gate import GateDecision, GateVerdict
 from nse_algo_trader.cost_gate.tradeable_ticket_preconditions import PreconditionName
@@ -525,6 +526,48 @@ class FloorEvidenceVerdict(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class ReversionCalibrationRow:
+    """One fitted calibration cell, and the two ways it can mislead a reader.
+
+    The mean alone is not enough to act on, and this page exists partly because the pooled mean
+    hid both of these:
+
+    - `is_distinguishable_from_zero` — several measured cells have a lower confidence bound
+      below zero, meaning the evidence is consistent with the strategy LOSING there. Rendering
+      those identically to a confirmed edge would present "we cannot tell" as "we can".
+    - `skew_ratio` — the shallow buckets reach a mean nearly twenty times their median. The
+      typical trade earns almost nothing and a handful carry the result, which needs far more
+      trades and far more patience to realise than the headline suggests.
+
+    A NEGATIVE mean is shown rather than suppressed. The 3.5-sigma cell genuinely continues
+    rather than reverts, and hiding it would leave the page implying the edge grows with depth —
+    the exact assumption the replaced edge formula encoded.
+    """
+
+    deviation_bucket: Decimal
+    horizon_bars: int
+    event_count: int
+    mean_captured_bps: Decimal
+    median_captured_bps: Decimal
+    lower_confidence_bps: Decimal
+    t_statistic: Decimal | None
+    skew_ratio: Decimal | None
+    is_distinguishable_from_zero: bool
+    fitted_through: date
+    maturity_value: str
+    description: str
+
+    @property
+    def reverts(self) -> bool:
+        return self.mean_captured_bps > 0
+
+    @property
+    def is_tail_carried(self) -> bool:
+        """A mean more than three times its median is not an edge most trades will see."""
+        return self.skew_ratio is not None and self.skew_ratio > Decimal(3)
+
+
+@dataclass(frozen=True, slots=True)
 class SegmentEdgeFloorRow:
     """One `L1.04` floor, the distribution behind it, and how firmly it is pinned.
 
@@ -631,6 +674,7 @@ class TransactionCostSurfaceState:
     edge_floor_rows: tuple[SegmentEdgeFloorRow, ...] = ()
     verdict_census: GateVerdictCensus | None = None
     precondition_rows: tuple[PreconditionFailureRow, ...] = ()
+    calibration_rows: tuple[ReversionCalibrationRow, ...] = ()
 
     @property
     def hurdle_rows(self) -> tuple[HurdleDecompositionRow, ...]:
@@ -666,6 +710,35 @@ class TransactionCostSurfaceState:
     @property
     def failing_precondition_count(self) -> int:
         return sum(row.failure_count for row in self.precondition_rows)
+
+    @property
+    def calibrated_cell_count(self) -> int:
+        return len(self.calibration_rows)
+
+    @property
+    def cells_that_do_not_revert(self) -> tuple[ReversionCalibrationRow, ...]:
+        """Where the strategy measurably continues rather than reverts.
+
+        Surfaced as its own count because it is the finding a reader is least likely to go
+        looking for: the natural assumption is that a mean-reversion strategy reverts everywhere
+        and simply reverts more in some cells than others."""
+        return tuple(row for row in self.calibration_rows if not row.reverts)
+
+    @property
+    def cells_indistinguishable_from_zero(self) -> tuple[ReversionCalibrationRow, ...]:
+        return tuple(
+            row for row in self.calibration_rows if not row.is_distinguishable_from_zero
+        )
+
+    @property
+    def best_calibrated_cell(self) -> ReversionCalibrationRow | None:
+        """The strongest cell that is actually distinguishable from zero.
+
+        Deliberately not `max(mean)`: the largest mean on the real fit belongs to a cell whose
+        confidence interval spans zero, and headlining it would advertise an edge the evidence
+        does not support."""
+        credible = [row for row in self.calibration_rows if row.is_distinguishable_from_zero]
+        return max(credible, key=lambda row: row.mean_captured_bps) if credible else None
 
     @property
     def priced_rows(self) -> tuple[SegmentCostRow, ...]:
@@ -745,6 +818,7 @@ def build_transaction_cost_surface_state(
     gate_decisions: Sequence[GateDecision] = (),
     logged_decisions: Sequence[LoggedGateDecision] = (),
     edge_floors: Sequence[SegmentEdgeFloor] = (),
+    calibrations: Sequence[ReversionCapture] = (),
 ) -> TransactionCostSurfaceState:
     """Price every segment once, read the ledger once, and freeze the result.
 
@@ -792,6 +866,7 @@ def build_transaction_cost_surface_state(
         ledger_observation_count=ledger.observation_count(),
         hurdle_ladders=_hurdle_size_ladders(gate_decisions),
         edge_floor_rows=_edge_floor_rows(edge_floors),
+        calibration_rows=_calibration_rows(calibrations),
         # Live decisions win when the caller has just taken them; otherwise the LOG supplies
         # the same rows. One rendering path, two sources — the page cannot drift between them
         # because there is only one set of fields to drift.
@@ -1210,6 +1285,35 @@ def _floor_evidence_verdict(
     if floor.floor_bps + uncertainty_bps >= floor.median_hurdle_bps:
         return FloorEvidenceVerdict.OVERLAPS_MEDIAN
     return FloorEvidenceVerdict.RESOLVED
+
+
+def _calibration_rows(
+    calibrations: Sequence[ReversionCapture],
+) -> tuple[ReversionCalibrationRow, ...]:
+    """Ordered by deviation then horizon, so the SHAPE reads down the table.
+
+    Sorting by magnitude would put the biggest mean at the top and bury the sign change, which
+    is the single most important thing this table has to say."""
+    return tuple(
+        ReversionCalibrationRow(
+            deviation_bucket=calibration.deviation_bucket,
+            horizon_bars=calibration.horizon_bars,
+            event_count=calibration.event_count,
+            mean_captured_bps=calibration.mean_captured_bps,
+            median_captured_bps=calibration.median_captured_bps,
+            lower_confidence_bps=calibration.lower_confidence_bps,
+            t_statistic=calibration.t_statistic,
+            skew_ratio=calibration.skew_ratio,
+            is_distinguishable_from_zero=calibration.is_distinguishable_from_zero,
+            fitted_through=calibration.fitted_through,
+            maturity_value=calibration.maturity.value,
+            description=calibration.describe(),
+        )
+        for calibration in sorted(
+            calibrations,
+            key=lambda item: (item.deviation_bucket, item.horizon_bars),
+        )
+    )
 
 
 def _edge_floor_rows(floors: Sequence[SegmentEdgeFloor]) -> tuple[SegmentEdgeFloorRow, ...]:
@@ -2059,6 +2163,82 @@ def _hurdle_section(state: TransactionCostSurfaceState) -> str:
     )
 
 
+def _calibration_table_row(row: ReversionCalibrationRow) -> str:
+    """One cell, with its two warnings carried as WORDS rather than only as colour.
+
+    A status shown in colour alone fails for a colourblind reader and in a printout, and this
+    table's whole job is to stop a reader taking a mean at face value."""
+    if not row.reverts:
+        badge_class, word = "badge-critical", "CONTINUES"
+    elif not row.is_distinguishable_from_zero:
+        badge_class, word = "badge-warning", "NOT SIGNIFICANT"
+    elif row.is_tail_carried:
+        badge_class, word = "badge-warning", "TAIL-CARRIED"
+    else:
+        badge_class, word = "badge-good", "REVERTS"
+    t_text = "—" if row.t_statistic is None else f"{row.t_statistic:.2f}"
+    skew_text = "—" if row.skew_ratio is None else f"{row.skew_ratio:.1f}x"
+    return (
+        f"<tr><td class=figure>{escape(str(row.deviation_bucket))} sigma</td>"
+        f"<td class=figure>{escape(_format_count(row.horizon_bars))}</td>"
+        f"<td class=figure>{escape(_format_count(row.event_count))}</td>"
+        f"<td class=figure>{escape(_format_bps(row.mean_captured_bps))}</td>"
+        f"<td class=figure>{escape(_format_bps(row.median_captured_bps))}</td>"
+        f"<td class=figure>{escape(_format_bps(row.lower_confidence_bps))}</td>"
+        f"<td class=figure>{escape(t_text)}</td>"
+        f"<td class=figure>{escape(skew_text)}</td>"
+        f'<td><span class="badge {badge_class}">{escape(word)}</span></td>'
+        f"<td>{escape(row.fitted_through.isoformat())}</td>"
+        f"<td class=reason>{escape(row.maturity_value)}</td></tr>"
+    )
+
+
+_CALIBRATION_LEGEND = (
+    '<div class="note">The edge a signal claims is <em>measured</em>, not assumed. Each row is '
+    "what deviations of that depth actually recovered over that many bars, fitted on the "
+    "deep-history archive and strictly causally — the entry band comes from past deviations "
+    "only and the outcome from later bars only. Read the <strong>lower bound</strong> before "
+    "the mean: where it is negative, the evidence cannot rule out the strategy losing in that "
+    "cell. Read <strong>skew</strong> next: a mean far above its median is carried by a thin "
+    "tail of large reversions, so most trades will earn much less than the headline. A cell "
+    "marked <span class=\"badge badge-critical\">CONTINUES</span> reverted negatively — those "
+    "deviations kept going, and the edge is <em>not</em> monotone in depth.</div>"
+)
+
+
+def _calibration_section(state: TransactionCostSurfaceState) -> str:
+    if not state.calibration_rows:
+        return _empty_note(
+            "No reversion calibration was supplied, so no signal on this page can be priced. "
+            "That is a refusal, not a gap: without a fitted coefficient the edge would have to "
+            "be assumed, and assuming it is exactly the defect this engine replaced."
+        )
+    rows = "".join(_calibration_table_row(row) for row in state.calibration_rows)
+    best = state.best_calibrated_cell
+    headline = (
+        f"Strongest credible cell: {escape(str(best.deviation_bucket))} sigma over "
+        f"{escape(_format_count(best.horizon_bars))} bars, "
+        f"{escape(_format_bps(best.mean_captured_bps))} bps."
+        if best is not None
+        else "No cell is distinguishable from zero at two standard errors — the strategy has "
+        "no measurable edge anywhere on this fit, which is a finding rather than a gap."
+    )
+    continues = len(state.cells_that_do_not_revert)
+    unclear = len(state.cells_indistinguishable_from_zero)
+    return (
+        f"{_CALIBRATION_LEGEND}"
+        f'<div class="panel"><p class="sub">{headline} '
+        f"Of {escape(_format_count(state.calibrated_cell_count))} measured cells, "
+        f"{escape(_format_count(continues))} continue rather than revert and "
+        f"{escape(_format_count(unclear))} cannot be distinguished from zero.</p>"
+        f"<table><thead><tr><th class=figure>deviation</th><th class=figure>bars</th>"
+        f"<th class=figure>events</th><th class=figure>mean</th><th class=figure>median</th>"
+        f"<th class=figure>lower bound</th><th class=figure>t</th><th class=figure>skew</th>"
+        f"<th>Verdict</th><th>Fitted through</th><th>Evidence</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table></div>"
+    )
+
+
 def _floor_section(state: TransactionCostSurfaceState) -> str:
     if not state.edge_floor_rows:
         return _empty_note(
@@ -2197,6 +2377,7 @@ def render_transaction_cost_page(state: TransactionCostSurfaceState) -> str:
         '<div class="note muted">No segment could be priced on this date, so there is no '
         "staircase to draw. Every refusal is listed above with the fact it is missing.</div>"
     )
+    calibration_section = _calibration_section(state)
     hurdle_section = _hurdle_section(state)
     floor_section = _floor_section(state)
     verdict_section = _verdict_section(state)
@@ -2241,6 +2422,15 @@ fraction of the capital a sizing decision is about to commit.</p>
 <div class="charts">
 {staircase_body}
 </div>
+
+<h2>What the edge actually is — measured, not assumed</h2>
+<p class="sub">A hurdle is only half the comparison. The other half used to be an assumption: the
+expected move was computed as how far price sat beyond its own entry band, which is not a
+hypothesis about markets but an unstated exit rule, and it understated the measured reversion
+roughly sevenfold. These rows replace it with what the archive actually recorded. Read them
+before the hurdles below — a cell that continues rather than reverts, or whose lower bound sits
+under zero, cannot be rescued by any hurdle being small.</p>
+{calibration_section}
 
 <h2>The hurdle, decomposed — and how much of it is not a cost</h2>
 <p class="sub">A signal does not have to beat the expected cost of trading; it has to beat the

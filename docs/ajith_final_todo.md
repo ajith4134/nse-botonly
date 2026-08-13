@@ -338,9 +338,24 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       advanced. **Four of the five were protected by a passing test that asserted the defect.**
       The nine majors are recorded in `BACKLOG.md` with their measurements.*
 
-      *Still open: the `R.05` real-data pass over the bar store at the strategy's own horizon per
-      `O.74` — the one remaining F01 completion criterion.*
-- [ ] **1.38** Per-segment minimum-edge floor — `L1.04` · built in
+      ***`R.05` DONE 2026-08-12, and it changed the feature.*** *Fed real daily closes from the
+      `L0.34` archive, the median claimed edge came out at **4.81 bps** — barely above the
+      seconds-scale run. By `O.74`'s own criterion that was a finding about the strategy. It was
+      not. Decomposing first showed the defect was `edge_from_mean_reversion_decision`: it valued
+      the move as the deviation's excess beyond its own entry band, and the band IS the 90th
+      percentile of that distribution, so the excess is small by construction. An unstated **exit
+      rule** inside a valuation formula — the `R.03` defect, not a market hypothesis.*
+
+      *Replaced by `L1.16`, fitted to **150,364 real reversion events across 379 symbols**,
+      strictly causally. Measured: **34.1 bps at 1 bar (t 5.42), 40.4 at 5 (t 5.69), 27.7 at 10
+      (t 2.66)** — the family clears the 8.9-bps `NSE-MIS` floor by ~4x, and the old formula had
+      understated it ~7x. Capture is **not monotone in depth and changes sign** (3.5σ CONTINUES
+      rather than reverts at short horizons), so any formula linear in depth is wrong in sign
+      somewhere. `O.74` corrected in place, original left visible; `O.75` records the method
+      lesson; `O.76` records why I would not size on this yet. `M10`-`M12` logged.*
+
+      ***F01 CLOSED.*** *All four completion criteria pass; 15 entries tick together.*
+- [x] **1.38** Per-segment minimum-edge floor — `L1.04` · built in
       `cost_gate/per_segment_edge_floor.py`, DERIVED from the real hurdle distribution rather than
       typed: the plan's ~6-8 / ~10-11 / ~25-30 bps figures appear nowhere in the code, and the floor
       moves when the market, the statutory rates or liquidity move, with nobody editing a number.
@@ -357,10 +372,10 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       execution cost the plan's figures omitted, which is precisely what `L1.05`/`L1.06` exist to
       supply. Delivery sits ~17 bps above intraday, which is the double-sided STT plus the
       per-scrip depository debit showing up as a number rather than an argument.*
-- [ ] **1.39** Fill / slippage model — `L1.05` — *IN PROGRESS, and building as ONE engine with
+- [x] **1.39** Fill / slippage model — `L1.05` — *built as ONE engine with
       `1.40` per `A.92`: with a real five-level book the size-dependence IS the calculation, so
       splitting them would ship a size-blind model the second entry replaces wholesale.*
-- [ ] **1.40** Market-impact fill model — `L1.06` · built inside
+- [x] **1.40** Market-impact fill model — `L1.06` · built inside
       `execution_fill/market_impact_estimator.py` with `1.39` (`A.92`). Size-dependent by construction:
       the square-root curve is ANCHORED to the book-walk's own measured cost at visible depth, so the
       coefficient is derived from the instrument's own data and sigma cancels — no literature constant
@@ -411,6 +426,17 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       until 2026-04-01 then 0.15%, on the PURCHASER, with the basis dating from 2019 rather than 2024.
       Pricing an exercise under the pre-2019 full-notional rule is the 121x error that makes a system
       irrationally afraid of holding to expiry, and there is a test for it.
+- [x] **1.46b** Reversion edge calibration — `L1.16` · **NEW, not in the 503-entry catalogue.**
+      Inserted at F01's dependency position because the `R.05` pass proved the edge could not be
+      derived from a decision alone: the old formula encoded an unstated exit rule, and no
+      recalibration of a linear coefficient repairs a relationship that changes sign. Built in
+      `cost_gate/mean_reversion_edge_calibrator.py` + `reversion_calibration_fitter.py`: a strictly
+      causal walk of the deep-history archive, bucketed by deviation depth and horizon, empirical-
+      Bayes shrunk toward the pooled estimate, point-in-time, refusing rather than substituting
+      where it has no evidence. Re-fits nightly (`R.06`); rendered on `/costs` with CONTINUES /
+      NOT SIGNIFICANT / TAIL-CARRIED verdicts (`R.08`). 10 real-data + 28 unit + 5 surface tests.
+      *`M10` (optimistic standard errors) is the open caveat and is the finding most likely to
+      reverse the conclusion.*
 - [ ] **1.43** Discrete option-lot sizing — `L1.09`
 - [ ] **1.44** Capital-based position sizing — `L1.10`
 - [ ] **1.45** P&L attribution by cost component — `L1.11`

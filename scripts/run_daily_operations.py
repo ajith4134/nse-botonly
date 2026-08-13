@@ -82,6 +82,10 @@ from nse_algo_trader.corporate_action_adjustment_engine import (
     CorporateActionAdjustmentEngine,
 )
 from nse_algo_trader.cost_gate.gate_decision_log import GateDecisionLog
+from nse_algo_trader.cost_gate.mean_reversion_edge_calibrator import (
+    CalibrationError,
+    ReversionCalibrationStore,
+)
 from nse_algo_trader.cost_gate.per_segment_edge_floor import (
     EdgeFloorError,
     SegmentEdgeFloor,
@@ -94,6 +98,9 @@ from nse_algo_trader.cost_gate.priced_signal import (
     PricedSignal,
     PricedSignalError,
 )
+from nse_algo_trader.cost_gate.reversion_calibration_fitter import (
+    fit_reversion_calibrations,
+)
 from nse_algo_trader.dashboard.dashboard_surface_screenshot_capture import (
     DEFAULT_BASE_URL,
     DEFAULT_OUTPUT_ROOT,
@@ -104,6 +111,7 @@ from nse_algo_trader.dashboard.dashboard_surface_screenshot_capture import (
     summarise_capture,
 )
 from nse_algo_trader.deep_history.deep_history_archive_loader import (
+    DEFAULT_DEEP_HISTORY_PATH,
     DeepHistoryArchiveLoader,
 )
 from nse_algo_trader.execution_fill.execution_fill_model import (
@@ -989,6 +997,60 @@ def _representative_trade_for(segment: ChargeableSegment, target: date) -> Trade
     )
 
 
+SMALLEST_CROSS_SECTION_WORTH_CALIBRATING = 500
+"""A day with fewer symbols than this is a holiday, a partial ingest or a half-session.
+
+Calibrating off one would silently fit the coefficient to whichever names happened to report."""
+
+REVERSION_CALIBRATION_SYMBOL_BUDGET = 600
+"""How many symbols the nightly re-fit walks. Bounded like every other nightly scan here.
+
+Six hundred symbols produced 150,364 events in the reference fit, which is two orders of magnitude
+above the evidence threshold — so the bound costs coverage of the per-instrument rung, which is
+already unreachable at this universe size, and costs nothing at the bucket rung that actually
+prices trades. `M11` carries widening it once the fit runs incrementally instead of from scratch."""
+
+
+def _refit_reversion_calibrations(target: date) -> str:
+    """`L1.16`: re-measure what deviations actually recover, from the deep-history archive.
+
+    The edge a signal claims is a fitted coefficient, and the evidence for it decays. A
+    calibration fitted in a quiet range regime prices trades in a trending one at exactly the
+    moment it is most wrong, so this re-fits nightly and lets the drift become visible rather
+    than letting one number stand indefinitely.
+
+    **`fitted_through` is the target session itself, which makes it an exclusive bound.** Events
+    on the target day cannot inform a calibration used to price the target day; the calibrator
+    enforces that rather than trusting this caller, and a violation is an error rather than a
+    warning because a silent look-ahead flatters every number downstream without leaving a trace.
+    """
+    if not DEFAULT_DEEP_HISTORY_PATH.exists():
+        return "no deep-history archive yet, so reversion cannot be measured"
+    store = ReversionCalibrationStore()
+    with DeepHistoryArchiveLoader(database_path=DEFAULT_DEEP_HISTORY_PATH) as archive:
+        symbols: list[str] = []
+        for offset in range(40):
+            candidate = date.fromordinal(target.toordinal() - offset)
+            found = archive.symbols_on(candidate)
+            if len(found) > SMALLEST_CROSS_SECTION_WORTH_CALIBRATING:
+                symbols = list(found[:REVERSION_CALIBRATION_SYMBOL_BUDGET])
+                break
+        if not symbols:
+            return "no cash cross-section in the archive within 40 days of the target"
+        try:
+            report = fit_reversion_calibrations(
+                archive, store, symbols=symbols, fitted_through=target
+            )
+        except CalibrationError as error:
+            raise RuntimeError(f"reversion calibration failed: {error}") from error
+    if report.calibrations_written == 0:
+        raise RuntimeError(
+            f"the fit produced no calibration at all from {report.events_measured} events; "
+            f"every signal will be refused as uncalibrated until this is understood"
+        )
+    return report.describe()
+
+
 def _derive_per_segment_edge_floors(target: date) -> str:
     """`L1.04`: re-derive the screening floor for each segment from the day's real book.
 
@@ -1166,6 +1228,14 @@ def main() -> int:
         report,
         "transaction costs",
         lambda: _price_the_days_transaction_costs(target),
+    )
+    # Before the floors: a floor screens a CLAIM, and the claim is now a calibrated coefficient.
+    # Deriving floors against claims fitted yesterday would compare today's costs with yesterday's
+    # evidence, and the mismatch would be invisible in both outputs.
+    _run_step(
+        report,
+        "reversion calibration",
+        lambda: _refit_reversion_calibrations(target),
     )
     _run_step(
         report,

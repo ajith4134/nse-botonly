@@ -46,9 +46,16 @@ from nse_algo_trader.consolidated_feed.consolidated_feed_session_runner import (
     ConsolidatedFeedSessionRunner,
 )
 from nse_algo_trader.cost_gate.gate_decision_log import GateDecisionLog
+from nse_algo_trader.cost_gate.mean_reversion_edge_calibrator import (
+    CalibrationCoverageError,
+    ReversionCalibrationStore,
+)
 from nse_algo_trader.cost_gate.per_segment_edge_floor import (
     EdgeFloorError,
     SegmentEdgeFloorStore,
+)
+from nse_algo_trader.cost_gate.reversion_calibration_fitter import (
+    DEFAULT_CALIBRATION_HORIZONS,
 )
 from nse_algo_trader.dashboard.clock_integrity_surface_renderer import (
     ClockIntegritySurfaceState,
@@ -466,6 +473,27 @@ def build_dashboard_app() -> FastAPI:
         decision_log = GateDecisionLog()
         latest = decision_log.latest_session()
         logged_decisions = decision_log.decisions_for(latest) if latest else ()
+        # The measured edge, read from the nightly fit for the same reason as the floors: the
+        # walk that produces it is 150,000 events long, and refitting per page load would show
+        # two readers different numbers. An uncalibrated cell is simply absent from the table
+        # rather than defaulted, so the page can never imply an edge nobody measured.
+        calibration_store = ReversionCalibrationStore()
+        today = datetime.now(IST).date()
+        calibrations = []
+        for horizon in DEFAULT_CALIBRATION_HORIZONS:
+            for bucket in calibration_store.calibrated_buckets(
+                horizon_bars=horizon, as_of=today
+            ):
+                try:
+                    calibrations.append(
+                        calibration_store.capture_for(
+                            deviation_sigma=bucket, horizon_bars=horizon, as_of=today
+                        )
+                    )
+                except CalibrationCoverageError:
+                    # Below the evidence threshold. The row exists and is accumulating; it is
+                    # not yet something a reader should price from, so it is not shown as one.
+                    continue
         state = build_transaction_cost_surface_state(
             NseTransactionCostEngine(rule_store),
             ChargeReconciliationLedger(),
@@ -475,6 +503,7 @@ def build_dashboard_app() -> FastAPI:
             rule_store=rule_store,
             edge_floors=edge_floors,
             logged_decisions=logged_decisions,
+            calibrations=calibrations,
         )
         response = HTMLResponse(render_transaction_cost_page(state))
         _remember_key(response, request)

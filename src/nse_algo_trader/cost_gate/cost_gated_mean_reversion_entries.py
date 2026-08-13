@@ -28,6 +28,10 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 
+from nse_algo_trader.cost_gate.mean_reversion_edge_calibrator import (
+    CalibrationError,
+    ReversionCalibrationStore,
+)
 from nse_algo_trader.cost_gate.pre_trade_cost_gate import (
     GateDecision,
     GateVerdict,
@@ -35,9 +39,10 @@ from nse_algo_trader.cost_gate.pre_trade_cost_gate import (
 )
 from nse_algo_trader.cost_gate.priced_signal import (
     EdgeBasis,
+    EdgeConfidence,
     PricedSignal,
     PricedSignalError,
-    edge_from_mean_reversion_decision,
+    edge_from_calibrated_reversion,
 )
 from nse_algo_trader.market_depth.order_book_snapshot_replay_engine import BookSnapshot
 from nse_algo_trader.strategy.intraday_mean_reversion_engine import (
@@ -116,17 +121,31 @@ def price_mean_reversion_decision(
     dispersion_paise: Decimal,
     quantity: int,
     decided_at: datetime,
+    calibrations: ReversionCalibrationStore,
+    horizon_bars: int,
+    edge_confidence: EdgeConfidence = EdgeConfidence.EXPECTED,
 ) -> PricedSignal:
-    """Turn a scale-free decision into a claim about money.
+    """Turn a scale-free decision into a claim about money, from measured reversion.
 
     `dispersion_paise` is the engine's own `rolling_dispersion()`, fed in the same units as the
     closes it observed. Passing it explicitly rather than reaching into the engine keeps this
     honest about the one thing that must not be got wrong: if the engine was fed rupees and
     this is handed paise, every edge is off by a hundred and every verdict with it.
 
+    `calibrations` is REQUIRED and has no default. That is the point of the 2026-08-12 correction:
+    the edge used to be derivable from the decision alone, because the formula silently assumed an
+    exit rule. It is not derivable from the decision alone — it depends on what deviations of this
+    depth have historically recovered — so the dependency is now in the signature where it cannot
+    be forgotten. An instrument with no calibration produces no signal, rather than a signal
+    carrying an invented number.
+
+    `horizon_bars` must match the holding period the position will actually be given. A five-bar
+    calibration applied to a position closed at the end of the day is measuring a different trade.
+
     Raises:
-        MeanReversionEntryError: the decision is not actionable, or claims no capturable
-            deviation. Both are ordinary outcomes, not failures.
+        MeanReversionEntryError: the decision is not actionable, no calibration covers the
+            deviation's depth, or the measured reversion implies no positive edge. All three are
+            ordinary outcomes, not failures — and the third is a finding worth reading.
     """
     if not decision.is_actionable:
         raise MeanReversionEntryError(
@@ -141,14 +160,19 @@ def price_mean_reversion_decision(
             "cannot be converted into a price move"
         )
     try:
-        edge_bps = edge_from_mean_reversion_decision(
-            deviation=decision.deviation,
-            deviation_band=decision.deviation_band,
-            conviction=decision.conviction,
-            reference_price_paise=reference_price_paise,
-            band_width_paise=dispersion_paise,
+        capture = calibrations.capture_for(
+            deviation_sigma=Decimal(str(decision.deviation)),
+            horizon_bars=horizon_bars,
+            as_of=decided_at.date(),
+            trading_symbol=trading_symbol,
         )
-    except PricedSignalError as error:
+        edge_bps = edge_from_calibrated_reversion(
+            capture,
+            deviation=decision.deviation,
+            conviction=decision.conviction,
+            price_uncertainty=edge_confidence,
+        )
+    except (PricedSignalError, CalibrationError) as error:
         raise MeanReversionEntryError(str(error)) from error
     return PricedSignal(
         instrument_token=instrument_token,
@@ -159,10 +183,12 @@ def price_mean_reversion_decision(
         reference_price_paise=reference_price_paise,
         expected_edge_bps=edge_bps,
         proposed_quantity=quantity,
-        # Stamped as a hypothesis, not a fact. Nothing has established that this family pays
-        # the distance it travels; `L2` exists to find out, and until it has, the gate treats
-        # the claim as the weakest admissible kind.
-        edge_basis=EdgeBasis.STRATEGY_HYPOTHESIS,
+        # Promoted from STRATEGY_HYPOTHESIS on 2026-08-12: the edge is no longer the strategy's
+        # assertion about itself, it is a coefficient fitted to what deviations of this depth
+        # historically recovered. That is a calibrated model and is stamped as one. It is NOT a
+        # MEASURED_TRACK_RECORD — nothing here has traded — and the distance between those two
+        # rungs is the whole of `L2`'s remaining job.
+        edge_basis=EdgeBasis.CALIBRATED_MODEL,
         source=STRATEGY_SOURCE,
         conviction=Decimal(str(decision.conviction)),
     )
@@ -179,7 +205,10 @@ def evaluate_mean_reversion_entry(
     segment: ChargeableSegment,
     quantity: int,
     observed_at: datetime,
+    calibrations: ReversionCalibrationStore,
+    horizon_bars: int,
     trade_date: date | None = None,
+    edge_confidence: EdgeConfidence = EdgeConfidence.EXPECTED,
 ) -> CostGatedEntry:
     """Ask the strategy, price what it says, and let the gate decide. The full path.
 
@@ -236,8 +265,11 @@ def evaluate_mean_reversion_entry(
             dispersion_paise=Decimal(str(dispersion)),
             quantity=quantity,
             decided_at=observed_at,
+            calibrations=calibrations,
+            horizon_bars=horizon_bars,
+            edge_confidence=edge_confidence,
         )
-    except (MeanReversionEntryError, PricedSignalError) as error:
+    except (MeanReversionEntryError, PricedSignalError, CalibrationError) as error:
         return CostGatedEntry(
             decision=decision,
             signal=None,

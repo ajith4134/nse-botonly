@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -19,6 +20,11 @@ from nse_algo_trader.cost_gate.cost_gated_mean_reversion_entries import (
     MeanReversionEntryError,
     evaluate_mean_reversion_entry,
     price_mean_reversion_decision,
+)
+from nse_algo_trader.cost_gate.mean_reversion_edge_calibrator import (
+    CalibrationMaturity,
+    ReversionCalibrationStore,
+    ReversionCapture,
 )
 from nse_algo_trader.cost_gate.pre_trade_cost_gate import GateVerdict, PreTradeCostGate
 from nse_algo_trader.cost_gate.priced_signal import EdgeBasis
@@ -97,6 +103,42 @@ def ranging_belief(agreement: float = 1.0) -> RegimeBelief:
     )
 
 
+CALIBRATION_HORIZON_BARS = 5
+"""Five bars, because that is the horizon the archive fit found the strongest capture at.
+
+Stated as a constant the tests share rather than repeated at each call site, so a test cannot
+accidentally calibrate one horizon and price another — the failure that would produce is a wrong
+number rather than an error, which is the kind that survives review."""
+
+
+def calibration(mean_bps: str, bucket: str) -> ReversionCapture:
+    """A row shaped like the ones the real fit produced for that bucket."""
+    return ReversionCapture(
+        deviation_bucket=Decimal(bucket),
+        horizon_bars=CALIBRATION_HORIZON_BARS,
+        event_count=10_814,
+        mean_captured_bps=Decimal(mean_bps),
+        median_captured_bps=Decimal(mean_bps) / 3,
+        standard_error_bps=Decimal("12.4"),
+        mean_captured_sigma=Decimal("0.06"),
+        fitted_through=date(2026, 7, 1),
+        maturity=CalibrationMaturity.DEVIATION_BUCKET,
+    )
+
+
+@pytest.fixture
+def calibrations(tmp_path: Path) -> ReversionCalibrationStore:
+    """A store carrying the buckets these tests exercise, with the real measured signs.
+
+    3.0 sigma reverts (+24.68 bps); 3.5 sigma does NOT (-17.51 bps). Both are what the archive
+    actually produced, so a test that accidentally prices the wrong bucket fails on sign rather
+    than passing with a plausible-looking number.
+    """
+    store = ReversionCalibrationStore(tmp_path / "calibration.sqlite3")
+    store.record([calibration("24.68", "3"), calibration("-17.51", "3.5")])
+    return store
+
+
 @pytest.fixture(scope="module")
 def gate() -> PreTradeCostGate:
     store = seeded_nse_market_rule_store(observe_instrument_master=False)
@@ -104,7 +146,9 @@ def gate() -> PreTradeCostGate:
 
 
 @pytest.mark.unit
-def test_a_scale_free_decision_becomes_a_claim_about_money() -> None:
+def test_a_scale_free_decision_becomes_a_claim_about_money(
+    calibrations: ReversionCalibrationStore,
+) -> None:
     """The conversion that makes the signal priceable at all."""
     signal = price_mean_reversion_decision(
         decision(deviation=-3.0, band=1.0, conviction=1.0),
@@ -115,16 +159,22 @@ def test_a_scale_free_decision_becomes_a_claim_about_money() -> None:
         dispersion_paise=Decimal(1_400),
         quantity=1_000,
         decided_at=AN_INSTANT,
+        calibrations=calibrations,
+        horizon_bars=CALIBRATION_HORIZON_BARS,
     )
-    # Excess of 2 dispersions x 1,400 paise = 2,800 paise on 140,000 = 200 bps.
-    assert signal.expected_edge_bps == Decimal(200)
+    # The measured capture for 3-sigma deviations over five bars, not the distance travelled.
+    # The replaced formula reported 200 bps here purely because price sat two dispersions past
+    # its band; the archive says such deviations actually recover 24.68 bps on average.
+    assert signal.expected_edge_bps == Decimal("24.68")
     assert signal.source == STRATEGY_SOURCE
-    assert signal.edge_basis is EdgeBasis.STRATEGY_HYPOTHESIS
+    assert signal.edge_basis is EdgeBasis.CALIBRATED_MODEL
 
 
 @pytest.mark.unit
-def test_the_claim_is_stamped_as_a_hypothesis_not_a_fact() -> None:
-    """Nothing has established that this family pays the distance it travels."""
+def test_the_claim_is_stamped_as_a_calibrated_model_not_a_track_record(
+    calibrations: ReversionCalibrationStore,
+) -> None:
+    """The edge is fitted evidence now, but still not a record of this strategy having traded."""
     signal = price_mean_reversion_decision(
         decision(),
         instrument_token=1,
@@ -134,10 +184,13 @@ def test_the_claim_is_stamped_as_a_hypothesis_not_a_fact() -> None:
         dispersion_paise=Decimal(1_400),
         quantity=100,
         decided_at=AN_INSTANT,
+        calibrations=calibrations,
+        horizon_bars=CALIBRATION_HORIZON_BARS,
     )
-    assert signal.edge_basis is EdgeBasis.STRATEGY_HYPOTHESIS
-    # A track record is what `L2` would have to establish; nothing here can claim it, and mypy
-    # proving the direct comparison redundant is itself the guarantee.
+    assert signal.edge_basis is EdgeBasis.CALIBRATED_MODEL
+    # A track record is what `L2` would have to establish. A coefficient fitted to historical
+    # reversion is emphatically not one: it says what deviations of this depth did, never that
+    # this system captured any of it after costs and slippage.
     assert EdgeBasis.MEASURED_TRACK_RECORD not in {signal.edge_basis}
 
 
@@ -146,7 +199,11 @@ def test_the_claim_is_stamped_as_a_hypothesis_not_a_fact() -> None:
     ("action", "expected_side"),
     [(MeanReversionAction.ENTER_LONG, "buy"), (MeanReversionAction.ENTER_SHORT, "sell")],
 )
-def test_the_action_decides_the_side(action: MeanReversionAction, expected_side: str) -> None:
+def test_the_action_decides_the_side(
+    action: MeanReversionAction,
+    expected_side: str,
+    calibrations: ReversionCalibrationStore,
+) -> None:
     signal = price_mean_reversion_decision(
         decision(action=action),
         instrument_token=1,
@@ -156,12 +213,14 @@ def test_the_action_decides_the_side(action: MeanReversionAction, expected_side:
         dispersion_paise=Decimal(1_400),
         quantity=100,
         decided_at=AN_INSTANT,
+        calibrations=calibrations,
+        horizon_bars=CALIBRATION_HORIZON_BARS,
     )
     assert signal.side.value == expected_side
 
 
 @pytest.mark.adversarial
-def test_abstain_never_becomes_a_trade() -> None:
+def test_abstain_never_becomes_a_trade(calibrations: ReversionCalibrationStore) -> None:
     """The single worst bug this module could carry, asserted against directly."""
     with pytest.raises(MeanReversionEntryError, match="proposes no trade"):
         price_mean_reversion_decision(
@@ -173,11 +232,15 @@ def test_abstain_never_becomes_a_trade() -> None:
             dispersion_paise=Decimal(1_400),
             quantity=100,
             decided_at=AN_INSTANT,
+            calibrations=calibrations,
+            horizon_bars=CALIBRATION_HORIZON_BARS,
         )
 
 
 @pytest.mark.adversarial
-def test_zero_dispersion_cannot_be_converted_into_a_price_move() -> None:
+def test_zero_dispersion_cannot_be_converted_into_a_price_move(
+    calibrations: ReversionCalibrationStore,
+) -> None:
     """A deviation measured in units of nothing is not a distance."""
     with pytest.raises(MeanReversionEntryError, match="zero dispersion"):
         price_mean_reversion_decision(
@@ -189,12 +252,14 @@ def test_zero_dispersion_cannot_be_converted_into_a_price_move() -> None:
             dispersion_paise=Decimal(0),
             quantity=100,
             decided_at=AN_INSTANT,
+            calibrations=calibrations,
+            horizon_bars=CALIBRATION_HORIZON_BARS,
         )
 
 
 @pytest.mark.unit
 def test_the_full_path_runs_and_a_real_engine_can_be_vetoed_on_cost(
-    gate: PreTradeCostGate,
+    gate: PreTradeCostGate, calibrations: ReversionCalibrationStore
 ) -> None:
     """Strategy -> priced claim -> verdict, with a genuine engine at the front.
 
@@ -212,6 +277,8 @@ def test_the_full_path_runs_and_a_real_engine_can_be_vetoed_on_cost(
         quantity=1_000,
         observed_at=AN_INSTANT,
         trade_date=TODAY,
+        calibrations=calibrations,
+        horizon_bars=CALIBRATION_HORIZON_BARS,
     )
     # Whatever the engine decided, the path completed and gave a reason either way.
     assert entry.describe()
@@ -224,7 +291,7 @@ def test_the_full_path_runs_and_a_real_engine_can_be_vetoed_on_cost(
 
 @pytest.mark.unit
 def test_an_immature_engine_is_skipped_with_a_reason_not_an_error(
-    gate: PreTradeCostGate,
+    gate: PreTradeCostGate, calibrations: ReversionCalibrationStore
 ) -> None:
     """A quiet day must be distinguishable from a broken one."""
     entry = evaluate_mean_reversion_entry(
@@ -240,6 +307,8 @@ def test_an_immature_engine_is_skipped_with_a_reason_not_an_error(
         quantity=1_000,
         observed_at=AN_INSTANT,
         trade_date=TODAY,
+        calibrations=calibrations,
+        horizon_bars=CALIBRATION_HORIZON_BARS,
     )
     assert entry.gate_decision is None
     assert entry.skipped_reason
@@ -248,7 +317,9 @@ def test_an_immature_engine_is_skipped_with_a_reason_not_an_error(
 
 
 @pytest.mark.adversarial
-def test_an_unusable_book_skips_before_costing(gate: PreTradeCostGate) -> None:
+def test_an_unusable_book_skips_before_costing(
+    gate: PreTradeCostGate, calibrations: ReversionCalibrationStore
+) -> None:
     """No mid means no reference price, so there is nothing to express an edge against."""
     engine = matured_engine()
     crossed = BookSnapshot(
@@ -277,6 +348,8 @@ def test_an_unusable_book_skips_before_costing(gate: PreTradeCostGate) -> None:
         quantity=1_000,
         observed_at=AN_INSTANT,
         trade_date=TODAY,
+        calibrations=calibrations,
+        horizon_bars=CALIBRATION_HORIZON_BARS,
     )
     assert entry.gate_decision is None
     assert not entry.is_tradeable
@@ -295,7 +368,9 @@ def test_the_engine_exposes_the_dispersion_its_own_deviation_is_measured_in() ->
 
 
 @pytest.mark.adversarial
-def test_the_regime_veto_runs_before_costing(gate: PreTradeCostGate) -> None:
+def test_the_regime_veto_runs_before_costing(
+    gate: PreTradeCostGate, calibrations: ReversionCalibrationStore
+) -> None:
     """A trending tape must veto before cost is ever consulted.
 
     Order of operations, asserted rather than assumed: an extreme deviation cannot talk its way
@@ -322,6 +397,8 @@ def test_the_regime_veto_runs_before_costing(gate: PreTradeCostGate) -> None:
         quantity=1_000,
         observed_at=AN_INSTANT,
         trade_date=TODAY,
+        calibrations=calibrations,
+        horizon_bars=CALIBRATION_HORIZON_BARS,
     )
     assert entry.gate_decision is None, "cost must never be consulted for a regime-vetoed signal"
     assert entry.signal is None

@@ -3693,3 +3693,27 @@ Minors also recorded there: `whole_book_quantity` cancels out of the impact alge
 minimum at the sample sizes the runner produces); the `hurdle > 0` filter in
 `derive_segment_floor` is silent; preconditions are reported at the proposed size and never
 re-evaluated after a RESIZE.
+
+### From `L1.16` (reversion edge calibration, 2026-08-12)
+
+- **M10 · the calibration standard errors are optimistic, and every `t` in `O.74` inherits it.**
+  `calibrate_from_events` uses a plain `s/sqrt(n)`. Reversion events overlap in time (the same
+  excursion is entered on consecutive bars) and cluster across instruments on the same session, so
+  the effective sample is far smaller than the nominal `n`. The `t = 2.66` at ten bars would very
+  likely not survive a cluster-robust estimator, and the `is_distinguishable_from_zero` flag that
+  the dashboard renders as a verdict rests on it. **This is the single finding most likely to
+  reverse the conclusion recorded in `O.74`'s correction.** Fix needs event dates joined across
+  instruments and a Newey-West or clustered-by-session variance; the dates are already stored on
+  every `ReversionEvent`, so the data is present and only the estimator is missing.
+- **M11 · the nightly fit re-walks 600 symbols from scratch every night.** `fit_reversion_calibrations`
+  reads up to 1,500 bars per symbol and recomputes every event, so the symbol budget is bounded at
+  600 to keep the nightly run affordable. That bound is why zero per-instrument calibrations exist:
+  no symbol reaches 200 events on its own, so the `INSTRUMENT_FITTED` rung of the `R.04` ladder is
+  built, tested and permanently unreachable at this universe size. An incremental fit — appending
+  only the new session's events to stored per-cell sufficient statistics — would let the budget rise
+  to the full universe and would open that rung.
+- **M12 · the round trip pays the hurdle twice and the comparison shows it once.** Every capture in
+  the calibration is a GROSS one-way move, while the floors it is read against are round-trip costs
+  at one end only. The `/costs` page places the two tables adjacently without stating this, so a
+  reader comparing 40 bps of capture against an 8.9-bps floor reads a wider margin than exists. The
+  arithmetic is right in each table and misleading between them.
