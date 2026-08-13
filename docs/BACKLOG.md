@@ -8,6 +8,15 @@ Reconcile with the live task list at each session start.
 
 Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) · ⛔ blocked
 
+## Operator actions blocking a daily step (2026-08-13) — ⛔
+
+- ⛔ **`NSE_TRADING_CAPITAL_RUPEES` is not set, and the daily run's `transaction costs` step has
+  been failing on it every day.** By design there is no default — `capital_configuration` refuses
+  rather than guessing, because a guessed capital would size real orders (`R.03`, todo `0.9`). The
+  step is the only `[FAIL]` in an otherwise clean run (2026-08-13: 24 steps, 23 ok). **Operator
+  action: put the figure in `.env`.** Until then every cost figure that depends on ticket size is
+  computed from a size nobody chose.
+
 ## `F02` order path (2026-08-13, `A.99`) — 🟡 open
 
 - ⛔ **The real-FILL lifecycle probe is DEFERRED by operator decision** (`A.99`, 2026-08-13, to be
