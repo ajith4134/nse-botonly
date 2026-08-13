@@ -112,11 +112,22 @@ the items below are what is missing, and they are the reason.
   utilisation against the sourced 95% ban threshold, and RELIANCE on 2020-01-01 correctly reads
   `None`/UNCHECKED rather than "not banned". The live page has dropped `fo_ban_list` from its
   unchecked list.
-- 🔴 **Circuit BAND PRICES are still unavailable and the page still says so.** The
-  `circuit_band_asm_gsm` source carries ASM/GSM surveillance stages, not the day's upper and lower
-  price bands, so those two fields stay `None` by construction. Named consumer: the bhavcopy's own
-  price-band columns, which are already ingested (`nse_bhavcopy_cash`, 81,274 rows) and not yet
-  read. That is the next cheap win for tier 1.
+- ⛔ **Circuit BAND PRICES are in NO ingested source, and my note claiming otherwise was wrong.**
+  Corrected in place 2026-08-13 (`R.25`): the previous entry called this "the next cheap win" and
+  named the bhavcopy's price-band columns as the source. **Those columns do not exist.** Checked
+  directly — `nse_bhavcopy_cash` and `nse_bhavcopy_fo` carry `OpnPric`/`HghPric`/`LwPric`/`ClsPric`
+  and nothing that carries the day's circuit limits, and none of the other seven ingested sources
+  (`atm_implied_volatility`, `bulk_block_deals_bulk`, `circuit_band_asm_gsm`,
+  `delisted_securities_master`, `fo_ban_list`, `index_constituents_weights`,
+  `mwpl_position_limits`) carries them either. The `circuit_band_asm_gsm` name is misleading: it is
+  a surveillance feed, not a band feed.
+
+  **This is `R.16` territory — acquire the source rather than scope the feature down.** NSE
+  publishes the day's price bands in a separate file inside the daily PR archive. That is a NEW
+  ingest adapter (fetch, parse, coverage floor, tests), not a join over data already present, so it
+  is a slice of its own and not a cheap win. Until it exists, `/sizing` will keep reporting
+  `circuit_bands` UNCHECKED, which is true — and the gate's `CIRCUIT_BAND` refusal, which is
+  written and tested, has never been able to fire on real data.
 - 🔴 **Superseded: `RegulatoryFacts` was assembled by nobody.** The readers exist
   (`BitemporalIngestStore.rows_for` over `fo_ban_list`, `mwpl_position_limits`, the circuit-band
   sources) but nothing joins them into the dataclass, so today every call would report all three

@@ -1826,3 +1826,29 @@ home rather than a cap inside the sizer.
 same calibration — e.g. sizing to the edge's own confidence interval rather than its mean — then it
 belongs in the sizer after all and `L7.05` handles only the cross-position case. Worth an hour
 before building `L7.05`.
+
+## O.90 · 2026-08-13 · I asserted a data source existed without opening it, in the same commit that praised checking
+
+**Opinion (a correction on myself):** my `BACKLOG` note calling the bhavcopy's price-band columns
+"the next cheap win" was a claim I never verified, written into a commit whose whole subject was the
+difference between reading a source and assuming one.
+
+**Reasoning:** measured, one query later. `nse_bhavcopy_cash` and `nse_bhavcopy_fo` carry
+`OpnPric`, `HghPric`, `LwPric`, `ClsPric`, `SttlmPric` and no circuit-limit field of any kind, and no
+other ingested source carries one either. The name `circuit_band_asm_gsm` is what misled me: it
+reads like a band feed and is a surveillance feed. I had already *written in the module docstring*
+that it carries stages rather than bands — and then, two paragraphs later in the same session,
+asserted the bands were somewhere else without looking.
+
+**The pattern worth keeping.** The failure was not ignorance; it was writing a forward-looking claim
+in the same breath as a verified one, where the prose gives them the same weight. A backlog entry
+that says "the source is X" is an assertion of fact and needs the same one-command check that
+`banned=True` got. The entries that survived scrutiny today were the ones with a command and an
+output next to them.
+
+**Confidence: measured.**
+
+**What would change my mind:** nothing about the fact. What is still open is whether NSE's daily PR
+archive is the right acquisition path for band prices — I believe it carries a per-scrip band file,
+and I have NOT verified that either, which is exactly why it is written here as a belief and logged
+in `BACKLOG` as an unbuilt adapter rather than a cheap win.
