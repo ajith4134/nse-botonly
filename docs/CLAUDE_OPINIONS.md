@@ -1748,3 +1748,54 @@ crore is a real ceiling on that.
 not to raise this bound — it is to raise `A.23`'s declared range, so every engine's calibration is
 re-examined at the same time. That is the point of reading the bound from `capital_configuration`
 rather than writing it here.
+
+## O.87 · 2026-08-13 · Volatility targeting and a position-count capacity contradict each other, and the real-data run is what exposed it
+
+**Opinion:** `F03`'s sizer as built can put the entire book into one quiet instrument while claiming
+a concurrent capacity of six, and this is a design contradiction rather than a bug — the two halves
+of the risk model are measuring different things and nothing reconciles them.
+
+**Reasoning:** measured. The `R.05` run over 2,400 real instruments produced `AKSHAR` at the full
+₹10,00,000 with `binding_bound = deployable_capital` — meaning the volatility budget
+(`risk_budget / sigma`) and the Kelly cap both exceeded the whole book, and the only thing that
+stopped it was the capital existing. That is arithmetically right: volatility targeting deliberately
+sizes NOTIONAL up as sigma falls, because the thing being held constant is risk, not exposure. But
+`target_risk_fraction = 1/6` claims six positions can coexist, and six positions of this size need
+₹60,00,000. Both statements are in the same function and they cannot both be true.
+
+**What I think the answer is, held loosely.** Capping the notional at `deployable / capacity` would
+reconcile them and would also destroy most of what volatility targeting is for — it would become
+notional budgeting with extra steps. The better shape is probably that the sizer keeps producing the
+risk-justified figure and **concentration is `L7.05`'s job** (per-symbol and aggregate exposure,
+correlation-aware), with the gate refusing what the book cannot carry. That keeps each engine
+answering the question it is actually equipped for. I have not built it, so this is a direction, not
+a decision.
+
+**Confidence: measured** on the contradiction, **judgement** on the resolution.
+
+**What would change my mind:** if `L7.05`'s exposure limits turn out to bind on almost every quiet
+instrument, then the sizer is systematically producing numbers that are always refused, and a
+producer whose output is always thrown away should be fixed at the source instead.
+
+## O.88 · 2026-08-13 · The real-data run earned its keep by finding something no test could have
+
+**Opinion:** `R.05` is not a formality that confirms what the suite already said — on this feature it
+found two things the hermetic tests structurally could not, and that is the argument for running it
+before sign-off rather than after.
+
+**Reasoning:** measured, today. (1) The concentration contradiction above is invisible to a test,
+because a test supplies its own fixture and I would never have written a fixture whose volatility
+was low enough to blow past the whole book — the shape only appears when the market chooses the
+inputs. (2) The calibration coverage gap — **2,086 of 2,400 instruments cannot be sized at all**
+because only 40 calibrations exist — is a fact about the DATA, and no test over fixtures can report
+it. The suite was 91 green tests and knew neither.
+
+**The generalisation:** hermetic tests verify the algorithm against inputs I imagined; the real-data
+run verifies it against inputs that exist. Those sets overlap far less than the green bar suggests,
+and the second set is the one that will actually be traded.
+
+**Confidence: measured** on both findings.
+
+**What would change my mind:** a real-data pass that reports exactly what the suite already implied,
+twice running. That has not happened yet — `F01`'s pass found the edge formula was the defect,
+`F02`'s found an empty account, and this one found a concentration contradiction and a coverage gap.

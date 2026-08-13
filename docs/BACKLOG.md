@@ -31,11 +31,29 @@ Five modules built and gated (91 tests, ruff + mypy-strict green): `kelly_edge_s
 `pre_trade_risk_gate`. `L1.09` · `L1.10` · `L7.01` · `L3.05` · `L7.02` · `L7.03`. **NOT signed off** —
 the items below are what is missing, and they are the reason.
 
-- ⛔ **`R.05` real-data pass has NOT run.** Every test is hermetic: the sizer has never seen the real
-  `BitemporalBarStore`, the real `InstrumentMasterStore` lot sizes, or the real
-  `ReversionCalibrationStore`. `R.05` counts the suite as functional verification only. The pass
-  must run on the FULL universe (`R.09`, 2,000+ symbols and the option underlyings), not a sample —
-  a sizer that works on RELIANCE and divides by zero on an illiquid scrip is not verified.
+- 🟢 **`R.05` real-data pass — PASSED 2026-08-13** via `scripts/verify_sizing_on_real_data.py`
+  against the real `market_data.sqlite3` (659,990 five-minute bars, 342,151 instruments) and the
+  real `reversion_calibration.sqlite3`. **Full universe, 2,400 instruments** with both a lot size
+  and recorded bars (`R.09`) — not a sample. Result: 313 sized, 1 correctly refused for thin history
+  (`THAKDEV`, 16 closes against the 30 minimum), **zero unhandled exceptions and zero invariant
+  violations** — no unfundable position, no part lot, no silent zero.
+- 🔴 **The same run found a real GAP, not a defect: 2,086 of 2,400 instruments have no reversion
+  calibration covering them.** Only 40 calibrations exist. Sizing therefore reaches 13% of the
+  universe today, and the ladder correctly refuses the rest rather than substituting a pooled number
+  it does not have. The fix is more calibration coverage (`F01`'s fitter over more buckets and
+  symbols), not a change here.
+- 🔴 **CONCENTRATION: a single position can be sized at 100% of the book while capacity claims six.**
+  Measured on real data — `AKSHAR` sized to the full Rs 10,00,000 with `binding_bound =
+  deployable_capital`, meaning both the volatility budget and the Kelly cap exceeded the whole book
+  and the deployable figure was the only thing that stopped it. That is arithmetically correct for a
+  quiet instrument (volatility targeting sizes NOTIONAL up as sigma falls) and **incoherent with
+  `concurrent_position_capacity = 6`**: six such positions would need Rs 60,00,000. The gate's
+  `MAX_NOTIONAL` would refuse it in practice, but the sizer should not be producing it. Open
+  question for the next slice: whether the notional itself should be capped at
+  `deployable / capacity`, which would make vol-targeting notional-budgeted and lose most of its
+  point, or whether concentration belongs entirely to `L7.05` (per-symbol and aggregate exposure).
+  Recorded rather than fixed on the spot, because the choice changes what volatility targeting
+  means here.
 - ⛔ **`R.08`: F03 has NO dashboard surface.** The five modules are deliberately NOT claimed in
   `SURFACED_MODULES`, so `/manifest` will correctly report them UNSURFACED rather than letting an
   over-claim hide the gap. A sizing decision an operator cannot see is exactly the class of thing
