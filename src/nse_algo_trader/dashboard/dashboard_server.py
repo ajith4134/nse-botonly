@@ -123,6 +123,7 @@ from nse_algo_trader.market_depth.order_book_snapshot_replay_engine import (
 from nse_algo_trader.market_rules.nse_market_rule_history import (
     seeded_nse_market_rule_store,
 )
+from nse_algo_trader.nse_ingest.bitemporal_ingest_store import BitemporalIngestStore
 from nse_algo_trader.order_path.kite_order_execution_venue import (
     exchange_algo_identifier_from_environment,
 )
@@ -139,6 +140,9 @@ from nse_algo_trader.sizing.pre_trade_risk_gate import (
     PreTradeRiskGate,
     RegulatoryFacts,
     derive_limits,
+)
+from nse_algo_trader.sizing.regulatory_facts_from_ingest_store import (
+    assemble_regulatory_facts,
 )
 from nse_algo_trader.sizing.session_risk_state_store import (
     DEFAULT_SESSION_RISK_STATE_PATH,
@@ -196,6 +200,12 @@ This is a symptom of the coverage gap, not a fix for it — `F01`'s fitter needs
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
 MARKET_DATA_DATABASE = Path("~/.nse_algo_trader/market_data.sqlite3").expanduser()
+
+NSE_INGEST_DATABASE = Path("~/.nse_algo_trader/nse_ingest.sqlite3").expanduser()
+"""Where the exchange's own published facts land — the F&O ban list, MWPL, ASM/GSM surveillance.
+
+Tier 1 of the risk gate reads from here. Eight symbols are on the ban list today, and until
+`regulatory_facts_from_ingest_store` existed the gate reported every wall UNCHECKED."""
 
 DEPTH_TAPE_BROKER = "kite"
 """Which broker's quotes the depth tape is recorded from — a deployment fact, and the one
@@ -380,6 +390,7 @@ SURFACED_MODULES: frozenset[str] = frozenset(
         "nse_algo_trader.sizing.session_risk_state_store",
         "nse_algo_trader.sizing.pre_trade_risk_gate",
         "nse_algo_trader.sizing.sizing_inputs_from_real_stores",
+        "nse_algo_trader.sizing.regulatory_facts_from_ingest_store",
         "nse_algo_trader.dashboard.sizing_surface_renderer",
     }
 )
@@ -772,6 +783,25 @@ def build_dashboard_app() -> FastAPI:
         _remember_key(redirect, request)
         return redirect
 
+    def _regulatory_facts_for(symbol: str, session_date: date) -> RegulatoryFacts:
+        """Tier 1's real facts, or every wall honestly UNCHECKED when the store is unreachable.
+
+        Read-only and point-in-time. The fallback is deliberately the CONSERVATIVE one: an
+        unreadable store yields `None` for every wall, which the gate shouts as UNCHECKED, rather
+        than a `False` that would read as "not banned" on the morning the ban file failed.
+        """
+        if not NSE_INGEST_DATABASE.exists():
+            return RegulatoryFacts(trading_symbol=symbol)
+        try:
+            with BitemporalIngestStore(NSE_INGEST_DATABASE) as ingest_store:
+                return assemble_regulatory_facts(
+                    trading_symbol=symbol,
+                    ingest_store=ingest_store,
+                    effective_date=session_date,
+                )
+        except sqlite3.Error:
+            return RegulatoryFacts(trading_symbol=symbol)
+
     def _sizing_state(now: datetime, requested_symbol: str) -> SizingSurfaceState:
         """Work one real decision, or say exactly which store could not answer.
 
@@ -873,7 +903,7 @@ def build_dashboard_app() -> FastAPI:
             verdict = PreTradeRiskGate().evaluate(
                 sized=sized,
                 state=resting,
-                facts=RegulatoryFacts(trading_symbol=symbol_name),
+                facts=_regulatory_facts_for(symbol_name, session_date),
                 limits=limits,
                 daily_loss_limit=limit,
             )

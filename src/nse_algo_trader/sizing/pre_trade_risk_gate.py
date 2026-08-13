@@ -100,7 +100,11 @@ class RegulatoryFacts:
         missing: list[str] = []
         if self.is_fo_banned is None:
             missing.append("fo_ban_list")
-        if self.mwpl_utilisation_fraction is None:
+        # Keyed off the THRESHOLD, not the utilisation. The threshold is set whenever the source
+        # was read; the utilisation is absent for any scrip that is not in the F&O segment at all,
+        # which is a legitimate ABSENCE rather than a failure to check. Conflating them made every
+        # cash-only scrip report an unchecked wall it does not have.
+        if self.mwpl_breach_threshold_fraction is None:
             missing.append("mwpl_position_limits")
         if self.upper_circuit_price_rupees is None or self.lower_circuit_price_rupees is None:
             missing.append("circuit_bands")

@@ -105,7 +105,19 @@ the items below are what is missing, and they are the reason.
   computable from `BitemporalBarStore` today and no code does it; the third has no source at all —
   `segment_margin_fractions()` returns `{}` on purpose, with the margin ingest (`L7.08`) as its
   named consumer. A hardcoded margin table would be the `L1.09` lot-size defect one layer up.
-- 🔴 **`RegulatoryFacts` is assembled by nobody.** The readers exist
+- 🟢 **`RegulatoryFacts` — ASSEMBLED 2026-08-13.** `regulatory_facts_from_ingest_store` joins the
+  F&O ban list, MWPL and ASM/GSM surveillance out of the real ingest store, point-in-time, and the
+  `/sizing` route uses it. Verified on the operator's own data: **SAIL and MANAPPURAM come back
+  `banned=True` for 2026-08-13** (eight symbols on the real list), ZYDUSLIFE reads 32.2% MWPL
+  utilisation against the sourced 95% ban threshold, and RELIANCE on 2020-01-01 correctly reads
+  `None`/UNCHECKED rather than "not banned". The live page has dropped `fo_ban_list` from its
+  unchecked list.
+- 🔴 **Circuit BAND PRICES are still unavailable and the page still says so.** The
+  `circuit_band_asm_gsm` source carries ASM/GSM surveillance stages, not the day's upper and lower
+  price bands, so those two fields stay `None` by construction. Named consumer: the bhavcopy's own
+  price-band columns, which are already ingested (`nse_bhavcopy_cash`, 81,274 rows) and not yet
+  read. That is the next cheap win for tier 1.
+- 🔴 **Superseded: `RegulatoryFacts` was assembled by nobody.** The readers exist
   (`BitemporalIngestStore.rows_for` over `fo_ban_list`, `mwpl_position_limits`, the circuit-band
   sources) but nothing joins them into the dataclass, so today every call would report all three
   walls UNCHECKED. That is honest and useless in equal measure.
