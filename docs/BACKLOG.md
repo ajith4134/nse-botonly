@@ -10,12 +10,44 @@ Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) ·
 
 ## Operator actions blocking a daily step (2026-08-13) — ⛔
 
-- ⛔ **`NSE_TRADING_CAPITAL_RUPEES` is not set, and the daily run's `transaction costs` step has
-  been failing on it every day.** By design there is no default — `capital_configuration` refuses
-  rather than guessing, because a guessed capital would size real orders (`R.03`, todo `0.9`). The
-  step is the only `[FAIL]` in an otherwise clean run (2026-08-13: 24 steps, 23 ok). **Operator
-  action: put the figure in `.env`.** Until then every cost figure that depends on ticket size is
-  computed from a size nobody chose.
+- 🟢 **`NSE_TRADING_CAPITAL_RUPEES` — DONE 2026-08-13.** The operator put ₹10,00,000 in `.env`
+  (`A.101` decision 1), and a SECOND half was found the same day: the dashboard never loaded `.env`
+  at all, so the variable was correctly present and every surface still reported it unset. That is
+  the worst shape a configuration gap can take — the configuration looks done and the system behaves
+  as though it is not. `build_dashboard_app` now calls `load_env_file_into_environ()` exactly as
+  `run_daily_operations` already did at its own entry, with existing process variables still winning.
+  Verified by a real POST against the running server: the ceiling reads ₹10,00,000 on
+  `/paper-capital`.
+- 🔴 **Nothing else has been audited for the same gap.** `load_env_file_into_environ()` is called at
+  two entry points (`run_daily_operations`, `build_dashboard_app`); any other process this project
+  starts reads a bare environment and will report operator configuration as unset without saying why.
+  Named consumer: whichever entry point `F04`'s paper loop gets — it must load the file too, or the
+  paper book will read an unseeded ceiling on a machine where the operator has set one.
+
+## `L1.18` paper capital ledger (2026-08-13, `A.102`) — 🟡 open
+
+- ⛔ **`R.05` real-data status: the dashboard round trip PASSED, first real consumption has not.**
+  Verified on the live server 2026-08-13: `GET /paper-capital` renders without creating the ledger
+  file, `POST` seeds from the operator ceiling and applies the operator's figure, and the page's fold
+  agrees with the checkpoint (₹10,00,000 free, 3 events). What has NOT happened is a single rupee of
+  simulated trading through it — no `POSITION_COMMIT`, `REALISED_PROFIT`, `REALISED_LOSS` or
+  `COST_DEBIT` has ever been written by anything but a test. The commit/release reservation path is
+  the half most likely to be wrong in practice and it is unexercised outside the suite.
+- 🔴 **No consumer sizes against it yet.** `F04`'s paper loop is the named future consumer for
+  `deployable_rupees`; `L1.10` capital-based position sizing must be taught to take the capital
+  source by mode rather than reading the live resolver directly; `L1.11` P&L attribution is the named
+  consumer for `total_by_kind(COST_DEBIT)` being readable apart from `REALISED_LOSS`. Until at least
+  the first exists, the ledger is visible and correct and **changes no decision** — it is not done by
+  `R.06`'s standard, and this line is the record of that.
+- 🔴 **The experiment book (`A.06`, `L14.28`) does not exist.** `A.102` resolved the unlimited-vs-
+  finite conflict by declaring two books; only the finite one is built. Nothing yet runs parallel
+  expressions of one conviction, so the vehicle-conversion table that `L14.28` promises has no
+  producer. Recorded so the "two books" resolution is not mistaken for two books existing.
+- 🔴 **Concurrency is unproven.** The ledger is SQLite opened per request with no explicit locking
+  discipline around the read-modify-write between `fold_from_events()` and `_append()`. One operator
+  posting from one browser cannot hit it; a second writer — the paper loop writing fills while the
+  operator edits the balance — is exactly the shape that would. Under adversarial review at time of
+  writing; whatever it returns lands here.
 
 ## `F02` order path (2026-08-13, `A.99`) — 🟡 open
 

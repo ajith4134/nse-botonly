@@ -1651,3 +1651,52 @@ would have found four of the five.
 **What would change my mind:** a review that finds nothing on a feature built the same way. That
 has not happened in three attempts, so the prior is strong. Note the cost honestly: the review takes
 roughly as long as building the feature's core, and it is still the best-value hour spent.
+
+## O.83 · 2026-08-13 · Unlimited paper capital is the wrong denominator, not the wrong generosity
+
+**Opinion:** `A.06`'s "paper capital is unlimited" is right for the *experiment* book and unusable
+for the book that produces graduation evidence, and the correct resolution is two books rather than
+a compromise figure.
+
+**Reasoning:** it is arithmetic, not preference. Return on capital, Sharpe, percentage drawdown,
+Kelly and every exposure limit are ratios whose divisor is the capital base. With no base they are
+zero or undefined. An unlimited book can therefore produce a **profit** and can never produce a
+**return** — and `R.22` graduates a strategy on risk-adjusted evidence, which is exactly the class of
+number that does not exist without a denominator. Meanwhile the experiment book's unlimitedness is
+also load-bearing for its own purpose: three expressions of one conviction cannot be compared if
+they compete for the same rupees. The two requirements are not in tension once they stop sharing a
+book.
+
+**Confidence: reasoned.** The arithmetic is certain; what is judgement is that the operator will
+actually want both books rather than deciding later that the experiment book was never worth its
+complexity.
+
+**What would change my mind:** if the conversion table (`L14.28`) turns out to be derivable from the
+bounded book alone — e.g. if running one expression at a time across many sessions gives the same
+ranking as running three at once — then the unlimited book is redundant and should be deleted rather
+than kept for symmetry. That is a measurable question and nobody has measured it.
+
+## O.84 · 2026-08-13 · A screenshot is a different instrument from a test, and today it out-performed one
+
+**Opinion:** `R.N`'s screenshot step is not a courtesy to the operator; it is a structural check that
+finds a class of defect the test suite is systematically blind to, and it should be treated as part
+of verification rather than as presentation.
+
+**Reasoning:** measured today. The `/paper-capital` ledger table rendered **two cells per row instead
+of nine** — a line-wrap had turned a conditional inside a chain of implicitly-concatenated f-strings
+into a ternary over the entire chain, so every event without an unfunded shortfall lost seven cells.
+Eleven surface tests passed. They passed *correctly*: each asserted that some substring was PRESENT
+on the page, and a two-cell row still contains those substrings. **Presence is not structure**, and
+no assertion in the file could tell the difference. The screenshot showed it immediately, because a
+human eye reads structure first and content second — the exact inverse of how a string assertion
+reads a page.
+
+**The generalisation worth keeping:** for any surface, write at least one test that counts or
+positions rather than matches. `test_every_ledger_row_carries_one_cell_per_column` is that test, and
+it now exists because a picture found what nine assertions could not.
+
+**Confidence: measured** on the incident, **judgement** on how often the class recurs.
+
+**What would change my mind:** if the counting-style tests catch the next three surface defects
+before the screenshot does, then the screenshot is confirmation rather than detection and can move
+to the end of the loop. Today it was detection.

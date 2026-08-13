@@ -245,6 +245,27 @@ option structures are viable at all. ⟨IV · VII⟩ · base · archived · r/b2
 never hardcoded (a resize wave hit Jan 2026). ⟨IV⟩ · base · archived · r/b7
 **L1.10**  Capital-based position sizing — min/max capital per trade as a function of configured capital,
 so the same engine works from ₹1 lakh to ₹1 crore. ⟨III⟩ · base · archived · `capital_based_position_sizing`
+**L1.17**  **Deployable capital resolver** — what may actually be risked TODAY, measured from the
+broker's own available balance and bounded by an operator ceiling, so sizing uses
+`min(real balance, ceiling)` and can never size against money that is not there. A withdrawal, a
+loss or a margin block shrinks size with no act from anyone; a deposit cannot silently increase it.
+When the balance cannot be read the resolver REFUSES rather than falling back to the ceiling, since
+the ceiling is a permission and not a measurement. **NEW 2026-08-13 (`A.101`)**, inserted here
+because `L1.10` sizes against it and nothing in the catalogue produced the number.
+⟨III · XVI⟩ · base · operator 2026-08-13
+*scope narrowed 2026-08-13 by `A.102`: this resolver's authority is **LIVE ONLY**. It never sizes the
+paper book, which has its own capital in `L1.18`.*
+**L1.18**  **Paper trading book's capital ledger** — the *trading* paper book's money: finite,
+operator-editable from the dashboard to any positive figure, and event-sourced, so the balance is a
+fold over an append-only log rather than a number anyone maintains. Commitment is tracked apart from
+balance (`free = balance − committed`), so a second signal cannot size against capital an open
+position already holds. An edit above the live ceiling is STAMPED, never blocked, because `R.03`
+requires exercising from a lakh to a crore and a record made on unfundable money must be marked
+unachievable when it is READ, not at arming time. Does not weaken `A.06`: the *experiment* book stays
+unlimited: a book with no capital base can produce a profit but not a RETURN, and `R.22` graduates on
+risk-adjusted evidence, which needs a denominator. **NEW 2026-08-13 (`A.102`)**, inserted here
+because it is the paper-mode counterpart of `L1.17` and `L1.10` sizes against whichever of the two
+the mode selects. Spec `docs/research/226`. ⟨III · XIII · XVI⟩ · base · operator 2026-08-13
 **L1.11**  P&L attribution by cost component — decomposes result into edge, fees, slippage, impact, so it
 is visible *which* is eating the return. ⟨XIII⟩ · adv · spec · atlas L8
 **L1.12**  Cost homeostasis — the system regulating its own cost burn as a controlled variable rather
@@ -348,8 +369,13 @@ archived · r/168
 Nothing reaches capital without it. ⟨VII · III⟩ · base · archived · `pre_trade_risk_gate`
 **L3.06**  Order rate limiter — SEBI's ≤10 orders/sec/exchange/client, plus Kite's 400/min and 5,000/day.
 Crossing it changes the regulatory category. ⟨VII⟩ · base · archived · `order_rate_limiter`
-**L3.07**  Kill switch / trading control config — paper vs live, with enforcement. ⟨VII · IV⟩ · base ·
-archived · `trading_control_config`
+**L3.07**  Kill switch / trading control config — paper vs live, with enforcement, **on TWO
+AUTHORITY TIERS**: releasing the halt for PAPER is a cheap, explicit, recorded act, while arming
+LIVE capital keeps the full key-and-phrase ceremony. *Supersedes the single-ceremony version built
+2026-08-13 (`A.101`): making a paper release as expensive as a live arm does not add safety, it
+removes it — the predictable response is to release the latch once and leave it released, which
+collapses `R.22`'s two keys into one. The expensive ritual is kept rare so that it keeps meaning.*
+⟨VII · IV⟩ · base · archived · `trading_control_config`
 **L3.08**  Corrigibility off-switch — an engaged off-switch blocks all orders and self-halts on a
 constitutional breach. ⟨VII⟩ · adv · archived · r/111
 **L3.09**  Intraday square-off executor — the dead-man's switch. **Now selective rather than universal
@@ -4102,6 +4128,71 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
+
+**A.102 · 2026-08-13 · The paper book gets its own money, and `A.101`'s resolver is scoped to live.**
+
+*The question that forced it.* The operator's real account carries a debit of **−88 rupees** — the
+residue of a real loss plus brokerage — and asked why that should matter to a book trading imaginary
+money. It should not, and the only reason it would is that `A.101` had just made
+`deployable_capital_resolver` the single source of the sizing number. On a debit balance that
+resolver correctly answers **zero deployable**, so the paper loop would have sized nothing, forever,
+until the account was funded. **Decision: the resolver's authority is LIVE ONLY.** Paper gets
+`L1.18`.
+
+*The conflict, and why neither side was dropped.* `A.06`/`L14.28` decided paper capital is
+**unlimited**, and that is load-bearing — parallel expressions of one conviction cannot be compared
+if they compete for capital. The operator's request is for a **finite, editable** figure. Both are
+kept, as **two books over one signal stream**: the *experiment* book stays unlimited and keeps
+producing the vehicle-conversion table; the *trading* book is finite and is the only one whose record
+graduation may read. The argument that settles it is arithmetic rather than taste — **unlimited
+capital has no denominator**: return, Sharpe, percentage drawdown and Kelly are all ratios divided by
+the capital base, so an unlimited book can produce a profit but never a return, and `R.22` graduates
+on risk-adjusted evidence. Idea-intake verdict: **GENUINELY NEW**, inserted as `L1.18`; `A.06` is
+scoped, not superseded.
+
+*What the operator may do, and what they are told.* Any positive figure, from the dashboard, at any
+time. Above the live ceiling is allowed — `R.03` requires the lakh-to-crore range to be exercisable —
+but STAMPED on the surface as not achievable with fundable capital. Below what open positions have
+committed is also allowed, reported as over-committed with free capital at zero, because an operator
+must always be able to state the truth about their own virtual money; new commitments are refused
+until positions close. Every edit is an appended event carrying a reason, and a blank reason is
+refused at write time.
+
+*What was NOT decided.* Whether an unpaid ledger blocks the Kite Connect subscription renewal, and
+therefore the API access the paper loop's live tick feed depends on, is **unverified**. The operator
+states they will fund the account or renew before it bites (2026-08-13), so it is recorded as an
+account-access matter rather than a capital one and is not researched.
+
+**A.101 · 2026-08-13 · Four operator decisions on the items `F02` left open — and one of them
+changes what "capital" means in this system.**
+
+*Decision 1 — capital is MEASURED from the broker and BOUNDED by the operator, not typed.*
+`NSE_TRADING_CAPITAL_RUPEES` becomes a **ceiling** — the most the operator is willing to deploy —
+and the amount actually available is read from the broker every session, with sizing using
+`min(real balance, ceiling)`. The ceiling is set to **₹10,00,000**. This is the level at which
+several positions can run across the six segments without one crowding the others, which is what
+`F24`'s allocator will need to have anything to allocate. Idea-intake verdict: **GENUINELY NEW**,
+inserted as `L1.17` at its dependency position, because `L1.10` sizes against this number and
+nothing in the 682-entry catalogue produced it. The refusal behaviour is the point: when the
+balance cannot be read the resolver refuses, because the ceiling is a permission, not a
+measurement, and substituting one for the other is how a system sizes against money it does not
+have.
+
+*Decision 2 — stay under the regulatory threshold rather than register.* `NSE/INVG/67858` requires
+every algo order to be tagged, but a self-developed retail algo registers only if it crosses **10
+orders per second** (`docs/research/223` §2-3). The limiter already holds the flow below that with a
+derived margin, and Zerodha applies the standardised sub-threshold identifier itself. What is added
+is an **assertion**, not a hope: a session precondition that measures the realised order rate
+against the threshold and surfaces it, so "we are in registration-free territory" is a measured
+claim. Idea-intake verdict: **ALREADY EXISTS** — this is the audit-trail half of `L3.19`, which is
+extended rather than duplicated.
+
+*Decision 3 — the latch gets two authority tiers.* See `L3.07`, replaced in place. `R.22` is
+strengthened by this, not weakened: the two keys stay two only if nobody is tempted to turn one of
+them permanently.
+
+*Decision 4 — `.env` carries the ceiling.* Written by this system on the operator's instruction;
+`.env` is gitignored and remains the only home for it (`R.02`).
 
 **A.100 · 2026-08-13 · `F02`'s adversarial review broke all three of its claims, and the most
 valuable thing it found was in the tests.**

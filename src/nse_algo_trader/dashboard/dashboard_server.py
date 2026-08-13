@@ -26,7 +26,7 @@ from html import escape
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import (
     HTMLResponse,
     JSONResponse,
@@ -34,6 +34,11 @@ from fastapi.responses import (
     RedirectResponse,
 )
 
+from nse_algo_trader.broker_credentials import load_env_file_into_environ
+from nse_algo_trader.capital_configuration import (
+    CapitalConfigurationError,
+    load_trading_capital_from_environment,
+)
 from nse_algo_trader.clock_integrity.clock_offset_observation_store import (
     ClockOffsetObservationStore,
 )
@@ -83,6 +88,12 @@ from nse_algo_trader.dashboard.order_path_surface_renderer import (
     empty_order_path_surface_state,
     render_order_path_page,
 )
+from nse_algo_trader.dashboard.paper_capital_surface_renderer import (
+    PaperCapitalSurfaceState,
+    absent_paper_capital_surface_state,
+    build_paper_capital_surface_state,
+    render_paper_capital_page,
+)
 from nse_algo_trader.dashboard.regime_brain_read_model import (
     RegimeReadModelError,
     measure_regime_brain,
@@ -113,6 +124,11 @@ from nse_algo_trader.order_path.kite_order_execution_venue import (
 from nse_algo_trader.order_path.order_intent_journal import (
     DEFAULT_JOURNAL_PATH,
     OrderIntentJournal,
+)
+from nse_algo_trader.paper_capital_ledger import (
+    DEFAULT_PAPER_CAPITAL_LEDGER_PATH,
+    PaperCapitalError,
+    PaperCapitalLedger,
 )
 from nse_algo_trader.transaction_cost.charge_reconciliation_ledger import (
     ChargeReconciliationLedger,
@@ -298,6 +314,9 @@ SURFACED_MODULES: frozenset[str] = frozenset(
         "nse_algo_trader.order_path.order_lifecycle_state_machine",
         "nse_algo_trader.order_path.broker_truth_reconciler",
         "nse_algo_trader.dashboard.order_path_surface_renderer",
+        # `L1.18` — the paper trading book's virtual money, drawn in full by `/paper-capital`.
+        "nse_algo_trader.paper_capital_ledger",
+        "nse_algo_trader.dashboard.paper_capital_surface_renderer",
     }
 )
 """Modules that genuinely have a panel today. Declaring this is safe precisely BECAUSE
@@ -382,7 +401,16 @@ def inadmissible_depth_instruments(session_date: date) -> frozenset[int]:
 
 
 def build_dashboard_app() -> FastAPI:
-    """The app. Constructed by a function so tests get a fresh instance."""
+    """The app. Constructed by a function so tests get a fresh instance.
+
+    The project `.env` is loaded here, as `run_daily_operations` already does at its own entry.
+    Without it the server saw NONE of the operator's configuration: `NSE_TRADING_CAPITAL_RUPEES`
+    sat correctly in `.env` and every surface that reads it reported it unset, which is the worst
+    kind of gap — the configuration looks done and the system behaves as though it is not. Existing
+    process variables win (`override=False`), so a systemd `Environment=` line still beats the file
+    and a test that sets the variable is not overwritten by it.
+    """
+    load_env_file_into_environ()
     app = FastAPI(title="nse-algo-trader dashboard", docs_url=None, redoc_url=None)
 
     @app.get("/", response_model=None)
@@ -572,6 +600,119 @@ def build_dashboard_app() -> FastAPI:
         response = HTMLResponse(render_order_path_page(state))
         _remember_key(response, request)
         return response
+
+    def _paper_capital_state(measured_at: datetime) -> PaperCapitalSurfaceState:
+        """Measure the paper book WITHOUT creating anything.
+
+        A GET must not seed the ledger. `PaperCapitalLedger.__init__` creates the file, which is
+        exactly the side effect `/orders` refuses on page load, so the file's absence is answered
+        here rather than by opening it.
+        """
+        try:
+            ceiling = load_trading_capital_from_environment().total_rupees
+        except CapitalConfigurationError as failure:
+            return absent_paper_capital_surface_state(
+                measured_at=measured_at,
+                ledger_path=DEFAULT_PAPER_CAPITAL_LEDGER_PATH,
+                live_ceiling_rupees=None,
+                unavailable_reason=(
+                    "the operator ceiling cannot be read, so the paper book cannot state what it "
+                    f"would be measured against: {failure}"
+                ),
+            )
+        if not DEFAULT_PAPER_CAPITAL_LEDGER_PATH.exists():
+            return absent_paper_capital_surface_state(
+                measured_at=measured_at,
+                ledger_path=DEFAULT_PAPER_CAPITAL_LEDGER_PATH,
+                live_ceiling_rupees=ceiling,
+                unavailable_reason=(
+                    "the paper capital ledger has never been created. Set a figure below to seed "
+                    "it — rendering this page deliberately does not, because a dashboard that "
+                    "writes a database on page load is a side effect nobody asked for."
+                ),
+            )
+        with PaperCapitalLedger(DEFAULT_PAPER_CAPITAL_LEDGER_PATH) as ledger:
+            return build_paper_capital_surface_state(
+                ledger,
+                measured_at=measured_at,
+                live_ceiling_rupees=ceiling,
+                ledger_path=DEFAULT_PAPER_CAPITAL_LEDGER_PATH,
+            )
+
+    @app.get("/paper-capital", response_class=HTMLResponse)
+    def paper_capital_surface(request: Request) -> HTMLResponse:
+        """`L1.18`'s surface: the paper trading book's virtual money and its whole history.
+
+        Read-only. The balance shown is folded from the event log on every request and checked
+        against the stored checkpoint, so a figure that has drifted from its own log refuses to
+        render rather than rendering the cheaper of the two.
+        """
+        if not _is_authorised(request):
+            return _unauthorised_html()
+        response = HTMLResponse(render_paper_capital_page(_paper_capital_state(datetime.now(IST))))
+        _remember_key(response, request)
+        return response
+
+    @app.post("/paper-capital", response_model=None)
+    def set_paper_capital(
+        request: Request,
+        balance_rupees: str = Form(...),
+        reason: str = Form(...),
+    ) -> HTMLResponse | RedirectResponse:
+        """The one write on this surface — the operator states the virtual capital they want to run.
+
+        Seeds the ledger on first use, from the operator ceiling, then applies the stated figure. It
+        is deliberately NOT capped at that ceiling: `R.03` requires every engine to be exercisable
+        from a lakh to a crore, and the surface stamps an over-ceiling book rather than refusing it.
+
+        A refusal from the ledger is rendered as a refusal, not swallowed into a redirect that would
+        look identical to success.
+        """
+        if not _is_authorised(request):
+            return _unauthorised_html()
+        now = datetime.now(IST)
+        try:
+            figure = Decimal(balance_rupees.strip().replace(",", ""))
+        except (ArithmeticError, ValueError):
+            return HTMLResponse(
+                render_paper_capital_page(
+                    absent_paper_capital_surface_state(
+                        measured_at=now,
+                        ledger_path=DEFAULT_PAPER_CAPITAL_LEDGER_PATH,
+                        live_ceiling_rupees=None,
+                        unavailable_reason=(
+                            f"{balance_rupees!r} is not a number this ledger will interpret, so "
+                            "nothing was written."
+                        ),
+                    )
+                ),
+                status_code=400,
+            )
+        try:
+            ceiling = load_trading_capital_from_environment()
+            with PaperCapitalLedger(DEFAULT_PAPER_CAPITAL_LEDGER_PATH) as ledger:
+                if not ledger.events():
+                    ledger.seed_from_ceiling(
+                        ceiling,
+                        occurred_at=now,
+                        reason="seeded from the operator ceiling on the first dashboard write",
+                    )
+                ledger.set_balance(figure, occurred_at=now, reason=reason)
+        except (PaperCapitalError, CapitalConfigurationError) as failure:
+            return HTMLResponse(
+                render_paper_capital_page(
+                    absent_paper_capital_surface_state(
+                        measured_at=now,
+                        ledger_path=DEFAULT_PAPER_CAPITAL_LEDGER_PATH,
+                        live_ceiling_rupees=None,
+                        unavailable_reason=f"the ledger refused this edit: {failure}",
+                    )
+                ),
+                status_code=400,
+            )
+        redirect = RedirectResponse("/paper-capital", status_code=303)
+        _remember_key(redirect, request)
+        return redirect
 
     @app.get("/clock", response_class=HTMLResponse)
     def clock_integrity_surface(request: Request) -> HTMLResponse:

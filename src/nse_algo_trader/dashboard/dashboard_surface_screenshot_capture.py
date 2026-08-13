@@ -40,6 +40,7 @@ ROUTES = (
     "/history",
     "/costs",
     "/orders",
+    "/paper-capital",
 )
 
 PAGE_LOAD_TIMEOUT_MILLISECONDS = 120_000

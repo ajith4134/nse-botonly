@@ -439,6 +439,35 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       reverse the conclusion.*
 - [ ] **1.43** Discrete option-lot sizing — `L1.09`
 - [ ] **1.44** Capital-based position sizing — `L1.10`
+      · ⚠️ **now sizes against a capital SOURCE chosen by mode, not a number**: `L1.17` for live,
+      `L1.18` for the paper trading book. Both expose the same `deployable_rupees` / `is_tradeable` /
+      `binding_side` / `describe()`, so this picks one at construction and never branches per sizing.
+- [ ] **1.44b** Paper trading book's capital ledger — `L1.18` · **NEW 2026-08-13 (`A.102`)**, built
+      the same day. Event-sourced virtual money for the *trading* paper book: append-only SQLite log,
+      balance is a fold verified against its checkpoint on every read, `free = balance − committed`
+      with per-position reservations so a second signal cannot size against capital an open position
+      holds, operator-editable from `/paper-capital` to any positive figure, over-ceiling and
+      over-committed states STAMPED rather than blocked. Spec `docs/research/226`; 42 tests; ruff +
+      mypy-strict green; live dashboard round trip passed on the running server.
+
+      *Why it exists:* the operator's real account is in debit (−88), and `A.101` had just made the
+      broker-measured resolver the single source of the sizing number — which would have paper-traded
+      ₹0 forever. `A.102` scopes that resolver to LIVE. *Why finite when `A.06` says paper is
+      unlimited:* two books. The experiment book stays unlimited for `L14.28`'s conversion table; the
+      trading book is finite because return, Sharpe, percentage drawdown and Kelly all divide by the
+      capital base, and `R.22` graduates on risk-adjusted evidence that does not exist without one.
+
+      ***`R.N` screenshot caught what 11 surface tests could not.*** *The ledger table rendered TWO
+      cells per row instead of nine — a line-wrap turned a conditional inside a chain of implicitly
+      concatenated f-strings into a ternary over the whole chain. Every test passed, because each
+      asserted a substring was PRESENT and a two-cell row still contains it. Presence is not
+      structure. Fixed, and `test_every_ledger_row_carries_one_cell_per_column` now counts cells
+      (`O.84`).*
+
+      · ⚠️ **NOT R.11-done — primary consumer queued**: nothing sizes against it yet. `F04`'s paper
+      loop is the first real caller; `L1.10` must take the source by mode; `L1.11` is the named
+      consumer of `COST_DEBIT` being readable apart from `REALISED_LOSS`. Tick to [x] when one
+      consumes it. The commit/release reservation path has never run outside the test suite.
 - [ ] **1.45** P&L attribution by cost component — `L1.11`
       *(NOT A BUILD UNIT — MERGE -> `L13.15`. One engine + one panel, catalogued twice. Recorded by `A.94`.)*
 - [ ] **1.46** Cost homeostasis — `L1.12`

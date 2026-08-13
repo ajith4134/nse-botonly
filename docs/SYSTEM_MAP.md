@@ -7,6 +7,13 @@
 > which `A.94` made the build document. The current tree is 140 modules; `F01` (the cost reality
 > filter) and `F02` (the order path, `src/nse_algo_trader/order_path/`) are the two features
 > complete under the rebuild. Regenerating this map from the new tree is tracked in `BACKLOG.md`.
+>
+> **Added since, and not drawn below (2026-08-13):** `deployable_capital_resolver` (`L1.17` — live
+> sizing measured from the broker and bounded by the operator ceiling) and `paper_capital_ledger` +
+> `dashboard/paper_capital_surface_renderer` (`L1.18` — the paper trading book's event-sourced
+> virtual money, surfaced at `/paper-capital`). They are the live/paper halves of one decision and
+> expose the same four members so a sizing consumer picks a source by mode. `A.102` scopes the
+> resolver to LIVE: a real account in debit must not stop a book trading imaginary money.
 
 
 **This is the single source of truth for how this project is built and how
