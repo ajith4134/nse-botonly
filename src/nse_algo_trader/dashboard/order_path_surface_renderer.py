@@ -139,6 +139,27 @@ than as an unstyled word on a live page."""
 _INFERRED_WORD = "INFERRED"
 """The word that must appear beside anything this system invented. Colour alone is not a label."""
 
+_UNREADABLE_WORD = "COULD NOT BE READ"
+"""What an order that would not fold is called, in words, on the row where it would have been.
+
+Not `INFERRED` and not an absence: those two say the system knows something it did not observe.
+This one says the system holds a record it cannot interpret, which is a different and worse
+statement, and it is styled `badge-critical` because ignoring it loses an order.
+"""
+
+_EXCHANGE_ALGO_TAGGING_CIRCULAR = (
+    "NSE/INVG/67858 (2025-05-05), para G: “All algo orders (Below and above the threshold) "
+    "shall be tagged with a unique identifier provided by the Exchange in order to establish "
+    "audit trail.”"
+)
+"""The obligation the identifier row is measured against, quoted rather than paraphrased.
+
+The paraphrase an operator would otherwise get — "orders should be tagged" — is the version under
+which an absent identifier reads as a nicety. The circular's own words say ALL algo orders, above
+and below the registration threshold, which is what makes an unset identifier a gap in this
+system's own compliance rather than a broker's problem. Source: `docs/research/223` §4.
+"""
+
 _PAGE_CSS = """
 :root{
   --surface-0:#f4f4f2; --surface-1:#fcfcfb; --border:#e2e1dc;
@@ -189,6 +210,11 @@ td.reason{white-space:normal;color:var(--text-secondary);}
   border:1px dashed var(--axis);padding:0 7px;}
 .tile-absent{border-style:dashed;}
 .tile-absent .tile-value{color:var(--text-muted);}
+/* A count that is not an absence and not a status — it is damage. Solid critical edge, same ink
+   as the blocker band, because an unreadable order is an order nobody can account for. */
+.tile-critical{border:2px solid __CRITICAL__;}
+.tile-critical .tile-value{color:__CRITICAL__;}
+tr.unreadable td{background:rgba(192,57,43,0.07);}
 tr.inferred td{color:var(--text-muted);}
 .muted{color:var(--text-muted);}
 .mono-id{font-size:12px;color:var(--text-secondary);}
@@ -230,6 +256,21 @@ class OrderPathSurfaceState:
     journal_path: Path
     journal_exists: bool
     recorded_session_dates: tuple[date, ...]
+    unreadable_orders: tuple[UnreadableOrder, ...]
+    """Intents the journal holds that this build could not fold back into an order.
+
+    Carried beside `orders` rather than merged into it, because the page has to be able to say
+    "this many were recorded and this many of them are unreadable" — a total that stays right even
+    when part of it cannot be read is the only total worth printing.
+    """
+
+    exchange_algo_identifier: str | None
+    """The exchange's algo audit-trail identifier, or `None` when the operator has not set one.
+
+    Passed in rather than read here: this module opens nothing and asks nothing. `None` is a real
+    and reportable state — the identifier belongs to the exchange and is never invented — and the
+    page's job is to make that state impossible to miss rather than to fill it in.
+    """
 
     @property
     def inferred_orders(self) -> tuple[OrderRecord, ...]:
@@ -258,6 +299,7 @@ def build_order_path_surface_state(
     *,
     session_date: date | None = None,
     reconciliation: ReconciliationReport | None = None,
+    exchange_algo_identifier: str | None,
     measured_at: datetime,
     journal_path: Path,
 ) -> OrderPathSurfaceState:
@@ -272,21 +314,36 @@ def build_order_path_surface_state(
     here. A `reconciliation` of `None` is carried as `None`: the page says no reconciliation has
     run rather than showing tallies of zero, because a zero disagreement count is a claim and an
     absent one is not.
+
+    The orders are folded DEFENSIVELY (`defensive_session_order_fold`), which is the whole of the
+    `M5` fix: one order this build cannot interpret used to raise out of `orders_for_session`, out
+    of this function, out of the route, and out as an HTTP 500 — taking the in-flight submission
+    queue and the inferred-event ledger with it, at the one moment an operator needs them. It now
+    becomes a visible row that says it could not be read, and the rest of the session still draws.
+
+    `exchange_algo_identifier` is keyword-only and has NO default on purpose. A default of `None`
+    would let a caller that simply forgot to ask the venue render an ABSENT identifier badge, and
+    "nobody configured it" and "nobody asked" must not be able to print the same sentence.
     """
     recorded_sessions = journal.recorded_session_dates()
     session = session_date or (recorded_sessions[-1] if recorded_sessions else measured_at.date())
     if recorded_sessions and session_date is None:
         session = recorded_sessions[-1]
+    folded = fold_session_orders_defensively(
+        journal, session_date=session, journal_path=journal_path
+    )
     return OrderPathSurfaceState(
         session_date=session,
         measured_at=measured_at,
-        orders=journal.orders_for_session(session),
+        orders=folded.orders,
         in_flight_submissions=journal.in_flight_submissions(session_date=session),
         horizon=visibility_horizon_from_observed_delays(journal.visibility_delays_seconds()),
         reconciliation=reconciliation,
         journal_path=journal_path,
         journal_exists=journal_path.exists(),
         recorded_session_dates=recorded_sessions,
+        unreadable_orders=folded.unreadable_orders,
+        exchange_algo_identifier=exchange_algo_identifier,
     )
 
 
@@ -295,6 +352,7 @@ def empty_order_path_surface_state(
     session_date: date,
     measured_at: datetime,
     journal_path: Path,
+    exchange_algo_identifier: str | None,
 ) -> OrderPathSurfaceState:
     """The state for a journal that does not exist yet — no orders have ever been placed.
 
@@ -313,6 +371,8 @@ def empty_order_path_surface_state(
         journal_path=journal_path,
         journal_exists=False,
         recorded_session_dates=(),
+        unreadable_orders=(),
+        exchange_algo_identifier=exchange_algo_identifier,
     )
 
 

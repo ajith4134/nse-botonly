@@ -4103,6 +4103,51 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
 
+**A.100 · 2026-08-13 · `F02`'s adversarial review broke all three of its claims, and the most
+valuable thing it found was in the tests.**
+
+Nine findings, five of them critical, **every one reproduced end to end before it was reported**,
+against a suite of 367 tests that was entirely green. Third feature in a row where the review has
+found criticals behind a passing suite (`A.91` found four, `A.98` found five), and the count is no
+longer a coincidence — it is the argument for the step.
+
+*The pattern, which is worth more than the list.* **Four of the five criticals were the same
+mistake wearing different clothes: an exceptional answer quietly converted into an ordinary one.**
+An unparseable payload became "the broker has no orders". A dropped connection became "the request
+never left". An inference that had done its job became a fact that stayed. An event the state
+machine refused became a conflict to log rather than a signal that two clocks disagree. In every
+case the code had a perfectly good way to say "I do not know", and in every case a cheaper answer
+was substituted. The fifth was an ordering bug in the fold — events replayed first, fills second,
+which is not the order in which either happened.
+
+*What each cost, in the terms that matter.* A part-filled order **cancelled at the close** — the
+commonest end-of-day event in an intraday book — made the journal unreadable **forever** for that
+session, with a real fill on disk the system could no longer account for. A connection dropped after
+the request was sent put **three live orders on the wire for one decision**, because Kite has no
+idempotency key and the classification said "safe to send again". An inference left standing when
+`trades()` caught up ran the position **30 units past the ordered quantity** and then poisoned every
+later read. An unreadable payload wrote off a **possibly-live** order as `ABANDONED`, which is
+terminal by design and never revisited. And the ordinary part-filled-but-still-open order was
+reported as a disagreement with the broker on **every pass forever**, which buries the real ones.
+
+*The finding that changes how the next feature is built.* Two tests asserted a defect **outright** —
+`ConnectionResetError` was listed under the comment *"never reached the venue — safe to send
+again"*. One test's name promised the hard ordering and its body tested the only ordering where it
+could not fail. One blessed "three broker calls for one intent" without ever exercising the
+classification that would earn it. And the flagship stateful property test — the one piece of
+evidence for the feature's headline claim — used a fake that **could not reach the states where the
+defects lived**: it never raised the retryable error, never reported a fill, never dropped an order
+from the book. Its invariant was true of the fake, not of the system. **Widened, it found two more
+defects on its first run**, both of them clock skew between the exchange's timestamp and this host's
+— which `L0.32` already measures at 124 ms and 0.85 ppm, so the system knew the two clocks differ
+and the fold assumed they did not.
+
+*Decision.* All nine are fixed with fourteen regression tests written from the review's own
+reproductions (`a10c13c`), and the corrected tests are **corrected in place with the reason
+attached**, never deleted. Standing consequence for every feature after this one: **a fake that
+cannot fail the invariant is not evidence**, and the property test's venue must be able to produce
+every outcome the real one can before its passing means anything.
+
 **A.99 · 2026-08-13 · `F02` opened — the ORDER PATH — and three operator decisions that fix its
 shape before a line of it exists.**
 

@@ -1627,3 +1627,27 @@ built it; the failure mode I am predicting is human behaviour, which I have not 
 **What would change my mind:** the operator saying they want one ceremony for both, or evidence
 that paper releases are so rare that the friction never accumulates. Either way this is the
 operator's call and is recorded, not acted on.
+
+## O.82 · 2026-08-13 · The adversarial review is now the highest-yield step in the loop, and I should stop being surprised
+
+**Opinion:** on this project, `R.23(c)` finds critical defects behind a green suite **every time**,
+and the right response is to treat a passing suite as evidence of nothing much until the review has
+run — not to keep being surprised by it.
+
+**Reasoning:** three features, three reviews, thirteen criticals — `A.91` four, `A.98` five, `A.100`
+five — all behind suites that were entirely green, and in most cases with a test actively asserting
+the defect. The mechanism is not mysterious and it is not carelessness: the same reasoning that
+writes the code writes the test, so the test encodes the assumption rather than the requirement. A
+fresh agent that has never held the assumption is the only cheap instrument that finds it.
+
+**The sharper version, which is today's real lesson:** the defects clustered in one place — every
+point where the code had a way to say "I do not know" and used a cheaper answer instead. Unparseable
+payload → "no orders". Dropped connection → "never sent". Refused transition → "log a conflict".
+Inference that had done its job → "keep it". If I had reviewed my own code for that ONE pattern I
+would have found four of the five.
+
+**Confidence: measured** on the count, **judgement** on the mechanism.
+
+**What would change my mind:** a review that finds nothing on a feature built the same way. That
+has not happened in three attempts, so the prior is strong. Note the cost honestly: the review takes
+roughly as long as building the feature's core, and it is still the best-value hour spent.
