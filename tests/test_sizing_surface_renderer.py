@@ -132,6 +132,7 @@ def test_the_page_shows_every_step_that_produced_the_quantity() -> None:
         "calibrated edge",
         "Kelly shrinkage",
         "Kelly cap notional",
+        "concentration cap",
         "bound by",
         "lot rounding",
     ):
@@ -144,7 +145,7 @@ def test_every_worked_step_row_has_three_cells() -> None:
     page = render_sizing_page(_worked_state())
     body = page.split("<tbody>")[1].split("</tbody>")[0]
     rows = [row for row in body.split("<tr>") if row.strip()]
-    assert len(rows) == 10
+    assert len(rows) == 11
     for row in rows:
         assert row.count("<td") == 3
 

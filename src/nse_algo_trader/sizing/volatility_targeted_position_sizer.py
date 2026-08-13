@@ -16,7 +16,15 @@ nothing on the other end since the day it was written (todo `0.8`).
    notional.
 2. **The Kelly cap** asks the different question — is the measured edge worth that much risk — and
    caps rather than replaces, because Kelly's error points the wrong way.
-3. **The lot** makes it an order. Always rounded DOWN.
+3. **The concentration cap** — `deployable / concurrent_position_capacity` — because neither of the
+   two above is a concentration constraint. Kelly's `f*` is a LEVERAGE and capping it at one was
+   arbitrary; volatility targeting sizes notional UP as sigma falls, by design and without bound.
+   With both corrected (`A.105`, `A.106`) they SATURATE on a quiet instrument: raw Kelly reached
+   ~5,760x capital and the volatility budget asked Rs 11.2 crore against a Rs 10,00,000 book. This
+   cap is the same derived figure as the risk budget, so the claim that six positions can coexist
+   and the size one position may take cannot disagree (`A.107`). It does not know that two
+   instruments move together — that is `L7.05`'s job and it is still required.
+4. **The lot** makes it an order. Always rounded DOWN.
 
 **`target_risk_fraction` is not a constant** (`R.03`). It is `1 / concurrent_position_capacity`:
 the number of positions the configured segments can carry at once under `R.10`'s equal-by-default
@@ -41,7 +49,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_FLOOR, Decimal, localcontext
 
 from nse_algo_trader.cost_gate.mean_reversion_edge_calibrator import ReversionCapture
 from nse_algo_trader.sizing.kelly_edge_scaler import (
@@ -105,6 +113,7 @@ class SizedPosition:
     risk_budget_rupees: Decimal
     volatility_target_notional_rupees: Decimal
     kelly_notional_rupees: Decimal
+    concentration_cap_rupees: Decimal
     volatility: RealisedVolatility
     kelly: ScaledKellyFraction
     binding_bound: str
@@ -161,8 +170,24 @@ class VolatilityTargetedPositionSizer:
         kelly = self._scale_edge(inputs, volatility)
         kelly_notional = inputs.deployable_rupees * kelly.kelly_fraction
 
-        notional = min(volatility_notional, kelly_notional)
-        binding = "kelly_cap" if kelly_notional < volatility_notional else "volatility_target"
+        # `A.107` — the concentration cap. Numerically the same figure as the risk budget, and
+        # deliberately so: both are `deployable / capacity`, so the claim that six positions can
+        # coexist and the size a single position may take can never disagree.
+        # Rounded DOWN explicitly. Plain true division rounds to the context's 28 significant
+        # digits, and rounding UP by one ulp is enough to make `cap * capacity` exceed the book —
+        # which is precisely the claim this bound exists to guarantee.
+        with localcontext() as context:
+            context.rounding = ROUND_FLOOR
+            concentration_cap = inputs.deployable_rupees / Decimal(
+                inputs.concurrent_position_capacity
+            )
+        bounds = {
+            "volatility_target": volatility_notional,
+            "kelly_cap": kelly_notional,
+            "concentration_cap": concentration_cap,
+        }
+        binding = min(bounds, key=lambda name: bounds[name])
+        notional = bounds[binding]
         # There is deliberately no third `deployable_capital` bound. `kelly_notional` is
         # `deployable x kelly_fraction` with the fraction capped at 1, so the `min` above already
         # bounds the answer by the book. The branch that used to sit here was unreachable, and its
@@ -192,6 +217,7 @@ class VolatilityTargetedPositionSizer:
             risk_budget_rupees=risk_budget,
             volatility_target_notional_rupees=volatility_notional,
             kelly_notional_rupees=kelly_notional,
+            concentration_cap_rupees=concentration_cap,
             volatility=volatility,
             kelly=kelly,
             binding_bound=binding,

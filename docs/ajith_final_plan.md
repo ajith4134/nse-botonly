@@ -4129,6 +4129,33 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
 
+**A.107 · 2026-08-13 · No position may exceed the book divided by the concurrent capacity.**
+
+*The problem it answers.* With `A.105`'s and `A.106`'s corrections in, both of the sizer's bounds
+saturate on a quiet instrument: raw Kelly reached ~5,760x capital before its cap, and the volatility
+budget independently asked for Rs 11.2 crore against a Rs 10,00,000 book. Neither Kelly nor
+volatility targeting is a concentration constraint — Kelly's `f*` is a LEVERAGE and capping it at 1
+was arbitrary, and volatility targeting sizes notional UP as sigma falls, by design and without
+bound. The sizer was arithmetically correct and operationally unusable (`O.89`).
+
+*Decision.* A third bound: `notional <= deployable / concurrent_position_capacity`. It is derived,
+not chosen — the same structural fact of the segment set that produces `target_risk_fraction`, so
+the two can never disagree — and it makes the capacity claim TRUE rather than decorative. Six
+segments that may each hold a position now genuinely fit in one book.
+
+*What it is and is not.* It is a CONCENTRATION cap, not notional budgeting: volatility targeting
+still decides the size below the cap for anything that moves, and the cap binds only where both
+other bounds already exceeded the book. It does **not** know that RELIANCE and NIFTY move together,
+so six nominally independent positions can still be one bet — `L7.05` (per-symbol and aggregate
+exposure, correlation-aware) remains required and the two compose rather than compete. Recorded so
+that shipping this is not mistaken for having solved concentration.
+
+*Options weighed and rejected:* building `L7.05` first (complete, but leaves `F04` blocked for a
+whole slice when one derived bound unblocks it now); sizing to `lower_confidence_bps` (a better
+numerator, not a bound — the `t=2.88` row would still want the whole book); dropping Kelly entirely
+(throws away the only mechanism by which a strong edge sizes larger than a weak one, making `F01`'s
+calibration stop affecting position size).
+
 **A.106 · 2026-08-13 · The edge was being looked up under a coordinate the calibration does not
 use, and the calibrator's own docstring had warned about it.**
 

@@ -26,8 +26,22 @@ Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) ·
 
 ## `F03` sizer + risk gate, first slice (2026-08-13, `A.104`, `A.105`) — 🟡 open
 
-- ⛔ **THE HEADLINE, and it is not a bug: with the `A.105` fix in, the sizer routinely wants 100% of
-  the book in ONE position.** Measured on the live surface after the fix — RELIANCE-shaped inputs,
+- 🟢 **Concentration — BOUNDED 2026-08-13 (`A.107`, operator decision).** A third bound:
+  `notional <= deployable / concurrent_position_capacity`, floored (a single ulp rounded up makes
+  `cap x capacity` exceed the book). Verified on the full universe: the largest position across
+  2,400 real instruments is now **Rs 166,666.50 — exactly book/6** — where it was the whole book.
+  Six positions genuinely fit. Visible on `/sizing` as its own step with `binding_bound =
+  concentration_cap`.
+- 🔴 **The cap does NOT know two instruments move together.** Six nominally independent positions can
+  still be one bet — long RELIANCE, long NIFTY, long BANKNIFTY is one directional view wearing three
+  hats. `L7.05` (per-symbol and aggregate exposure, correlation-aware) is still REQUIRED and the two
+  compose rather than compete. Shipping `A.107` is not solving concentration; it is bounding the
+  single-position case.
+- 🔴 **`SIZING_CANDIDATES_TRIED` raised 40 to 600** because after `A.106` the first forty
+  instruments alphabetically all lack calibration and `/sizing` rendered an honest "no decision"
+  that told the operator nothing. A symptom of the coverage gap, not a fix for it.
+- 📓 **Superseded headline (kept visible): with the `A.105` fix in, the sizer routinely wanted 100%
+  of the book in ONE position.** Measured on the live surface after the fix — RELIANCE-shaped inputs,
   realised volatility 14.9 bps over five bars, calibrated edge 128.8 bps: raw Kelly is ~5,760x
   capital, capped to 1.0, and the volatility budget independently asks for Rs 11.2 crore against a
   Rs 10,00,000 book. **Both bounds saturate.** That is what full Kelly on a high-Sharpe intraday

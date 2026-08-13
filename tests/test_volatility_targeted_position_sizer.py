@@ -82,14 +82,55 @@ def _inputs(
 
 
 @pytest.mark.unit
-def test_the_size_is_the_smaller_of_the_volatility_budget_and_the_kelly_cap() -> None:
-    """§3.3 — `min` of the two, and the sizer says WHICH bound bound it."""
+def test_the_size_is_the_smallest_of_the_three_bounds_and_the_sizer_names_it() -> None:
+    """§3.3 — `min` of volatility budget, Kelly cap and concentration cap."""
     sized = VolatilityTargetedPositionSizer().size(_inputs())
     assert sized.quantity > 0
-    assert sized.notional_rupees == min(
-        sized.volatility_target_notional_rupees, sized.kelly_notional_rupees
+    assert sized.risk_justified_notional_rupees == min(
+        sized.volatility_target_notional_rupees,
+        sized.kelly_notional_rupees,
+        sized.concentration_cap_rupees,
     )
-    assert sized.binding_bound in {"volatility_target", "kelly_cap"}
+    assert sized.binding_bound in {"volatility_target", "kelly_cap", "concentration_cap"}
+
+
+@pytest.mark.adversarial
+def test_no_position_may_exceed_the_book_divided_by_the_concurrent_capacity() -> None:
+    """`A.107` — the bound that makes the capacity claim true rather than decorative.
+
+    On a quiet instrument both other bounds saturate: raw Kelly reached ~5,760x capital and the
+    volatility budget asked Rs 11.2 crore against a Rs 10,00,000 book. Six positions of that size
+    need Rs 60 crore, while the sizer claimed six could coexist.
+    """
+    sized = VolatilityTargetedPositionSizer().size(_inputs(closes=_closes(step="1")))
+    cap = sized.concentration_cap_rupees
+    assert sized.volatility_target_notional_rupees > cap, "fixture must saturate the other bounds"
+    assert sized.kelly_notional_rupees >= cap
+    assert sized.binding_bound == "concentration_cap"
+    assert sized.risk_justified_notional_rupees == cap
+    assert sized.notional_rupees <= cap
+    # Floored, never rounded up: one ulp the wrong way makes `cap * capacity` exceed the book.
+    assert cap * 6 <= TEN_LAKH
+    assert cap <= TEN_LAKH / Decimal(6)
+    # Six such positions fit inside the book, which is the whole claim.
+    assert sized.risk_justified_notional_rupees * 6 <= TEN_LAKH
+
+
+@pytest.mark.property
+@settings(max_examples=120, deadline=None)
+@given(
+    capacity=hypothesis_strategies.integers(min_value=1, max_value=12),
+    deployable=hypothesis_strategies.decimals(
+        min_value=Decimal("100000"), max_value=Decimal("10000000"), places=2, allow_nan=False
+    ),
+)
+def test_the_capacity_claim_is_always_true(capacity: int, deployable: Decimal) -> None:
+    """However many positions the segments claim to carry, that many must FIT."""
+    sized = VolatilityTargetedPositionSizer().size(
+        _inputs(deployable=deployable, capacity=capacity)
+    )
+    assert sized.risk_justified_notional_rupees * capacity <= deployable
+    assert sized.notional_rupees <= deployable / Decimal(capacity)
 
 
 @pytest.mark.unit

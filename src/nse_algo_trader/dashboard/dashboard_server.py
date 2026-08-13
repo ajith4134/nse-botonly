@@ -182,11 +182,16 @@ goes away rather than being tuned."""
 REGISTRATION_THRESHOLD_ORDERS_PER_SECOND = 10
 """NSE/INVG/67858 para B.5 — a regulatory fact, sourced (`A.101` decision 2)."""
 
-SIZING_CANDIDATES_TRIED = 40
+SIZING_CANDIDATES_TRIED = 600
 """How many instruments the page walks before reporting that none could be sized.
 
-Bounded because a page load must not scan 2,400 instruments, and stated because `R.11` says a
-bounded search reports what it skipped rather than reading as exhaustive."""
+Bounded because a page load must not scan the whole universe, and stated because `R.11` says a
+bounded search reports what it skipped rather than reading as exhaustive.
+
+Raised from 40 to 600 on 2026-08-13: after `A.106` corrected the deviation coordinate, 2,116 of
+2,400 instruments have no calibration covering them, and the first forty alphabetically all fail.
+The page rendered an honest "no decision" that told the operator nothing about a sizer that works.
+This is a symptom of the coverage gap, not a fix for it — `F01`'s fitter needs more buckets."""
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 

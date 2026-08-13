@@ -88,7 +88,10 @@ _PAGE_CSS = (
 _BOUND_WORDS = {
     "volatility_target": "the volatility budget — the risk this instrument's own movement implies",
     "kelly_cap": "the Kelly cap — the measured edge does not justify the full risk budget",
-    "deployable_capital": "the capital itself — neither bound fitted inside the book",
+    "concentration_cap": (
+        "the concentration cap — no position may exceed the book divided by the number of "
+        "positions the segments claim to carry at once (`A.107`)"
+    ),
 }
 
 _TIER_WORDS = {
@@ -222,6 +225,13 @@ def _how_the_size_was_reached(state: SizingSurfaceState) -> str:
             "Kelly cap notional",
             _rupees(sized.kelly_notional_rupees),
             "capital x shrunk Kelly fraction",
+        ),
+        (
+            "concentration cap",
+            _rupees(sized.concentration_cap_rupees),
+            "deployable / concurrent capacity — neither bound above is a concentration limit, "
+            "and on a quiet instrument both saturate. Does NOT know two instruments move "
+            "together; that is L7.05 and it is still required",
         ),
         (
             "bound by",
