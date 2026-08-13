@@ -262,15 +262,15 @@ Opened 2026-08-13 (`A.99`). Greenfield: there is no order, position, trade or fi
 | `L3.02` | order-intent write-ahead log — durable BEFORE the broker call | ✅ SQLite WAL + `synchronous=FULL`, append-only, deterministic fold |
 | `L3.03` | broker-truth state reconciler — on restart, believe the broker | ✅ five-bucket diff, inferred fills, measured visibility horizon |
 | `L3.04` | crash-safe order placer — the trio composed into the real path | ✅ latch → journal → rate gate → attempt → call → outcome |
-| `L3.06` | order rate limiter — SEBI's threshold plus the broker's own ceilings | ⬜ |
-| `L3.07` | kill switch / trading control config — paper vs live, enforced | ⬜ |
-| `L3.16` | partial-fill tracking loop | ⬜ |
-| `L3.19` | SEBI Algo-ID tagging on every order + audit trail | ⬜ |
-| `L7.10` | kill switch as a SEPARATE watchdog process, reconciling on restart | ⬜ |
-| `L9.01` | Kite broker client + order placement | ⬜ |
-| `L9.02` | full order-type taxonomy | ⬜ |
-| `L9.03` | paper/live execution parity — one code path serves both | ⬜ |
-| `L9.14` | **order-expression selector** — added mid-feature (`A.99`) | ⬜ |
+| `L3.06` | order rate limiter — SEBI's threshold plus the broker's own ceilings | ✅ pyrate-limiter, three windows binding at once, margin derived from measured jitter |
+| `L3.07` | kill switch / trading control config — paper vs live, enforced | ✅ durable latch, hash-chained, safe-by-default on a missing or tampered store |
+| `L3.16` | partial-fill tracking loop | ✅ cumulative-only quantities, dedup by broker trade id before the transition |
+| `L3.19` | SEBI Algo-ID tagging on every order + audit trail | ✅ `algo_id` from the environment, kept SEPARATE from our own intent tag; absent means absent |
+| `L7.10` | kill switch as a SEPARATE watchdog process, reconciling on restart | ✅ systemd user unit written; staleness tolerance derived via Cantelli, no typed number |
+| `L9.01` | Kite broker client + order placement | ✅ paise/rupee only at this boundary; every SDK exception classified into the three venue outcomes |
+| `L9.02` | full order-type taxonomy | ✅ modelled complete; MARKET and BRACKET are dated refusals citing their authority |
+| `L9.03` | paper/live execution parity — one code path serves both | ✅ one Protocol, symmetric namespace locks; the simulator fills off the real recorded tape |
+| `L9.14` | **order-expression selector** — added mid-feature (`A.99`) | ✅ scores P(fill)×(edge−costs) over every permitted expression; 12 real books priced |
 | `L9.10` | — | ⛔ DROP → `L3.03`; the same reconciler, catalogued twice |
 | `L9.11` | — | ⛔ DROP → `L3.02`; the same WAL, catalogued twice |
 | `L12.14` | — | ⛔ MERGE → `L3.06`+`L3.19`+`L9.01`; compliance is their union, not a module |
@@ -278,10 +278,21 @@ Opened 2026-08-13 (`A.99`). Greenfield: there is no order, position, trade or fi
 
 **Completion criteria — the feature does not close until every one is resolved:**
 
-- [ ] **`R.08` surface** — `/orders` shows every intent, its order, its fills and its terminal state,
-      with the reconciliation verdict and any inferred event marked as inferred.
-- [ ] **`R.06` loop wiring** — the placer is the only way an order can reach a broker, the watchdog
-      runs as its own systemd user unit, and the reconciler runs at every start.
+- [x] **`R.08` surface** — DONE. `/orders` returns HTTP 200 and shows every intent with its state,
+      quantities, average fill (absent renders as absent, never as `0`), broker id, wire tag and the
+      expression actually sent with `chosen_because`; an INFERRED section prints each invention's
+      evidence with the weaker `badge-absent` styling; the reconciliation verdicts and every
+      disagreement in full; the visibility horizon or its "not yet established" explanation; the
+      crash-recovery queue; and the lifecycle census. The open-blocker banner is the first thing on
+      the page — the feature is not allowed to look finished when it is not. 13 tests assert the
+      page's own claims, including that a hostile reason string cannot inject markup. Light and dark
+      captures at `nse_archive/dashboard_screenshots/20260813T050129Z_f02_orders/`.
+- [x] **`R.06` loop wiring** — DONE for the two halves that have a loop to run in.
+      `order_path_assembly` is the ONLY assembly, so "was the latch consulted" has one answer, and
+      `_reconcile_order_path` is a daily-runner step that ran for real today. The watchdog's unit
+      file is written but **deliberately not installed** — it halts trading, and arming it is an
+      operator act. The trader-loop heartbeat has no loop to beat in until `F04`; recorded in
+      `BACKLOG.md` with `F04` named as its consumer rather than left implied.
 - [ ] **`R.23(c)` adversarial review** in a fresh subagent, run BEFORE the execution gate.
 - [ ] **`R.05` real-data pass — READ-ONLY, and knowingly incomplete (`A.99`).** Verified against real
       `orders()`/`order_history()`/`trades()`/`positions()` state and real rejection responses. The
