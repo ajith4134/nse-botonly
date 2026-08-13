@@ -158,7 +158,9 @@ def test_a_real_book_becomes_one_order_that_fills_and_reconciles(tmp_path: Path)
         for tick in range(1, 6):
             venue.advance_matching_by_one_poll(at=decided_at + timedelta(seconds=tick))
 
-        reconciler = BrokerTruthReconciler(journal=journal, venue=venue)
+        reconciler = BrokerTruthReconciler(
+            journal=journal, venue=venue, namespace=OrderNamespace.SIMULATED
+        )
         report = reconciler.reconcile(
             session_date=intent.session_date, now=decided_at + timedelta(seconds=30)
         )

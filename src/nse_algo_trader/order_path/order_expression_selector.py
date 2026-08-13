@@ -883,13 +883,26 @@ class OrderExpressionSelector:
         session_open: bool,
         varieties: frozenset[OrderVariety],
     ) -> ScoredExpression | ExcludedExpression:
-        """Split the clip so that every leg stays INSIDE the visible book.
+        """Split the clip so that every leg stays INSIDE the visible book — and DIVIDES the clip.
 
         The leg size is not chosen, it is read: it is the largest clip this ladder can fill without
         the cost estimate becoming an extrapolation, which is `visible_quantity` on the side being
         taken. The leg COUNT follows from the clip. That is the whole derivation, and it is why an
         iceberg appears at all only when the clip exceeds what is visible — below that, splitting
         buys nothing and pays per-order brokerage `legs` times for the privilege.
+
+        The second half of the derivation is the venue's, and it was missing until the `M/2`
+        adversarial review reproduced its consequence. Kite takes a per-LEG quantity, so a leg
+        count that does not divide the clip exactly cannot be encoded at all:
+        `kite_order_execution_venue._iceberg_quantity_for` raises `OrderExpressionNotEncodableError`
+        rather than rounding a leg off its own initiative, and rightly so — the rounding changes
+        the size actually sent. A plain `ceil(quantity / visible)` divides exactly on roughly one
+        leg count in three, so this selector was proposing an expression the wire provably could
+        not carry, and the order died at submission after every cost in it had been priced. The
+        constraint therefore belongs HERE, where the candidate is built: the leg count is the
+        smallest one that both keeps a leg inside the visible ladder and divides the clip exactly,
+        and where no such count exists the family is EXCLUDED with that reason rather than emitted
+        and refused later.
         """
         family = ExpressionFamily.ICEBERG_AGGRESSIVE
         blocked = self._variety_refusal(family, OrderVariety.ICEBERG, varieties, request)
@@ -907,8 +920,8 @@ class OrderExpressionSelector:
             return ExcludedExpression(
                 family=family, reason="no visible depth on the side being taken"
             )
-        legs = -(-quantity // visible)  # ceiling division: one leg per visible-book-worth
-        if legs < ICEBERG_MINIMUM_LEGS:
+        smallest_leg_count_that_fits = -(-quantity // visible)  # one leg per visible-book-worth
+        if smallest_leg_count_that_fits < ICEBERG_MINIMUM_LEGS:
             return ExcludedExpression(
                 family=family,
                 reason=(
@@ -918,18 +931,27 @@ class OrderExpressionSelector:
                 ),
                 source=ICEBERG_LEG_SOURCE,
             )
+        legs = _iceberg_leg_count_the_venue_can_encode(
+            quantity, smallest_leg_count_that_fits=smallest_leg_count_that_fits
+        )
+        if legs is None:
+            return ExcludedExpression(
+                family=family,
+                reason=(
+                    f"no leg count between {smallest_leg_count_that_fits} and "
+                    f"{ICEBERG_MAXIMUM_LEGS} divides a {quantity}-unit clip exactly, so every "
+                    f"iceberg this ladder could carry would need a fractional leg; Kite takes a "
+                    f"per-leg quantity and the venue refuses to round one off its own initiative, "
+                    f"so the order would be lost at the wire rather than merely mis-sized"
+                ),
+                source=ICEBERG_LEG_SOURCE,
+            )
         caveats = [
             "each leg after the first meets a book this snapshot cannot see; the cost carried here "
             "assumes the ladder presents comparable depth to every leg, which one snapshot cannot "
             "verify"
         ]
-        if legs > ICEBERG_MAXIMUM_LEGS:
-            legs = ICEBERG_MAXIMUM_LEGS
-            caveats.append(
-                f"the clip needs more than the {ICEBERG_MAXIMUM_LEGS} legs the facility allows, so "
-                f"each leg is larger than the visible ladder and its cost is an extrapolation"
-            )
-        leg_quantity = -(-quantity // legs)
+        leg_quantity = quantity // legs  # exact by construction — see the leg-count derivation
         priced = self._price_aggressive(request, spread, leg_quantity)
         if isinstance(priced, ExcludedExpression):
             return _rebadge(priced, family)
@@ -987,8 +1009,10 @@ class OrderExpressionSelector:
             caveats=tuple(caveats),
             evidence=(
                 f"{legs} legs of {leg_quantity} derived from {visible} units visible on the "
-                f"{request.intent.side.value} ladder; per-leg execution priced exactly by "
-                f"ExecutionFillModel ({leg_fill.maturity.value}){evidence_tail}"
+                f"{request.intent.side.value} ladder — the smallest leg count that both stays "
+                f"inside that ladder and divides {quantity} exactly, which is what the venue can "
+                f"encode; per-leg execution priced exactly by ExecutionFillModel "
+                f"({leg_fill.maturity.value}){evidence_tail}"
             ),
         )
 
@@ -1538,6 +1562,35 @@ def _round_away_from_mid(
 def _stop_is_protective(stop_paise: Decimal, entry_paise: Decimal, side: TradeLeg) -> bool:
     """A stop below a long and above a short. The other way round is an instant exit."""
     return stop_paise < entry_paise if side is TradeLeg.BUY else stop_paise > entry_paise
+
+
+def _iceberg_leg_count_the_venue_can_encode(
+    quantity: int, *, smallest_leg_count_that_fits: int
+) -> int | None:
+    """The smallest leg count that keeps a leg inside the ladder AND divides the clip exactly.
+
+    Two constraints, and both are hard:
+
+    * **A leg must fit the visible ladder.** `quantity / legs <= visible` is exactly
+      `legs >= ceil(quantity / visible)`, which is why the caller's `smallest_leg_count_that_fits`
+      is the floor of the search rather than a separate test inside it. Below it, a leg reaches
+      past what the snapshot can see and its cost becomes an extrapolation.
+    * **A leg count must divide the clip.** Kite takes a per-leg quantity and
+      `kite_order_execution_venue._iceberg_quantity_for` refuses a clip that does not divide
+      evenly, so a count failing this is not a worse candidate — it is an unsendable one.
+
+    Searching UPWARDS from the smallest count that fits gives the largest encodable leg, which is
+    the fewest orders, the least brokerage and the least signalling — the same direction the rest of
+    this scorer prefers. `None` means the two constraints have no common solution for this clip
+    against this ladder (a prime clip larger than the ladder is the ordinary case), and the caller
+    must then emit no iceberg candidate at all rather than one the wire would refuse.
+    """
+    for legs in range(
+        max(smallest_leg_count_that_fits, ICEBERG_MINIMUM_LEGS), ICEBERG_MAXIMUM_LEGS + 1
+    ):
+        if quantity % legs == 0:
+            return legs
+    return None
 
 
 def _session_closed(family: ExpressionFamily) -> ExcludedExpression:

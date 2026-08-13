@@ -571,6 +571,23 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       validity and any iceberg split from the intent's urgency, the ticket against visible depth,
       the segment's cost regime and the live spread. Not `L9.05` (routes a decided order), not
       `L9.07` (a quantity decision).
+
+      ***`R.23(c)` adversarial review, 2026-08-13 — it broke all three of F02's claims.*** *Five
+      criticals and four majors, every one REPRODUCED end to end before it was reported, behind a
+      green suite of 367 tests. The pattern in four of the five was one thing: an exceptional answer
+      quietly turned into an ordinary one. A part-filled order that was CANCELLED made the journal
+      unreadable forever (the fold replayed events then fills); a dropped connection classified as
+      "never sent" sent ONE decision to the venue THREE times; an inference was never withdrawn when
+      the real trades arrived, running the position 30 units past the order; an unparseable payload
+      read as "no orders" and wrote off a possibly-live order as ABANDONED; and the commonest state
+      in an intraday book — part-filled, still OPEN — was reported as a broker disagreement on every
+      pass. All fixed with 14 regression tests (`a10c13c`).*
+
+      ***The most valuable finding was about the tests.*** *Two asserted a defect outright, one
+      tested the only ordering where it could not fail, and the flagship property test's fake could
+      not reach the states where the defects lived. Widened, it found two more on its first run —
+      both clock skew between the exchange's stamp and this host's. F02 does not tick until the
+      four remaining majors are closed.*
 - [ ] **2.78** Realistic options fills — `L9.04`
 - [ ] **2.79** Cost-aware maker/taker and segment routing — `L9.05`
 - [ ] **2.80** Per-order slippage budget with abort — `L9.06`

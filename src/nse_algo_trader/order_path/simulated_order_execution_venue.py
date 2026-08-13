@@ -13,7 +13,9 @@ the one that is never exercised on a bad morning.
   with `SIM-TRD-`. Zerodha's ids are decimal digit strings, so a simulated id cannot be mistaken
   for a real one by a human, a log grep, or `is_simulated_broker_order_id`. This is the same
   reasoning as the namespace character in the broker tag (`trading_intent.OrderNamespace`), applied
-  to the other identifier.
+  to the other identifier. The rest of the id is a digest of the ORDER'S OWN CONTENT rather than a
+  position in a counter, so that a restarted paper session cannot reissue an id it already used —
+  see `SimulatedOrderExecutionVenue._broker_order_id_for` for the full argument.
 * **Margin is not modelled, and this venue says so instead of pretending.** It has no funds view,
   no span/exposure calculation and no MTF ledger, so it CANNOT produce the margin rejection a real
   account would. Every position report it emits is stamped with `SIMULATED_POSITION_VIEW`, which
@@ -36,16 +38,18 @@ consequences are deliberate:
   used to manufacture a fill, because an extrapolation is an estimate of a cost and not evidence
   that liquidity existed.
 
-**Determinism.** No clocks, no randomness, no wall-time. Ids come from a counter, times come from
-the caller or from the snapshot, and prices come from the tape. The same sequence of calls against
-the same tape produces byte-identical results, which is what makes a paper run reproducible and a
-regression in the strategy attributable to the strategy.
+**Determinism.** No clocks, no randomness, no wall-time. Ids are derived from the ORDER'S OWN
+CONTENT (see `_broker_order_id_for`), times come from the caller or from the snapshot, and prices
+come from the tape. The same sequence of calls against the same tape produces byte-identical
+results, which is what makes a paper run reproducible and a regression in the strategy attributable
+to the strategy.
 """
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import astuple, dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -80,6 +84,18 @@ SIMULATED_VENUE_NAME = "simulated_venue"
 # that is not a digit makes the two sets provably disjoint rather than merely unlikely to collide.
 SIMULATED_ORDER_ID_PREFIX = "SIM-ORD-"
 SIMULATED_TRADE_ID_PREFIX = "SIM-TRD-"
+
+# Sixty-four bits of BLAKE2b over the order's own content. Wide enough that two DIFFERENT orders
+# colliding is not something that happens inside a session (a birthday collision needs ~4 billion
+# orders against a per-day ceiling of 5,000), narrow enough that a human can read the id off a log
+# line and match it by eye against another one. Derived from the digest, never typed as a length.
+SIMULATED_ORDER_DIGEST_BYTES = 8
+SIMULATED_ORDER_DIGEST_HEX_LENGTH = SIMULATED_ORDER_DIGEST_BYTES * 2
+
+# ASCII UNIT SEPARATOR, joining the content fields before they are hashed. A character no trading
+# symbol, tag, reason string or timestamp can contain, so no two different orders can be flattened
+# into the same byte string by a field boundary landing in a different place.
+_CONTENT_FIELD_SEPARATOR = "\x1f"
 
 # Stamped on every position this venue reports. It is a sentence rather than a word because it is
 # the mechanism by which "this account models no margin and no settlement" reaches a reader who is
@@ -270,8 +286,9 @@ class SimulatedOrderExecutionVenue:
         self._orders: dict[str, SimulatedOrder] = {}
         self._trades: list[VenueTradeReport] = []
         self._books: dict[int, BookSnapshot] = {}
+        # Placement order within THIS process, for readability of the ids it issues. Uniqueness
+        # across a restart rests on the content digest, never on this (`_broker_order_id_for`).
         self._orders_placed = 0
-        self._trades_produced = 0
 
     @property
     def venue_name(self) -> str:
@@ -301,10 +318,8 @@ class SimulatedOrderExecutionVenue:
             raise FreezeQuantityExceededError(rejection, raw_message=rejection)
 
         self._orders_placed += 1
-        broker_order_id = (
-            f"{SIMULATED_ORDER_ID_PREFIX}"
-            f"{order.created_at.astimezone(INDIA_MARKET_TIMEZONE):%Y%m%d}-"
-            f"{self._orders_placed:06d}"
+        broker_order_id = self._broker_order_id_for(
+            order, placement_ordinal=self._orders_placed
         )
         simulated = SimulatedOrder(
             broker_order_id=broker_order_id,
@@ -322,6 +337,64 @@ class SimulatedOrderExecutionVenue:
         simulated.history = (simulated.as_report(),)
         self._orders[broker_order_id] = simulated
         return broker_order_id
+
+    def _broker_order_id_for(self, order: OrderRecord, *, placement_ordinal: int) -> str:
+        """`SIM-ORD-<session>-<content digest>-<placement>` — an id a restart cannot reissue.
+
+        **The defect this shape exists to prevent** (found by the `M/4` adversarial review). The
+        earlier id was the session date and an in-memory placement counter, so the FIRST order of
+        every process was `SIM-ORD-20260813-000001`. Restart a paper session at 10:00 — a crash,
+        a redeploy, an operator stopping the loop — and the next order placed reissues the id the
+        morning's first order already holds. Two different orders then share an identifier, which
+        is the one thing an identifier exists to make impossible: the journal keys fills, history
+        and reconciliation verdicts on it, so the second order inherits the first one's fills.
+
+        **Why a content digest rather than a persisted counter.** A counter that survived a restart
+        would need a file, and a file is a second thing that can be missing, stale, shared between
+        two concurrent sessions, or restored from a backup taken before the orders it counted. The
+        order's own content is already durable, already unique — `intent_id` names the decision and
+        the journal refuses a duplicate of it on disk (`order_intent_journal.record_intent`) — and
+        it needs no coordination at all. Two orders that differ in anything a broker would care
+        about differ in the digest; two placements of the SAME order record differ in the trailing
+        placement ordinal, which is the only case where a repeat is a repeat rather than a
+        collision.
+
+        **Why the placement ordinal is still there.** It is not load-bearing for uniqueness across
+        a restart — the digest is — but it keeps the ids of one process in the order they were
+        placed, which is what makes a log readable and a paper session inspectable by eye. It is
+        also what separates two placements of a byte-identical order record within one process,
+        which the venue must allow because the venue is not the idempotency guard; the journal is.
+
+        **Determinism is preserved.** BLAKE2b of a canonical field join is a pure function of the
+        order, so the same tape driven through the same decisions still produces byte-identical
+        ids, which is the property that makes a paper run reproducible.
+        """
+        content = _CONTENT_FIELD_SEPARATOR.join(
+            str(field_value)
+            for field_value in (
+                order.namespace,
+                order.intent_id,
+                order.broker_tag,
+                order.trading_symbol,
+                order.instrument_token,
+                order.side,
+                order.ordered_quantity,
+                order.created_at.isoformat(),
+                # The whole expression, field by field, rather than a chosen few: an order that
+                # differs only in a field added to `OrderExpression` next year is still a different
+                # order, and a hand-listed subset would silently stop covering it.
+                *astuple(order.expression),
+            )
+        )
+        digest = hashlib.blake2b(
+            content.encode("utf-8"), digest_size=SIMULATED_ORDER_DIGEST_BYTES
+        ).hexdigest()
+        return (
+            f"{SIMULATED_ORDER_ID_PREFIX}"
+            f"{order.created_at.astimezone(INDIA_MARKET_TIMEZONE):%Y%m%d}-"
+            f"{digest}-"
+            f"{placement_ordinal:06d}"
+        )
 
     def _expectation_for(self, order: OrderRecord) -> ExpectedFill | None:
         """What `F01`'s model expects this order to cost, recorded at placement.
@@ -493,10 +566,15 @@ class SimulatedOrderExecutionVenue:
         rung = marketable[simulated.consumed_rungs]
         simulated.consumed_rungs += 1
         quantity = min(rung.available_quantity, remaining)
-        self._trades_produced += 1
+        # The trade id is derived from the ORDER's id and this fill's position within that order,
+        # for the reason `_broker_order_id_for` gives: a process-local counter reissues its low
+        # numbers after a restart, and a trade id that repeats attaches a fill to the wrong order.
+        # Naming the order it belongs to also makes a trade greppable back to its parent, which a
+        # bare sequence number never was (`M/4` adversarial review).
         trade_id = (
             f"{SIMULATED_TRADE_ID_PREFIX}"
-            f"{at.astimezone(INDIA_MARKET_TIMEZONE):%Y%m%d}-{self._trades_produced:06d}"
+            f"{simulated.broker_order_id.removeprefix(SIMULATED_ORDER_ID_PREFIX)}-"
+            f"{len(simulated.fills) + 1:03d}"
         )
         fill = SimulatedFill(
             trade_id=trade_id,
