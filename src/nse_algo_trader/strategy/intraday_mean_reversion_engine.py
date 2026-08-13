@@ -137,6 +137,18 @@ class IntradayMeanReversionEngine:
         """
         return self._closes[-1] if self._closes else None
 
+    def current_deviation_sigma(self) -> float | None:
+        """The deviation the calibration is INDEXED BY, computed by the engine that defines it.
+
+        Exposed for the same reason `rolling_dispersion` is. A consumer that recomputed this
+        coordinate itself would be looking up a calibration under a depth measured a different way,
+        and the calibrator's own docstring warns that a window mismatch "would be measuring a
+        different strategy while looking perfectly healthy". `sizing_inputs_from_real_stores` did
+        exactly that with a 120-close z-score against this engine's 20 (`A.106`), and every edge it
+        looked up was the edge for a depth the instrument was not at.
+        """
+        return self._current_deviation()
+
     def rolling_dispersion(self) -> float | None:
         """The rolling standard deviation, in whatever units the closes were fed in.
 

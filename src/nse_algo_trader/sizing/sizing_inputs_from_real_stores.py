@@ -32,6 +32,7 @@ from nse_algo_trader.cost_gate.mean_reversion_edge_calibrator import (
     ReversionCalibrationStore,
 )
 from nse_algo_trader.sizing.volatility_targeted_position_sizer import SizingInputs
+from nse_algo_trader.strategy.intraday_mean_reversion_engine import IntradayMeanReversionEngine
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -133,7 +134,7 @@ def assemble_sizing_inputs(
             missing=("price_bars",),
         )
 
-    deviation = _latest_deviation_sigma(closes)
+    deviation, _dispersion_fraction = deviation_and_dispersion(closes)
     calibrations = ReversionCalibrationStore(store.calibration)
     try:
         capture = calibrations.capture_for(
@@ -186,17 +187,48 @@ def _recent_closes(
     return closes
 
 
-def _latest_deviation_sigma(closes: list[tuple[datetime, Decimal]]) -> Decimal:
-    """How far the last close sits from the window's mean, in window standard deviations.
+def deviation_and_dispersion(
+    closes: list[tuple[datetime, Decimal]],
+) -> tuple[Decimal, Decimal]:
+    """The deviation coordinate the calibration is INDEXED BY, and the dispersion it is measured in.
 
-    This is the coordinate the reversion calibration is indexed by, so it is computed the same way
-    the calibrator computed it: a z-score of the close against the window it belongs to. A window
-    with no dispersion yields zero, which the calibration ladder treats as its smallest bucket
-    rather than as an error.
+    Both come from `IntradayMeanReversionEngine` itself rather than being recomputed here, and that
+    is the entire point. The calibrator's own docstring warns that `rolling_window` "must equal the
+    live engine's" because "a calibration silently fitted to a different window would be measuring a
+    different strategy while looking perfectly healthy" — and the first version of this function
+    ignored that from the other side, taking a z-score over the whole 120-close window instead of
+    the engine's 20.
+
+    The two coordinates were not close. Against the operator's forty real calibrations the implied
+    one-bar dispersion is **340 to 1,650 bps**, while a 120-bar z-score of five-minute closes put it
+    near **7 bps** — a factor of fifty to two hundred. Every edge this assembler looked up was
+    therefore the edge for a deviation depth the instrument was not at (`A.106`).
+
+    Returns `(deviation_in_sigma, dispersion_as_a_fraction_of_price)`. The second is what Kelly's
+    denominator needs, and taking it from the same engine is what keeps the edge and the variance
+    expressed in the same units.
     """
-    values = [close for _, close in closes]
-    mean = sum(values, Decimal(0)) / Decimal(len(values))
-    variance = sum(((value - mean) ** 2 for value in values), Decimal(0)) / Decimal(len(values))
-    if variance <= 0:
-        return Decimal(0)
-    return (values[-1] - mean) / variance.sqrt()
+    # The two regime thresholds gate `decide()` and have no bearing on the deviation coordinate,
+    # which is pure arithmetic over the rolling window. They are required by the constructor, so
+    # they are passed as zero and NOTHING here calls `decide()` — this assembler reads the
+    # engine's measurement, never its verdict. The regime veto belongs to whoever decides to
+    # trade, not to whoever prices the size.
+    engine = IntradayMeanReversionEngine(
+        minimum_regime_concentration=0.0, minimum_regime_agreement=0.0
+    )
+    engine.observe_closes([float(close) for _, close in closes])
+    dispersion = engine.rolling_dispersion()
+    latest = engine.latest_close()
+    if dispersion is None or latest is None or dispersion <= 0 or latest <= 0:
+        raise SizingInputAssemblyError(
+            "the mean-reversion engine reports no rolling dispersion for this window, so the "
+            "deviation cannot be expressed in the units the calibration is indexed by",
+            missing=("price_bars",),
+        )
+    deviation = engine.current_deviation_sigma()
+    if deviation is None:
+        raise SizingInputAssemblyError(
+            "the mean-reversion engine has not seen enough closes to report a deviation",
+            missing=("price_bars",),
+        )
+    return Decimal(str(deviation)), Decimal(str(dispersion)) / Decimal(str(latest))

@@ -4129,6 +4129,34 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
 
+**A.106 · 2026-08-13 · The edge was being looked up under a coordinate the calibration does not
+use, and the calibrator's own docstring had warned about it.**
+
+Found while checking `O.89`'s recorded doubt rather than by a review. `sizing_inputs_from_real_stores`
+computed the deviation depth as a z-score over its whole 120-close window. The reversion calibration
+is indexed by the deviation `IntradayMeanReversionEngine` reports over a **20-bar** rolling window,
+and `reversion_calibration_fitter`'s own docstring states the rule outright: *"`rolling_window` must
+equal the live engine's… a calibration silently fitted to a different window would be measuring a
+different strategy while looking perfectly healthy."* I obeyed that from inside the fitter and broke
+it from outside.
+
+*The measurement that exposed it.* Against the operator's forty real calibrations, the implied
+one-bar dispersion is **340 to 1,650 bps**; a 120-close z-score of five-minute bars put it near
+**7 bps** — a factor of fifty to two hundred. Every edge the assembler looked up was therefore the
+edge fitted for a deviation depth the instrument was not at, which made the Kelly numerator wrong
+independently of `A.105`'s denominator.
+
+*Fixed by asking the engine instead of recomputing.* `IntradayMeanReversionEngine` gains
+`current_deviation_sigma()`, the public sibling of the already-public `rolling_dispersion()`, for
+exactly the reason that one exists: a consumer that recomputes a scale-free coordinate is a consumer
+that will eventually compute a different one. The assembler now takes both the deviation and the
+dispersion from the engine that defines them.
+
+*What it cost in coverage, honestly.* The `R.05` run moved from 313 sized to **253**: the corrected
+coordinate lands in different buckets, and 30 instruments now fail on bar history the old
+whole-window z-score did not need. Fewer positions sized on a correct coordinate is the right trade
+against more on a wrong one.
+
 **A.105 · 2026-08-13 · `F03`'s review found that the Kelly cap was sizing BACKWARDS, and the
 suite could not have known.**
 
