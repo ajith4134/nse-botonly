@@ -24,6 +24,25 @@ Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) ·
   Named consumer: whichever entry point `F04`'s paper loop gets — it must load the file too, or the
   paper book will read an unseeded ceiling on a machine where the operator has set one.
 
+## `F04` paper loop + ledger (2026-08-13, `A.108`) — 🔴 opened, not started
+
+Decisions taken (`A.108`); no code written. What the next session starts from:
+
+- 🔴 **The simulated venue is the risk, not the loop.** `A.108` decision 2 routes every paper order
+  through `F02`'s real journal and state machine to a venue adapter that simulates the exchange. If
+  that adapter fills everything at the touch, every paper P&L is optimistic by the full spread plus
+  impact and cannot be compared against `F01`'s cost model — which is what graduation reads. SOTA
+  analog to match on depth: NautilusTrader's queue-position simulator.
+- 🔴 **Leakage is guarded by exactly one thing: `availability_time` filtering.** The replay clock
+  (`A.108` decision 1) makes that guard load-bearing on every step. It needs an adversarial test
+  that plants a bar published after the decision and proves the loop cannot see it.
+- ⛔ **The live tick path stays unverified** — latency, gaps, mid-session disconnects — until the
+  live clock lands. Recorded now rather than discovered later.
+- 🔴 **`F04` is where `SessionRiskStateStore` gets its first real caller**: `open_session`,
+  `record_realised_pnl`, `record_exposure_change`, `record_order_sent` and the latch trips are all
+  written and none has ever run outside a test. Same for the paper capital ledger's realisation
+  events and `F03`'s sizer and gate.
+
 ## `F03` sizer + risk gate, first slice (2026-08-13, `A.104`, `A.105`) — 🟡 open
 
 - 🟢 **Concentration — BOUNDED 2026-08-13 (`A.107`, operator decision).** A third bound:

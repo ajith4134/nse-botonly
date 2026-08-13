@@ -4129,6 +4129,43 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
 
+**A.108 · 2026-08-13 · `F04` opens: two operator decisions on how a trading day runs itself.**
+
+`F04` is the feature the whole rebuild has been walking toward — end-to-end paper trading — and it
+is the named consumer that makes `F02`'s order path, `F03`'s sizer and gate, and `L1.18`'s paper
+ledger all load-bearing at once. Interviewed before any code (`R.19`).
+
+*Decision 1 — the loop is driven by REPLAYED stored bars; the live feed comes later.* It steps
+through recorded five-minute bars point-in-time, so it runs at any hour, reproduces identically, and
+produces evidence tonight rather than at 09:15 tomorrow — there are already 659,990 real bars. The
+discipline this forces is the point: `availability_time` filtering is the ONLY thing standing
+between a replay and a backtest that sees the future, so the leakage guard is exercised on every
+single step rather than asserted once in a test. **Recorded cost:** the live tick path — latency,
+gaps, mid-session disconnects — stays unverified until the live clock lands, and that is an open
+blocker from the day this ships, not a later discovery.
+
+*Decision 2 — a paper order becomes a fill by going THROUGH `F02`'s order path, against a simulated
+venue.* The loop builds a real `TradingIntent`, writes it to the real write-ahead journal, and sends
+it to a venue adapter that simulates the exchange instead of calling Kite. So the intent journal,
+the lifecycle state machine, the broker-truth reconciler and the crash recovery are exercised on
+every paper trade: **the code that will one day carry real money is the code being tested now.**
+`R.13` is the argument — correctness of allocation is not evidence of correctness of execution, and
+a paper record produced by code that gets thrown away before live proves only the first.
+
+**Recorded cost, and it is the largest risk in the slice:** the simulated venue must model queue
+position, partial fills and rejections credibly. A naive one that fills everything instantly at the
+touch teaches the system that slippage does not exist, and every paper P&L would then be optimistic
+by the full spread plus all impact — which is precisely the comparison against `F01`'s cost model
+that graduation reads. The venue's own realism is therefore a first-class part of `F04`, not a
+refinement, and its SOTA analog is NautilusTrader's queue-position simulator (`R.23a`).
+
+*Rejected:* a live-feed-only clock (runs only in market hours, a defect takes a day to reproduce,
+and it depends on the Kite subscription the operator has not renewed); both clocks from day one (the
+live half cannot get its `R.05` pass outside market hours, so the slice would carry a permanent open
+blocker while looking finished); direct simulated fills bypassing the order path (leaves the largest
+thing in the rebuild exercised only by its own tests); and instant touch fills as an interim (every
+paper P&L optimistic by the full spread, against the one cost model graduation compares to).
+
 **A.107 · 2026-08-13 · No position may exceed the book divided by the concurrent capacity.**
 
 *The problem it answers.* With `A.105`'s and `A.106`'s corrections in, both of the sizer's bounds
