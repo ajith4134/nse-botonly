@@ -1525,3 +1525,84 @@ to be optimistic.
 **What would change my mind.** A cluster-robust fit leaving the five-bar cells above `t = 3`. That
 would move this from "measured but not trusted" to "worth sizing", and `L2`'s gatekeeper is where
 that decision belongs, not here.
+
+---
+
+## O.77 · 2026-08-13 · The market-order prohibition binds this system, and reading it any other way would be self-serving
+
+**Opinion:** NSE/MSD/67753's "Algo orders with order type as Market Order are not permitted" applies
+to every order this project places, and MARKET must therefore be unreachable in code rather than
+merely discouraged.
+
+**Reasoning:** the operator's instruction for `F02` was to build the whole taxonomy and use each
+member where it is best, so the incentive was to read the restriction narrowly. The text does not
+support that: it restricts *algo orders*, and every order here is API-originated and carries the
+exchange's algo tagging (`docs/research/223` §4), including sub-threshold flow. The one reading that
+would exempt this system — "only registered above-threshold algos are algo orders" — is contradicted
+by the same circular's tagging clause, which covers orders *below* the threshold explicitly.
+
+**Confidence: reasoned.** The circulars were read in full from their own PDFs, but no regulator has
+been asked about this specific case, and market orders are not a capability the system loses much by
+refusing: a marketable limit does the same job and is the only version `F01` can price in advance.
+
+**What would change my mind:** an exchange FAQ or broker confirmation that a sub-threshold retail
+self-algo may send MARKET orders. The fact table takes that as a dated availability change with no
+code edit.
+
+## O.78 · 2026-08-13 · An identity computed from the decision beats any identity handed out by a store
+
+**Opinion:** for a broker with no idempotency key, the only workable client order id is a content
+hash of the decision itself — not a counter, not a UUID, not a database-assigned id.
+
+**Reasoning:** the failure this protects against is a crash between "I decided" and "I know what the
+broker did". A stored mapping dies with the process; a recomputable name does not. Of the five
+systems in `docs/research/224`, the two with restart-stable identity behave correctly here and the
+three without it either resend or lose the order. The cost is a real one and is stated in the
+module: two genuinely independent decisions identical in every field and in the same microsecond
+collapse to one intent.
+
+**Confidence: measured**, in the narrow sense that the stateful property test drives submit / crash
+/ restart / reconcile in arbitrary orders and the invariant holds; not measured against a real
+broker, because the real-fill probe is deferred (`A.99`).
+
+**What would change my mind:** a strategy family that legitimately needs two identical clips in the
+same microsecond and cannot express them as one larger clip. I have not seen one.
+
+## O.79 · 2026-08-13 · The state machine was worth writing by hand; the rate limiter was not
+
+**Opinion:** `transitions` was the right library to reject and `pyrate-limiter` the right one to
+adopt, and the asymmetry is not inconsistency.
+
+**Reasoning:** both were installed and run. `transitions` works and raises properly, but injects
+methods onto the model dynamically and produced **9 mypy errors** under this project's strict
+settings, in exchange for replacing a `dict[(state, event)] -> state` that is thirty lines and has
+no dependencies. `pyrate-limiter` enforces three simultaneous windows in one call, genuinely blocks
+(measured: 1.05 s on the per-second bucket), and ships a SQLite backend for state that survives a
+restart — a week of work to reproduce, and easy to get subtly wrong. `sismic` was disqualified on a
+fact rather than a preference: it **silently ignored** an illegal transition.
+
+**Confidence: measured** — every candidate was installed in a throwaway venv and run on real input.
+
+**What would change my mind:** for the FSM, nothing short of the table growing beyond what a dict
+can express legibly. For the limiter, evidence that its sliding window and the circular's calendar
+second diverge in a way that matters; sliding is strictly stricter, so this would be a performance
+argument, not a correctness one.
+
+## O.80 · 2026-08-13 · F02's largest residual risk is the deferred probe, not anything in the code
+
+**Opinion:** the order path's real weak point is that no part of it has met a real fill, a real
+`order_id` lifecycle, real charges or a real postback — and the read-only pass that DID run met an
+empty account.
+
+**Reasoning:** today's real-data run authenticated, called `orders()`, `trades()` and `positions()`
+and got zero rows from all three. That verifies the calls, the auth, and the reconciler's behaviour
+on an empty session. It verifies **nothing** about normalising populated rows: statuses, the
+paise/rupee conversion, `t1_quantity`, the positions-and-holdings union. Two adversarial reviews on
+`L1.01` and `F01` each found five criticals behind a green suite, and the pattern in both was the
+same — the tests asserted the assumptions rather than the facts. The same exposure exists here and
+only a real order closes it.
+
+**Confidence: judgement**, informed by the two prior reviews on this project.
+
+**What would change my mind:** the operator running the deferred probe. One filled and squared-off
+ticket would convert most of this from judgement to measurement.

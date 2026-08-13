@@ -8,6 +8,28 @@ Reconcile with the live task list at each session start.
 
 Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) · ⛔ blocked
 
+## `F02` order path (2026-08-13, `A.99`) — 🟡 open
+
+- ⛔ **The real-FILL lifecycle probe is DEFERRED by operator decision** (`A.99`, 2026-08-13, to be
+  run after the project is complete). `F02`'s `R.05` pass is READ-ONLY: real `orders()`,
+  `order_history()`, `trades()`, `positions()` and real rejection responses. Nothing in the feature
+  has yet been proved against a real fill, a real `order_id` lifecycle, real charges on a real
+  contract note, or a real postback. **Until that probe runs, every claim about the fill path rests
+  on a hermetic harness, which `R.05` counts as functional verification only.** Surfaced at every
+  sign-off; this is the single largest open item against the feature.
+- ⛔ **The read-only `R.05` pass ran against an EMPTY account.** 2026-08-13, market open, real
+  authenticated session: `orders()`, `trades()` and `positions()` all answered and all returned
+  **zero rows**, so the adapter's normalisation of POPULATED rows — statuses, paise conversion,
+  `t1_quantity`, the positions/holdings union — is still unverified against real payloads. The
+  reconciler produced a coherent empty report and the visibility horizon correctly reported itself
+  unestablished. This is a real pass of the read path and NOT a pass of the normalisation, and the
+  two must not be conflated in any later summary.
+- 🔴 **The trader loop must record a heartbeat** (`TraderHeartbeatJournal.record_heartbeat`,
+  component `order_path_trader`) or the halt watchdog restarts into `RECONCILIATION_UNAVAILABLE`
+  by design. No trader loop exists until `F04`; the named future consumer is `F04`'s paper loop.
+- 🔴 **The watchdog's reconciliation probe is an injected seam with nothing injected yet.** Wiring
+  `BrokerTruthReconciler` into it belongs with `F04`, where a loop exists to halt.
+
 ## `L0.34` deep history (2026-08-12, `A.88`) — 🟡 loaded, four open
 
 - 🔴 **The bulk loader counts quarantined rows but does not record WHY.** The row-wise

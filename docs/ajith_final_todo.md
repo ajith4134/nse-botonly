@@ -559,6 +559,18 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **2.75** Kite broker client + order placement — `L9.01`
 - [ ] **2.76** Full Kite order-type taxonomy — `L9.02`
 - [ ] **2.77** Paper/live execution parity — `L9.03`
+
+      *(All of `2.33`-`2.36`, `2.38`, `2.39`, `2.48`, `2.51`, `2.70`, `2.75`-`2.77` and the new
+      `2.77a` are feature **F02 — THE ORDER PATH**, opened 2026-08-13 (`A.99`), IN PROGRESS. They
+      tick together and not before, per `A.93`: an intent becoming exactly one order, surviving a
+      crash, and the broker believed over local state is ONE capability, and any part of it shipped
+      alone is a fragment whose consumer does not exist. Checklist in `docs/FEATURE_MAP.md`.)*
+- [ ] **2.77a** Order-expression selector — `L9.14` · **NEW 2026-08-13 (`A.99`)**, inserted at its
+      dependency position inside F02: it consumes the `L9.02` taxonomy and the `L1.05`/`L1.06`
+      impact engine, and produces the order `L3.04` places. Chooses variety, product, order type,
+      validity and any iceberg split from the intent's urgency, the ticket against visible depth,
+      the segment's cost regime and the live spread. Not `L9.05` (routes a decided order), not
+      `L9.07` (a quantity decision).
 - [ ] **2.78** Realistic options fills — `L9.04`
 - [ ] **2.79** Cost-aware maker/taker and segment routing — `L9.05`
 - [ ] **2.80** Per-order slippage budget with abort — `L9.06`

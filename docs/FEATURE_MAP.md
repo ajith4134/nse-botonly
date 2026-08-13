@@ -248,3 +248,43 @@ feature does not close until every row is resolved and the four completion crite
 
 Only when those four pass do all fifteen entries tick together. **They do.** `F01` is closed;
 `O.74` is corrected in place with the original left visible, and `M10`–`M12` are recorded.
+
+---
+
+## LIVE CHECKLIST — F02 · "An intent becomes exactly one order, survives a crash, broker believed over local state"
+
+Opened 2026-08-13 (`A.99`). Greenfield: there is no order, position, trade or fill type anywhere in
+`src/` today, so this feature builds its own domain as `F01` built the priced-signal contract.
+
+| Entry | What it is | State |
+|---|---|---|
+| `L3.01` | idempotent client order IDs — one intent can never become two orders | ✅ content-hash identity + 20-char wire tag; collision bound computed |
+| `L3.02` | order-intent write-ahead log — durable BEFORE the broker call | ✅ SQLite WAL + `synchronous=FULL`, append-only, deterministic fold |
+| `L3.03` | broker-truth state reconciler — on restart, believe the broker | ✅ five-bucket diff, inferred fills, measured visibility horizon |
+| `L3.04` | crash-safe order placer — the trio composed into the real path | ✅ latch → journal → rate gate → attempt → call → outcome |
+| `L3.06` | order rate limiter — SEBI's threshold plus the broker's own ceilings | ⬜ |
+| `L3.07` | kill switch / trading control config — paper vs live, enforced | ⬜ |
+| `L3.16` | partial-fill tracking loop | ⬜ |
+| `L3.19` | SEBI Algo-ID tagging on every order + audit trail | ⬜ |
+| `L7.10` | kill switch as a SEPARATE watchdog process, reconciling on restart | ⬜ |
+| `L9.01` | Kite broker client + order placement | ⬜ |
+| `L9.02` | full order-type taxonomy | ⬜ |
+| `L9.03` | paper/live execution parity — one code path serves both | ⬜ |
+| `L9.14` | **order-expression selector** — added mid-feature (`A.99`) | ⬜ |
+| `L9.10` | — | ⛔ DROP → `L3.03`; the same reconciler, catalogued twice |
+| `L9.11` | — | ⛔ DROP → `L3.02`; the same WAL, catalogued twice |
+| `L12.14` | — | ⛔ MERGE → `L3.06`+`L3.19`+`L9.01`; compliance is their union, not a module |
+| — | order / position / trade / fill domain + state machine | ✅ 14-state table as data, typed refusal, `AMBIGUOUS` first-class |
+
+**Completion criteria — the feature does not close until every one is resolved:**
+
+- [ ] **`R.08` surface** — `/orders` shows every intent, its order, its fills and its terminal state,
+      with the reconciliation verdict and any inferred event marked as inferred.
+- [ ] **`R.06` loop wiring** — the placer is the only way an order can reach a broker, the watchdog
+      runs as its own systemd user unit, and the reconciler runs at every start.
+- [ ] **`R.23(c)` adversarial review** in a fresh subagent, run BEFORE the execution gate.
+- [ ] **`R.05` real-data pass — READ-ONLY, and knowingly incomplete (`A.99`).** Verified against real
+      `orders()`/`order_history()`/`trades()`/`positions()` state and real rejection responses. The
+      real-FILL lifecycle probe is **DEFERRED by operator decision to after the project completes**
+      and is carried in `BACKLOG.md` as an OPEN BLOCKER, surfaced at every sign-off. `F02` closes
+      with this criterion explicitly unmet and says so in those words.

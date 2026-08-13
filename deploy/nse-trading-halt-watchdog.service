@@ -1,0 +1,62 @@
+[Unit]
+Description=NSE trading halt watchdog — the kill switch, in its own process (L7.10)
+Documentation=file:///home/opc/nse-algo-trader/scripts/run_trading_halt_watchdog.py
+Documentation=file:///home/opc/nse-algo-trader/docs/research/221_order_path_engine_spec.md
+# No network dependency on purpose. This unit reads two local SQLite files and writes one
+# of them; it must be able to halt trading on a host whose network is exactly the thing
+# that has failed.
+After=default.target
+# Zero, i.e. no rate limit: this unit must never be left stopped because it restarted often.
+StartLimitIntervalSec=0
+StartLimitBurst=0
+
+[Service]
+Type=simple
+# NO User=/Group=. This is a USER unit — SELinux blocks system units under /home on this
+# host, as deploy/nse-dashboard.service and deploy/nse-daily-operations.service both
+# record. The per-user manager already runs as opc and has no privilege to setgid, so a
+# User= line aborts with 216/EXIT_GROUP before stdout is even opened.
+WorkingDirectory=/home/opc/nse-algo-trader
+ExecStart=/home/opc/nse-algo-trader/.venv/bin/python -u \
+    scripts/run_trading_halt_watchdog.py --supervise \
+    --component order_path_trader
+
+# The whole point of this unit. A watchdog that dies and stays dead removes the only thing
+# that can stop a wedged trader, and it does so silently — so it restarts unconditionally,
+# including after a clean exit, and it reconciles from the durable latch and the heartbeat
+# history on every start rather than resuming what it believed before it died.
+Restart=always
+RestartSec=2
+
+# Deliberately NOT rate-limited into a stop. StartLimitBurst would let a crash loop end
+# with the watchdog switched off, which is the one outcome worse than a crash loop, so the
+# limit lives in [Unit] set to zero — never in [Service], where systemd on this host warns
+# "Unknown key name ... ignoring" and the intent would silently not apply.
+
+# Journald AND a file. Measured on this host: `journalctl --user` returns "No entries" for
+# user units even while they are demonstrably running, so a unit logging only to the
+# journal would leave every halt invisible. Append, never truncate — the file is the
+# evidence of why trading stopped.
+StandardOutput=append:/home/opc/nse_archive/trading_halt_watchdog.log
+StandardError=append:/home/opc/nse_archive/trading_halt_watchdog.log
+SyslogIdentifier=nse-halt-watchdog
+
+# Kill the whole group and give it time to finish a commit; a latch write is a real fsync.
+KillMode=mixed
+TimeoutStopSec=20
+
+# Least privilege, within what this layout permits. ProtectHome is deliberately NOT set:
+# the venv interpreter and the project live under /home/opc, and ProtectHome=read-only
+# made systemd fail to locate the executable at all (203/EXEC) when it was tried on the
+# daily-operations unit.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/opc/.nse_algo_trader /home/opc/nse_archive
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+# default.target, not multi-user.target — the latter does not exist in the user manager.
+WantedBy=default.target

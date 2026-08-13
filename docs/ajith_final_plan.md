@@ -819,6 +819,13 @@ conversion must therefore be attempted early and fall back to square-off on any 
 ⟨IV⟩ · base · idea · operator 2026-08-10
 **L9.13**  **T+1 settlement awareness** — delivered shares settle T+1, which constrains when a carried
 position can be exited and how BTST-style exits behave. ⟨IV⟩ · adv · idea · operator 2026-08-10 ⟨IV⟩ · base · archived · r/168
+**L9.14**  **Order-expression selector** — chooses WHICH member of the `L9.02` taxonomy expresses an
+intent: variety, product, order type, validity and any iceberg split, decided from the intent's own
+urgency, the ticket against visible depth, the segment's cost regime and the live spread, against the
+`L1.05`/`L1.06` impact engine. **NEW 2026-08-13 (`A.99`)**, inserted here because it consumes `L9.02`
+and produces the order `L3.04` places. Distinct from `L9.05` (routes an already-decided order) and
+`L9.07` (a quantity decision). Availability of each variety is point-in-time fact, so a withdrawn
+variety is a dated refusal rather than a compiled-in absence. ⟨IV · III⟩ · adv · operator 2026-08-13
 
 ## L10 · OPERATIONS & SELF-MAINTENANCE
 
@@ -4095,6 +4102,51 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
+
+**A.99 · 2026-08-13 · `F02` opened — the ORDER PATH — and three operator decisions that fix its
+shape before a line of it exists.**
+
+`F01` closed 2026-08-12 with all fifteen entries and all four completion criteria passing. `F02` is
+next on the critical path by `A.94`'s ordering: there is no order, position, trade or fill type
+anywhere in `src/`, so every gate above `L1` currently has nothing to gate. Its fifteen entries are
+`L3.01`, `L3.02`, `L3.03`, `L3.04`, `L3.06`, `L3.07`, `L3.16`, `L3.19`, `L7.10`, `L9.01`, `L9.02`,
+`L9.03`, plus the three the catalogue itself marks duplicate or superseded — `L9.10` → `L3.03`,
+`L9.11` → `L3.02`, `L12.14` → `L3.06`+`L3.19`+`L9.01`. The order/position/trade/fill domain has no
+catalogue ID of its own and is built inside the feature, exactly as `F01` built the priced-signal
+contract as an unlabelled row.
+
+*Decision 1 — the `R.05` real-data pass is READ-ONLY now, and the real-fill probe is deferred to
+after the project is complete, as an OPEN BLOCKER rather than a silent skip.* The operator was
+offered a live probe today while the market was open — one ~Rs 500-2,000 MIS ticket, filled and
+squared off, which is the only way to obtain a real `order_id` lifecycle, a real fill, real charges
+and a real postback — and chose to defer it. So `F02` verifies against real broker state that costs
+nothing to read: the real `orders()`/`trades()`/`positions()` history, real `order_history()`
+transitions, and the real rejection responses the API returns to deliberately invalid orders (price
+band, freeze quantity, wrong lot, insufficient funds). The FILL path is verified hermetically behind
+the DI seam, which by `R.05` is functional verification only. **`F02` therefore closes with one
+criterion explicitly unmet, recorded in `BACKLOG.md` and surfaced at every sign-off, and it will be
+stated in those words rather than implied.** `R.22` is untouched either way: a probe would have been
+an operator-authorised act, never a self-promotion.
+
+*Decision 2 — the FULL order-type taxonomy is built, and a selector chooses among them.* The
+operator's instruction is to build all of them and use each where it is genuinely best. So the
+taxonomy is modelled completely — variety × product × order type × validity, AMO, iceberg, GTT,
+auction, and the Cover/Bracket wrappers — with **availability carried as point-in-time fact rather
+than a compiled-in assumption** (`R.03`): a variety the broker has withdrawn is present as a NAMED,
+DATED refusal, so the code never silently pretends an instrument exists and never silently drops one
+that returns. This adds a capability the 600-entry catalogue does not contain — **an order-type
+SELECTOR that picks the expression of an intent from the intent's own urgency, the ticket size
+against visible depth, the segment's cost regime and the instrument's live spread**. Idea-intake
+verdict: **GENUINELY NEW**, inserted at its dependency position inside `F02` as `L9.14`, since it
+consumes the taxonomy (`L9.02`) and the `F01` cost and impact engines and produces the order the
+placer sends. It is not `L9.05` (cost-aware maker/taker routing, which routes a *decided* order) and
+not `L9.07` (slicing, which is a quantity decision).
+
+*Decision 3 — the kill switch is a SEPARATE watchdog process, as `L7.10` asks.* Its own systemd
+user unit, its own heartbeat, and reconciliation on restart. An in-process flag cannot stop a
+trader that is wedged or looping, which is the exact failure the entry exists to prevent; the
+dashboard is already systemd-managed as a user unit for the same SELinux reason, so the pattern is
+established.
 
 **A.98 · 2026-08-12 · F01's adversarial review, run BEFORE the gate this time — five criticals,
 and four of them were certified by my own tests.**

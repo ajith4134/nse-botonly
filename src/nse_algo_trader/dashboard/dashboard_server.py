@@ -78,6 +78,11 @@ from nse_algo_trader.dashboard.operations_wall_renderer import render_operations
 from nse_algo_trader.dashboard.order_book_replay_surface_renderer import (
     render_order_book_replay_page,
 )
+from nse_algo_trader.dashboard.order_path_surface_renderer import (
+    build_order_path_surface_state,
+    empty_order_path_surface_state,
+    render_order_path_page,
+)
 from nse_algo_trader.dashboard.regime_brain_read_model import (
     RegimeReadModelError,
     measure_regime_brain,
@@ -101,6 +106,10 @@ from nse_algo_trader.market_depth.order_book_snapshot_replay_engine import (
 )
 from nse_algo_trader.market_rules.nse_market_rule_history import (
     seeded_nse_market_rule_store,
+)
+from nse_algo_trader.order_path.order_intent_journal import (
+    DEFAULT_JOURNAL_PATH,
+    OrderIntentJournal,
 )
 from nse_algo_trader.transaction_cost.charge_reconciliation_ledger import (
     ChargeReconciliationLedger,
@@ -278,6 +287,14 @@ SURFACED_MODULES: frozenset[str] = frozenset(
         "nse_algo_trader.transaction_cost.quantity_cost_economics",
         "nse_algo_trader.transaction_cost.charge_reconciliation_ledger",
         "nse_algo_trader.dashboard.transaction_cost_surface_renderer",
+        # `F02` — everything `/orders` actually draws. The placer, the limiter, the latch and the
+        # watchdog are deliberately NOT claimed here: they have no panel yet, and the manifest is
+        # only worth reading if an over-claim is impossible.
+        "nse_algo_trader.order_path.order_intent_journal",
+        "nse_algo_trader.order_path.order_record",
+        "nse_algo_trader.order_path.order_lifecycle_state_machine",
+        "nse_algo_trader.order_path.broker_truth_reconciler",
+        "nse_algo_trader.dashboard.order_path_surface_renderer",
     }
 )
 """Modules that genuinely have a panel today. Declaring this is safe precisely BECAUSE
@@ -506,6 +523,38 @@ def build_dashboard_app() -> FastAPI:
             calibrations=calibrations,
         )
         response = HTMLResponse(render_transaction_cost_page(state))
+        _remember_key(response, request)
+        return response
+
+    @app.get("/orders", response_class=HTMLResponse)
+    def order_path_surface(request: Request) -> HTMLResponse:
+        """`F02`'s surface: every intent, its order, its fills, and where the broker disagreed.
+
+        Read from the write-ahead journal and nothing else. No broker session is opened and no
+        reconciliation is run here: reconciling is a WRITE — it patches quantity gaps and can
+        declare an order abandoned — and a page refresh must never be able to move an order. The
+        report the order path's own reconciler produced at start-up is what belongs here, which is
+        why the surface accepts one rather than making one.
+
+        The journal is opened read-only in effect: if the file does not exist yet the page renders
+        the empty state rather than creating it, because opening a journal creates it and a
+        dashboard that writes a database on page load is a side effect nobody asked for.
+        """
+        if not _is_authorised(request):
+            return _unauthorised_html()
+        now = datetime.now(IST)
+        if not DEFAULT_JOURNAL_PATH.exists():
+            state = empty_order_path_surface_state(
+                session_date=now.date(), measured_at=now, journal_path=DEFAULT_JOURNAL_PATH
+            )
+        else:
+            with OrderIntentJournal(DEFAULT_JOURNAL_PATH) as journal:
+                state = build_order_path_surface_state(
+                    journal,
+                    measured_at=now,
+                    journal_path=DEFAULT_JOURNAL_PATH,
+                )
+        response = HTMLResponse(render_order_path_page(state))
         _remember_key(response, request)
         return response
 

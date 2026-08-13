@@ -183,6 +183,14 @@ from nse_algo_trader.nse_ingest.nse_bhavcopy_adapter import (
 from nse_algo_trader.nse_ingest.nse_source_fetcher import NseSourceFetcher, RetryPolicy
 from nse_algo_trader.nse_ingest.nse_source_ingest_runner import NseSourceIngestRunner
 from nse_algo_trader.nse_trading_session_calendar import NseTradingSessionCalendar
+from nse_algo_trader.order_path.kite_order_execution_venue import (
+    connect_to_live_kite_venue_if_authenticated,
+)
+from nse_algo_trader.order_path.order_path_assembly import assemble_order_path
+from nse_algo_trader.order_path.trading_intent import (
+    INDIA_MARKET_TIMEZONE,
+    OrderNamespace,
+)
 from nse_algo_trader.point_in_time_universe_engine import PointInTimeUniverseEngine
 from nse_algo_trader.replay_session_clock import replay_sessions
 from nse_algo_trader.security_identity_record_store import (
@@ -1051,6 +1059,45 @@ def _refit_reversion_calibrations(target: date) -> str:
     return report.describe()
 
 
+def _reconcile_order_path(target: date) -> str:
+    """`L3.03`: converge the order journal onto the broker's own account of the session.
+
+    Runs every day whether or not this system placed anything, because the two states it has to
+    tell apart are "we placed nothing" and "we placed something and lost the record of it", and
+    only the broker can distinguish them. Kite answers the order book for the CURRENT day only
+    (`docs/research/222` §7), so a run for an earlier session reports that rather than pretending
+    to have checked.
+    """
+    today_ist = datetime.now(INDIA_MARKET_TIMEZONE).date()
+    if target != today_ist:
+        return (
+            f"skipped: the broker's order book only answers for {today_ist}, and this run is for "
+            f"session {target} — an unreconciled session is reported, never assumed clean"
+        )
+    venue = connect_to_live_kite_venue_if_authenticated()
+    if venue is None:
+        return "skipped: no valid Kite session, so broker truth could not be read"
+    order_path = assemble_order_path(
+        venue, session_date=target, namespace=OrderNamespace.LIVE
+    )
+    try:
+        report = order_path.reconciler.reconcile(
+            session_date=target, now=datetime.now(UTC)
+        )
+    finally:
+        order_path.close()
+    counts = report.counts_by_verdict()
+    horizon = (
+        f"{report.horizon.seconds:.1f}s from {report.horizon.observations} observations"
+        if report.horizon.is_established
+        else f"not yet established ({report.horizon.observations} observations)"
+    )
+    return (
+        f"{len(report.reconciliations)} orders reconciled, "
+        f"{len(report.disagreements)} disagreements {counts}; visibility horizon {horizon}"
+    )
+
+
 def _derive_per_segment_edge_floors(target: date) -> str:
     """`L1.04`: re-derive the screening floor for each segment from the day's real book.
 
@@ -1242,6 +1289,7 @@ def main() -> int:
         "edge floors",
         lambda: _derive_per_segment_edge_floors(target),
     )
+    _run_step(report, "order path reconciliation", lambda: _reconcile_order_path(target))
     # Last: the surface should be photographed AFTER the run has changed the state
     # it displays, so the capture shows the day that just happened.
     _run_step(report, "dashboard surfaces", _capture_dashboard_surfaces)
