@@ -437,8 +437,16 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       NOT SIGNIFICANT / TAIL-CARRIED verdicts (`R.08`). 10 real-data + 28 unit + 5 surface tests.
       *`M10` (optimistic standard errors) is the open caveat and is the finding most likely to
       reverse the conclusion.*
-- [ ] **1.43** Discrete option-lot sizing — `L1.09`
-- [ ] **1.44** Capital-based position sizing — `L1.10`
+- [ ] **1.43** Discrete option-lot sizing — `L1.09` · **BUILT 2026-08-13** inside `F03`'s first
+      slice (`volatility_targeted_position_sizer`): lots read from the live Kite instrument dump,
+      rounding always DOWN, zero lots answered with a stated reason. A hardcoded lot size is a
+      defect, not a fallback — the archived map went stale (NIFTY 65, not 75). NOT ticked: no
+      consumer, no `R.05` pass, no surface.
+- [ ] **1.44** Capital-based position sizing — `L1.10` · **BUILT 2026-08-13** inside `F03`'s first
+      slice. Volatility-targeted risk budget capped by a shrunk Kelly fraction (`A.104` decision 2);
+      `target_risk_fraction = 1 / concurrent_position_capacity`, so no fraction is chosen. First
+      real caller `capital_configuration` has ever had, which is what closes todo `0.8` — **once a
+      consumer exists**. NOT ticked: see `BACKLOG.md` under `F03`.
       · ⚠️ **now sizes against a capital SOURCE chosen by mode, not a number**: `L1.17` for live,
       `L1.18` for the paper trading book. Both expose the same `deployable_rupees` / `is_tradeable` /
       `binding_side` / `describe()`, so this picks one at construction and never branches per sizing.

@@ -24,6 +24,51 @@ Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) ·
   Named consumer: whichever entry point `F04`'s paper loop gets — it must load the file too, or the
   paper book will read an unseeded ceiling on a machine where the operator has set one.
 
+## `F03` sizer + risk gate, first slice (2026-08-13, `A.104`) — 🟡 open
+
+Five modules built and gated (91 tests, ruff + mypy-strict green): `kelly_edge_scaler`,
+`realised_volatility_estimator`, `volatility_targeted_position_sizer`, `session_risk_state_store`,
+`pre_trade_risk_gate`. `L1.09` · `L1.10` · `L7.01` · `L3.05` · `L7.02` · `L7.03`. **NOT signed off** —
+the items below are what is missing, and they are the reason.
+
+- ⛔ **`R.05` real-data pass has NOT run.** Every test is hermetic: the sizer has never seen the real
+  `BitemporalBarStore`, the real `InstrumentMasterStore` lot sizes, or the real
+  `ReversionCalibrationStore`. `R.05` counts the suite as functional verification only. The pass
+  must run on the FULL universe (`R.09`, 2,000+ symbols and the option underlyings), not a sample —
+  a sizer that works on RELIANCE and divides by zero on an illiquid scrip is not verified.
+- ⛔ **`R.08`: F03 has NO dashboard surface.** The five modules are deliberately NOT claimed in
+  `SURFACED_MODULES`, so `/manifest` will correctly report them UNSURFACED rather than letting an
+  over-claim hide the gap. A sizing decision an operator cannot see is exactly the class of thing
+  `R.08` exists to prevent, and this is the largest open item against the slice. The surface must
+  show, per decision: the volatility budget, the Kelly cap, which bound bound it, the lot rounding,
+  and every gate refusal with its tier.
+- ⛔ **`R.23(c)` adversarial review has NOT run for F03.** Four consecutive reviews have found
+  criticals behind a green suite (`A.91`, `A.98`, `A.100`, `A.103`). Treating this suite as evidence
+  before the review has run would contradict `O.82` on the day it was written.
+- 🔴 **No consumer.** Nothing calls the sizer or the gate. Named future consumer: `F04`'s paper loop,
+  which is also what supplies `SessionRiskStateStore.open_session` and `record_realised_pnl`. Until
+  it exists this slice changes no behaviour and is NOT `R.06`-done.
+- 🔴 **`derive_limits` is called by nobody, so its inputs have no producer.** It needs a traded-value
+  percentile, a realised-move percentile and a per-segment margin fraction. The first two are
+  computable from `BitemporalBarStore` today and no code does it; the third has no source at all —
+  `segment_margin_fractions()` returns `{}` on purpose, with the margin ingest (`L7.08`) as its
+  named consumer. A hardcoded margin table would be the `L1.09` lot-size defect one layer up.
+- 🔴 **`RegulatoryFacts` is assembled by nobody.** The readers exist
+  (`BitemporalIngestStore.rows_for` over `fo_ban_list`, `mwpl_position_limits`, the circuit-band
+  sources) but nothing joins them into the dataclass, so today every call would report all three
+  walls UNCHECKED. That is honest and useless in equal measure.
+- 🔴 **The `M10` caveat is now a SIZING defect, not a statistical footnote.** `kelly_edge_scaler`
+  shrinks position size by `edge²/(edge²+se²)`, so optimistic standard errors in the reversion
+  calibration translate directly into oversized positions. Raised in priority by this slice.
+- 🔴 **Eight of F03's fourteen entries remain**: `L7.04` graduated drawdown ladder, `L7.05`
+  exposure/correlation, `L7.06` MWPL guard with hysteresis, `L7.07` circuit-limit rejection, `L7.08`
+  margin-shortfall monitor, `L7.09` correlation-breakdown breaker, `L9.06` slippage budget, `L9.07`
+  impact slicing. Each is its own engine under `R.18`.
+- 🔴 **`VOLATILITY_HALF_LIFE_BARS = 20` is the one modelling choice in the sizing path** that is not
+  derived from data. It is named, explained and overridable per call, but it is not measured. The
+  honest fix is to fit the half-life to the instrument's own volatility autocorrelation; recorded
+  rather than left implied.
+
 ## `L1.18` paper capital ledger (2026-08-13, `A.102`) — 🟡 open
 
 - ⛔ **`R.05` real-data status: the dashboard round trip PASSED, first real consumption has not.**
