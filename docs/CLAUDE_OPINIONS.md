@@ -1799,3 +1799,30 @@ and the second set is the one that will actually be traded.
 **What would change my mind:** a real-data pass that reports exactly what the suite already implied,
 twice running. That has not happened yet — `F01`'s pass found the edge formula was the defect,
 `F02`'s found an empty account, and this one found a concentration contradiction and a coverage gap.
+
+## O.89 · 2026-08-13 · Correcting the Kelly denominator made the sizer right and revealed it is unusable alone
+
+**Opinion:** `A.105`'s fix did not finish the sizer — it made the sizer's real answer visible, and
+that answer is "put the whole book in one position", which means `F03`'s first slice cannot be
+consumed until `L7.05` exists.
+
+**Reasoning:** measured on the live surface immediately after the fix. Realised volatility 14.9 bps
+over five bars, calibrated edge 128.8 bps: raw Kelly is roughly **5,760 times capital**, capped to
+1.0, while the volatility budget independently asks for **₹11.2 crore against a ₹10 lakh book**.
+Both bounds saturate at the capital. That is not a defect in either formula — full Kelly on a
+high-Sharpe intraday edge genuinely says bet everything, and volatility targeting genuinely sizes
+notional up as sigma falls. It is a statement that **neither formula is a concentration constraint**,
+and I built a sizer out of two things that are not the thing that was missing.
+
+**The uncomfortable part, stated plainly.** Before the fix, the broken denominator was accidentally
+*hiding* this: the inverted Kelly produced small numbers for large edges, which looked like prudent
+sizing. A defect was doing the job of a missing feature, and the green suite plus the passing
+`R.05` run both agreed with it. That is the most dangerous shape a bug can take.
+
+**Confidence: measured** on the arithmetic, **reasoned** on the conclusion that `L7.05` is the right
+home rather than a cap inside the sizer.
+
+**What would change my mind:** if a per-trade concentration cap turns out to be derivable from the
+same calibration — e.g. sizing to the edge's own confidence interval rather than its mean — then it
+belongs in the sizer after all and `L7.05` handles only the cross-position case. Worth an hour
+before building `L7.05`.

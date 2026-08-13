@@ -88,7 +88,18 @@ class SizedPosition:
     quantity: int
     lots: int
     lot_size: int
+    reference_price_rupees: Decimal
     notional_rupees: Decimal
+    """What the ORDER actually costs — `quantity x reference_price`, not the budget.
+
+    These were the same field once, and the gate recovered a price from `notional / quantity` to
+    check its collar. Because the budget includes the part-lot that was rounded away, that quotient
+    was the true price inflated by up to a whole lot: on a lot of 22 it recovered Rs 1,942.50 for a
+    Rs 1,000 instrument, refusing a limit price AT the market and allowing one at double it
+    (`A.105`). The budget is kept as `risk_justified_notional_rupees`.
+    """
+
+    risk_justified_notional_rupees: Decimal
     deployable_rupees: Decimal
     target_risk_fraction: Decimal
     risk_budget_rupees: Decimal
@@ -147,24 +158,23 @@ class VolatilityTargetedPositionSizer:
         sigma_fraction = volatility.sigma_bps / BASIS_POINTS_IN_ONE
         volatility_notional = risk_budget / sigma_fraction
 
-        kelly = self._scale_edge(inputs)
+        kelly = self._scale_edge(inputs, volatility)
         kelly_notional = inputs.deployable_rupees * kelly.kelly_fraction
 
         notional = min(volatility_notional, kelly_notional)
-        binding = (
-            "kelly_cap" if kelly_notional < volatility_notional else "volatility_target"
-        )
-
-        # Never size against money that is not there: the notional is also capped by the deployable
-        # figure itself. Kelly can reach the whole book and the volatility budget can exceed it on a
-        # very quiet instrument, and neither is permission to borrow (`L7.02` owns leverage).
-        if notional > inputs.deployable_rupees:
-            notional = inputs.deployable_rupees
-            binding = "deployable_capital"
+        binding = "kelly_cap" if kelly_notional < volatility_notional else "volatility_target"
+        # There is deliberately no third `deployable_capital` bound. `kelly_notional` is
+        # `deployable x kelly_fraction` with the fraction capped at 1, so the `min` above already
+        # bounds the answer by the book. The branch that used to sit here was unreachable, and its
+        # comment claimed otherwise — dead code that asserted a falsehood (`A.105` finding 8).
 
         lot_notional = Decimal(inputs.lot_size) * inputs.reference_price_rupees
-        lots = int(notional / lot_notional)  # int() truncates toward zero — the rounding rule
+        # Floor division, not `int(a / b)`: true division rounds to the Decimal context's 28
+        # significant digits FIRST, which rounded 3.9999999999999999999999999996 up to 4 and put the
+        # order over the capital that sized it (`A.105` finding 9). `//` truncates exactly.
+        lots = int(notional // lot_notional)
         quantity = lots * inputs.lot_size
+        order_notional = Decimal(quantity) * inputs.reference_price_rupees
 
         refusal = self._refusal_for(
             inputs=inputs, kelly=kelly, lots=lots, notional=notional, lot_notional=lot_notional
@@ -174,7 +184,9 @@ class VolatilityTargetedPositionSizer:
             quantity=quantity if refusal is None else 0,
             lots=lots if refusal is None else 0,
             lot_size=inputs.lot_size,
-            notional_rupees=notional,
+            reference_price_rupees=inputs.reference_price_rupees,
+            notional_rupees=order_notional if refusal is None else Decimal(0),
+            risk_justified_notional_rupees=notional,
             deployable_rupees=inputs.deployable_rupees,
             target_risk_fraction=risk_fraction,
             risk_budget_rupees=risk_budget,
@@ -203,9 +215,20 @@ class VolatilityTargetedPositionSizer:
             )
         return volatility
 
-    def _scale_edge(self, inputs: SizingInputs) -> ScaledKellyFraction:
+    def _scale_edge(
+        self, inputs: SizingInputs, volatility: RealisedVolatility
+    ) -> ScaledKellyFraction:
+        """Kelly against the instrument's OWN measured dispersion, over the same horizon.
+
+        The dispersion is the realised volatility this sizer just measured, not anything read off
+        the calibration — see `kelly_edge_scaler`'s docstring for what reading it off the
+        calibration did to every position size.
+        """
         try:
-            return self.kelly_scaler.scale(inputs.calibration)
+            return self.kelly_scaler.scale(
+                inputs.calibration,
+                return_dispersion=volatility.sigma_bps / BASIS_POINTS_IN_ONE,
+            )
         except KellyScalingError as failure:
             raise PositionSizingError(
                 f"{inputs.trading_symbol} cannot be sized from its calibration: {failure}"

@@ -36,7 +36,7 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
@@ -517,7 +517,12 @@ class SessionRiskStateStore:
         open_exposures = {
             symbol: amount for symbol, amount in exposures.items() if amount != 0
         }
-        window_start = now - rate_window
+        # Compared in UTC, because the comparison is a LEXICOGRAPHIC one over ISO strings and an
+        # offset changes the text without changing the instant. Stamps were written as `+05:30` and
+        # the window start was rendered in the caller's zone: from Asia/Tokyo the window reported
+        # ZERO orders — the rate limit never fired and the 10/sec registration threshold was
+        # unguarded — and from UTC it counted five-hour-old orders as current (`A.105` finding 5).
+        window_start = (now - rate_window).astimezone(UTC)
         orders = self._connection.execute(
             "SELECT COUNT(*) AS sent FROM session_risk_event WHERE session_date = ? "
             "AND kind = 'ORDER_SENT' AND occurred_at > ?",
@@ -583,6 +588,23 @@ class SessionRiskStateStore:
             len(results) - 1
         )
         sigma = variance.sqrt()
+        if sigma <= 0:
+            # Twenty sessions that all returned the same figure — the ordinary state of a paper
+            # book's first month, when nothing has traded — give a variance of zero and therefore a
+            # limit of ZERO, which is ACTIVE and halts the book on the first paisa of loss. That
+            # halt is a latch only an operator can clear (`R.22`): a permanent stop earned by
+            # rounding. `R.04` counts sessions; it must count INFORMATION (`A.105` finding 6).
+            return DailyLossLimit(
+                limit_rupees=None,
+                sessions_observed=len(results),
+                sigma_daily_rupees=sigma,
+                z_quantile=z,
+                unavailable_reason=(
+                    f"{len(results)} closed sessions all returned the same result, so the book's "
+                    "daily volatility is zero and the derived limit would be Rs 0 — active, and "
+                    "tripped by the first paisa. The limit is NOT ACTIVE until the sessions differ"
+                ),
+            )
         return DailyLossLimit(
             limit_rupees=z * sigma,
             sessions_observed=len(results),
@@ -625,7 +647,7 @@ class SessionRiskStateStore:
             "amount_rupees, reason) VALUES (?, ?, ?, ?, ?, ?)",
             (
                 session_date.isoformat(),
-                occurred_at.astimezone(IST).isoformat(),
+                occurred_at.astimezone(UTC).isoformat(),
                 kind,
                 trading_symbol,
                 str(amount),

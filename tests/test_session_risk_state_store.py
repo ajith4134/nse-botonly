@@ -286,9 +286,69 @@ def test_the_daily_loss_limit_activates_and_is_derived_from_the_books_own_volati
     assert limit.is_active is True
     assert limit.sessions_observed == MINIMUM_SESSIONS_FOR_A_DAILY_LIMIT
     assert limit.limit_rupees is not None
-    assert limit.limit_rupees > 0
     assert limit.sigma_daily_rupees is not None
+    # Pinned to an INDEPENDENTLY computed sigma, not to the implementation's own output.
+    # `limit == z * sigma` alone is a tautology over two of its own fields, and `A.105` proved it:
+    # a mutant using n instead of n-1 in the variance passed the whole suite.
+    results = [Decimal(5_000 if index % 2 else -4_000) for index in range(
+        MINIMUM_SESSIONS_FOR_A_DAILY_LIMIT
+    )]
+    mean = sum(results, Decimal(0)) / Decimal(len(results))
+    expected_sigma = (
+        sum(((value - mean) ** 2 for value in results), Decimal(0))
+        / Decimal(len(results) - 1)
+    ).sqrt()
+    assert abs(limit.sigma_daily_rupees - expected_sigma) < Decimal("0.01")
     assert limit.limit_rupees == limit.z_quantile * limit.sigma_daily_rupees
+
+
+@pytest.mark.adversarial
+def test_a_book_whose_sessions_all_returned_the_same_figure_gets_no_limit(tmp_path: Path) -> None:
+    """`A.105` finding 6 — the ordinary state of a paper book's first month.
+
+    Twenty closed sessions in which nothing traded give a variance of zero, hence a limit of Rs 0,
+    which is ACTIVE and tripped by the first paisa. That halt is a latch only an operator can clear
+    (`R.22`): a permanent stop earned by rounding. The limit must be NOT ACTIVE instead.
+    """
+    path = tmp_path / "flat.sqlite3"
+    with SessionRiskStateStore(path) as store:
+        for index in range(MINIMUM_SESSIONS_FOR_A_DAILY_LIMIT):
+            session = date(2026, 7, 1) + timedelta(days=index)
+            store.open_session(
+                session_date=session,
+                opening_equity_rupees=TEN_LAKH,
+                occurred_at=datetime(2026, 7, 1, 9, 15, tzinfo=IST) + timedelta(days=index),
+            )
+            store.close_session(session_date=session)
+        limit = store.daily_loss_limit(as_of=SESSION)
+    assert limit.is_active is False
+    assert limit.sessions_observed == MINIMUM_SESSIONS_FOR_A_DAILY_LIMIT
+    assert "same result" in (limit.unavailable_reason or "")
+
+
+@pytest.mark.adversarial
+def test_the_rate_window_is_correct_from_any_timezone(state_path: Path) -> None:
+    """`A.105` finding 5 — the window compared ISO strings whose OFFSETS differed.
+
+    From Asia/Tokyo the window reported zero orders, so the rate limit never fired and the 10/sec
+    registration threshold was unguarded; from UTC it counted five-hour-old orders as current.
+    """
+    from zoneinfo import ZoneInfo as _Zone
+
+    with SessionRiskStateStore(state_path) as store:
+        for offset in range(9):
+            store.record_order_sent(
+                session_date=SESSION, trading_symbol="RELIANCE", occurred_at=_at(offset)
+            )
+        counts = {
+            zone: store.state_for(
+                session_date=SESSION,
+                now=_at(9).astimezone(_Zone(zone)),
+                rate_window=timedelta(seconds=30),
+            ).orders_in_rate_window
+            for zone in ("Asia/Kolkata", "UTC", "Asia/Tokyo", "America/New_York")
+        }
+    assert set(counts.values()) == {9}, counts
 
 
 @pytest.mark.adversarial

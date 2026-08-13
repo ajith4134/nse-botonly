@@ -50,6 +50,11 @@ class RiskGateError(Exception):
     """The gate cannot be constructed or evaluated, and permitting the order would be a guess."""
 
 
+def _tighter(derived: Decimal, override: Decimal | None) -> Decimal:
+    """The operator's figure when it shrinks the permission, the derived one otherwise."""
+    return derived if override is None else min(derived, override)
+
+
 class GateTier(Enum):
     """Which authority refused. Ordered from the one nobody may override."""
 
@@ -122,10 +127,24 @@ class DerivedLimits:
             ("maximum leverage", self.maximum_leverage),
             ("price collar", self.price_collar_fraction),
         ):
+            # The sizer and the session store both refuse floats; the gate was the hole. A float
+            # limit survived construction, propagated through `tighten`, and turned a refusal into
+            # an `AttributeError` from `.quantize` — a refusal that was never recorded at all
+            # (`A.105` finding 7).
+            if not isinstance(value, Decimal):
+                raise RiskGateError(
+                    f"{name} must be a Decimal, got {type(value).__name__}; a float limit puts "
+                    "binary rounding between a rule and the order it is supposed to refuse"
+                )
             if value <= 0:
                 raise RiskGateError(f"{name} must be positive, got {value}")
-        if self.maximum_orders_per_rate_window <= 0:
-            raise RiskGateError("an order-rate limit of zero permits no trading at all")
+        if self.maximum_orders_per_rate_window < 0:
+            raise RiskGateError(
+                f"an order-rate limit of {self.maximum_orders_per_rate_window} is not a count"
+            )
+        # ZERO is permitted, and deliberately. It refuses every order, which is exactly what an
+        # operator asking for it means — the tightest position the key can be turned to. `R.22`'s
+        # key must be able to reach "stop"; `derive_limits` never produces zero on its own.
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,21 +190,25 @@ class OperatorLimitOverrides:
                     "is not a limit, and R.22's two-key rule survives only if one of the keys "
                     "cannot be turned permanently. Raise the derived limit's evidence instead"
                 )
+        # `is not None`, never `or`: `Decimal(0)` and `0` are FALSY, so an `or` fell through to the
+        # derived value and silently discarded the TIGHTEST override an operator can give. Turning
+        # the key to "stop trading" returned the full derived permission and raised nothing
+        # (`A.105` finding 4).
         return DerivedLimits(
-            maximum_notional_rupees=min(
-                derived.maximum_notional_rupees,
-                self.maximum_notional_rupees or derived.maximum_notional_rupees,
+            maximum_notional_rupees=_tighter(
+                derived.maximum_notional_rupees, self.maximum_notional_rupees
             ),
-            maximum_leverage=min(
-                derived.maximum_leverage, self.maximum_leverage or derived.maximum_leverage
+            maximum_leverage=_tighter(derived.maximum_leverage, self.maximum_leverage),
+            price_collar_fraction=_tighter(
+                derived.price_collar_fraction, self.price_collar_fraction
             ),
-            price_collar_fraction=min(
-                derived.price_collar_fraction,
-                self.price_collar_fraction or derived.price_collar_fraction,
-            ),
-            maximum_orders_per_rate_window=min(
-                derived.maximum_orders_per_rate_window,
-                self.maximum_orders_per_rate_window or derived.maximum_orders_per_rate_window,
+            maximum_orders_per_rate_window=int(
+                _tighter(
+                    Decimal(derived.maximum_orders_per_rate_window),
+                    Decimal(self.maximum_orders_per_rate_window)
+                    if self.maximum_orders_per_rate_window is not None
+                    else None,
+                )
             ),
         )
 
@@ -457,7 +480,7 @@ class PreTradeRiskGate:
                     ),
                 )
             )
-        reference = _reference_price_of(sized)
+        reference = sized.reference_price_rupees
         if limit_price_rupees is not None and reference > 0:
             distance = abs(limit_price_rupees - reference) / reference
             if distance > limits.price_collar_fraction:
@@ -474,13 +497,6 @@ class PreTradeRiskGate:
                     )
                 )
         return refusals
-
-
-def _reference_price_of(sized: SizedPosition) -> Decimal:
-    """The price the size was computed at, recovered from the notional and the quantity."""
-    if sized.quantity <= 0:
-        return Decimal(0)
-    return sized.notional_rupees / Decimal(sized.quantity)
 
 
 def latches_to_trip(

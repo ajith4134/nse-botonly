@@ -32,12 +32,23 @@ and an edge measured well is not penalised for the existence of bad ones elsewhe
 to real position size, so the `M10` open caveat (optimistic standard errors) stops being a
 statistical footnote and becomes a sizing defect. It is recorded in `BACKLOG.md` against this
 module.
+
+**The dispersion is passed IN, and that is the whole point of this signature.** The first version
+read it from `ReversionCapture.mean_captured_sigma`, which is not a dispersion at all: the
+calibrator defines it as the mean captured move EXPRESSED IN sigma units — the numerator rescaled,
+signed, and negative on nine of the operator's forty real calibrations. Substituting it made
+`raw_kelly = sigma_price² / (1e4 · edge)`, so **the Kelly cap fell as the edge rose**: the best
+measured edge in the database (203.5 bps at t=2.88) was sized 6.5 times SMALLER than a 22.7 bps one,
+and seventeen of forty real rows hit the whole-book cap. Found by the `R.23(c)` review (`A.105`).
+Kelly's denominator is the variance of the RETURN this position is exposed to, so the caller hands
+in the instrument's own realised volatility over the same horizon and this module refuses to invent
+one.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal, DivisionByZero, InvalidOperation
+from decimal import Decimal, DivisionByZero, InvalidOperation, Overflow
 
 from nse_algo_trader.cost_gate.mean_reversion_edge_calibrator import ReversionCapture
 
@@ -65,6 +76,12 @@ class ScaledKellyFraction:
     edge_bps: Decimal
     standard_error_bps: Decimal
     dispersion: Decimal
+    """The standard deviation of the RETURN, as a fraction of price, over the decision horizon.
+
+    Passed in by the caller from the instrument's own realised volatility. Never read from the
+    calibration — see the module docstring for what that cost.
+    """
+
     raw_kelly_fraction: Decimal
     shrinkage: Decimal
     kelly_fraction: Decimal
@@ -111,29 +128,55 @@ def shrinkage_weight(*, edge_bps: Decimal, standard_error_bps: Decimal) -> Decim
             "the edge — which no finite sample earns. A degenerate sample must not become maximum "
             "leverage"
         )
-    edge_squared = edge_bps * edge_bps
-    error_squared = standard_error_bps * standard_error_bps
-    return edge_squared / (edge_squared + error_squared)
+    try:
+        edge_squared = edge_bps * edge_bps
+        error_squared = standard_error_bps * standard_error_bps
+        return edge_squared / (edge_squared + error_squared)
+    except (Overflow, InvalidOperation) as failure:
+        raise KellyScalingError(
+            f"the shrinkage weight overflowed for an edge of {edge_bps} bps with a standard error "
+            f"of {standard_error_bps}: {failure}"
+        ) from failure
+
+
+def _finite_decimal(value: Decimal, description: str) -> Decimal:
+    """A real, finite `Decimal`. A float here would put binary rounding into a position size."""
+    if not isinstance(value, Decimal):
+        raise KellyScalingError(
+            f"{description} must be a Decimal, got {type(value).__name__}"
+        )
+    if not value.is_finite():
+        raise KellyScalingError(f"{description} must be finite, and {value} is not")
+    return value
 
 
 @dataclass(frozen=True, slots=True)
 class KellyEdgeScaler:
     """Turns one calibrated edge into the fraction of capital it justifies."""
 
-    def scale(self, capture: ReversionCapture) -> ScaledKellyFraction:
+    def scale(
+        self, capture: ReversionCapture, *, return_dispersion: Decimal
+    ) -> ScaledKellyFraction:
         """The fraction of capital this calibration supports, shrunk by its own reliability.
 
+        Args:
+            capture: the calibrated edge and its standard error.
+            return_dispersion: the standard deviation of the return over the SAME horizon, as a
+                fraction of price. Keyword-only and with no default on purpose: a default here
+                would be a dispersion nobody measured, and reading one off the calibration is
+                exactly the defect `A.105` recorded.
+
         Raises:
-            KellyScalingError: the calibration cannot produce a fraction at all — zero dispersion
-                (infinite Kelly) or a zero standard error (claimed certainty). Both are refusals
-                rather than clamps, because a substituted number would size a real order.
+            KellyScalingError: no fraction can be formed — a non-positive dispersion (infinite
+                Kelly), a zero standard error (claimed certainty), or a magnitude that overflows.
+                Refusals rather than clamps, because a substituted number would size a real order.
         """
-        dispersion = capture.mean_captured_sigma
+        dispersion = _finite_decimal(return_dispersion, "return dispersion")
         if dispersion <= 0:
             raise KellyScalingError(
-                "a calibration with zero dispersion implies an infinite Kelly fraction, which is "
-                "the single worst answer this module could return; the calibration is unusable "
-                f"rather than maximally attractive ({capture.describe()})"
+                f"a return dispersion of {dispersion} implies an infinite Kelly fraction, which is "
+                "the single worst answer this module could return; an instrument that does not "
+                "move is not an infinitely attractive one"
             )
         weight = shrinkage_weight(
             edge_bps=capture.mean_captured_bps, standard_error_bps=capture.standard_error_bps
@@ -159,9 +202,10 @@ class KellyEdgeScaler:
 
         try:
             raw = (capture.mean_captured_bps / BASIS_POINTS_IN_ONE) / (dispersion * dispersion)
-        except (DivisionByZero, InvalidOperation) as failure:  # pragma: no cover — guarded above
+        except (DivisionByZero, InvalidOperation, Overflow) as failure:
             raise KellyScalingError(
-                f"the Kelly fraction could not be formed: {failure}"
+                f"the Kelly fraction could not be formed from an edge of "
+                f"{capture.mean_captured_bps} bps over a dispersion of {dispersion}: {failure}"
             ) from failure
 
         scaled = raw * weight

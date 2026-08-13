@@ -24,7 +24,21 @@ Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) ·
   Named consumer: whichever entry point `F04`'s paper loop gets — it must load the file too, or the
   paper book will read an unseeded ceiling on a machine where the operator has set one.
 
-## `F03` sizer + risk gate, first slice (2026-08-13, `A.104`) — 🟡 open
+## `F03` sizer + risk gate, first slice (2026-08-13, `A.104`, `A.105`) — 🟡 open
+
+- ⛔ **THE HEADLINE, and it is not a bug: with the `A.105` fix in, the sizer routinely wants 100% of
+  the book in ONE position.** Measured on the live surface after the fix — RELIANCE-shaped inputs,
+  realised volatility 14.9 bps over five bars, calibrated edge 128.8 bps: raw Kelly is ~5,760x
+  capital, capped to 1.0, and the volatility budget independently asks for Rs 11.2 crore against a
+  Rs 10,00,000 book. **Both bounds saturate.** That is what full Kelly on a high-Sharpe intraday
+  edge actually says, and it is arithmetically correct and operationally unusable. The sizer is now
+  RIGHT and INCOMPLETE: the missing constraint is concentration, and it is `L7.05`'s (per-symbol and
+  aggregate exposure, correlation-aware) plus a real `MAX_NOTIONAL` from a traded-value percentile.
+  **Nothing may consume this sizer until one of those exists** — `F04`'s loop must not be wired to
+  it first. Predicted by `O.87` before the fix; confirmed by it.
+- 🔴 **`R.05` must be re-run once concentration lands**, because today's PASS verifies the invariants
+  (no unfundable position, whole lots, zero-and-refused agree) against a sizer whose answer is
+  almost always "the whole book". The invariants hold; the ANSWER is not yet usable.
 
 Five modules built and gated (91 tests, ruff + mypy-strict green): `kelly_edge_scaler`,
 `realised_volatility_estimator`, `volatility_targeted_position_sizer`, `session_risk_state_store`,

@@ -86,8 +86,16 @@ An edge measured badly therefore sizes small **by construction**, not by anybody
 this makes the `M10` open caveat (optimistic standard errors in the calibration) a direct input to
 position size and raises its priority — recorded in `BACKLOG.md`.
 
-`variance_fraction` is taken from the same calibration's `mean_captured_sigma` and the instrument's
-realised volatility, not assumed.
+`variance_fraction` is the square of the **instrument's own realised volatility over the same
+horizon**, passed in by the caller.
+
+> **Corrected 2026-08-13 (`A.105`).** This paragraph originally read "taken from the same
+> calibration's `mean_captured_sigma` and the instrument's realised volatility", and the
+> implementation took the first. `mean_captured_sigma` is **not a dispersion** — the calibrator
+> defines it as the mean captured move expressed in sigma units, which is the numerator rescaled and
+> is negative on nine of the forty real calibrations. Using it made the Kelly cap fall as the edge
+> rose. The denominator is the variance of the RETURN this position is exposed to, and nothing else
+> is admissible.
 
 ### 3.3 · The two are combined by minimum, then discretised
 

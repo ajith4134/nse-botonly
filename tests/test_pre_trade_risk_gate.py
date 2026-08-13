@@ -385,6 +385,89 @@ def test_the_drawdown_latch_is_earned_by_state_and_tripped_by_the_caller() -> No
 
 
 @pytest.mark.adversarial
+def test_the_leverage_check_counts_the_new_position_and_not_only_the_open_one() -> None:
+    """`A.105` proved by mutation that dropping the new position from the leverage sum passed.
+
+    Existing exposure alone sits inside the limit; adding this order crosses it. A leverage check
+    that ignores the order it is checking is not a leverage check.
+    """
+    sized = _sized(price="1000")
+    limits = _limits(maximum_leverage=Decimal("0.5"))
+    just_inside = PreTradeRiskGate().evaluate(
+        sized=sized,
+        state=_state(exposure=Decimal("400000")),
+        facts=_CLEAR,
+        limits=limits,
+        daily_loss_limit=_INACTIVE_LIMIT,
+    )
+    assert Decimal("400000") / sized.deployable_rupees <= limits.maximum_leverage
+    assert (Decimal("400000") + sized.notional_rupees) / sized.deployable_rupees > (
+        limits.maximum_leverage
+    )
+    assert any(refusal.rule == "MAX_LEVERAGE" for refusal in just_inside.refusals)
+
+
+@pytest.mark.adversarial
+def test_an_operator_override_of_zero_is_the_tightest_key_and_is_honoured() -> None:
+    """`Decimal(0)` is FALSY, and an `or` silently discarded it (`A.105` finding 4).
+
+    An operator turning the key all the way to "stop" received the full derived permission and no
+    error at all.
+    """
+    with pytest.raises(RiskGateError):
+        DerivedLimits(
+            maximum_notional_rupees=Decimal(0),
+            maximum_leverage=Decimal(5),
+            price_collar_fraction=Decimal("0.05"),
+            maximum_orders_per_rate_window=5,
+        )
+    tightened = OperatorLimitOverrides(maximum_orders_per_rate_window=0).tighten(_limits())
+    assert tightened.maximum_orders_per_rate_window == 0
+
+
+@pytest.mark.adversarial
+def test_the_collar_measures_from_the_price_the_size_was_computed_at() -> None:
+    """`A.105` critical 2: the reference price was recovered as `notional / quantity`.
+
+    Because the notional was the BUDGET, that quotient was the true price inflated by the part lot
+    that had been rounded away — Rs 1,942.50 recovered for a Rs 1,000 instrument on a lot of 22. It
+    refused a limit price AT the market and allowed one at double it.
+    """
+    sized = _sized(price="1000", lot_size=22)
+    assert sized.reference_price_rupees == Decimal("1000")
+    at_market = PreTradeRiskGate().evaluate(
+        sized=sized,
+        state=_state(),
+        facts=_CLEAR,
+        limits=_limits(),
+        daily_loss_limit=_INACTIVE_LIMIT,
+        limit_price_rupees=Decimal("1000"),
+    )
+    far_out = PreTradeRiskGate().evaluate(
+        sized=sized,
+        state=_state(),
+        facts=_CLEAR,
+        limits=_limits(),
+        daily_loss_limit=_INACTIVE_LIMIT,
+        limit_price_rupees=Decimal("1900"),
+    )
+    assert not any(refusal.rule == "PRICE_COLLAR" for refusal in at_market.refusals)
+    assert any(refusal.rule == "PRICE_COLLAR" for refusal in far_out.refusals)
+
+
+@pytest.mark.adversarial
+def test_a_float_limit_is_refused_at_construction() -> None:
+    """The sizer and the store refuse floats; the gate was the hole (`A.105` finding 7)."""
+    with pytest.raises(RiskGateError):
+        DerivedLimits(
+            maximum_notional_rupees=1000000.0,  # type: ignore[arg-type]
+            maximum_leverage=Decimal(5),
+            price_collar_fraction=Decimal("0.05"),
+            maximum_orders_per_rate_window=5,
+        )
+
+
+@pytest.mark.adversarial
 def test_an_impossible_margin_fraction_is_refused_rather_than_inverted() -> None:
     for fraction in (Decimal(0), Decimal("-0.2"), Decimal("1.5")):
         with pytest.raises(RiskGateError):

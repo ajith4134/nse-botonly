@@ -4129,6 +4129,49 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
 
+**A.105 · 2026-08-13 · `F03`'s review found that the Kelly cap was sizing BACKWARDS, and the
+suite could not have known.**
+
+Fifth consecutive `R.23(c)` review to find criticals behind a green suite. Two criticals, four
+majors, six minors, all reproduced end to end against the operator's own data.
+
+*Critical 1 — the Kelly cap fell as the edge rose.* `kelly_edge_scaler` read its denominator from
+`ReversionCapture.mean_captured_sigma`, which **is not a dispersion**: the calibrator defines it as
+the mean captured move EXPRESSED IN sigma units — the numerator rescaled, signed, and negative on
+nine of the forty real calibrations. Substituting it made `raw_kelly = sigma_price² / (1e4 · edge)`.
+Measured on all forty real rows at a ₹10,00,000 book: the best-measured edge in the database
+(203.5 bps, t=2.88) sized **6.5 times smaller** than a 22.7 bps one, and **seventeen of forty hit the
+whole-book cap** — all of them the small-edge rows. Nine more could not be sized at all, because a
+negative "dispersion" read as zero. Fixed: the dispersion is now passed IN, keyword-only with no
+default, from the instrument's own realised volatility over the same horizon. The scaler refuses to
+invent one.
+
+*Critical 2 — the price collar measured from a fabricated price.* The gate recovered the reference
+price as `notional / quantity`, but `notional` was the risk BUDGET, which includes the part lot that
+was rounded away. On a lot of 22 it recovered ₹1,942.50 for a ₹1,000 instrument: a limit price **at
+the market was refused** and one at **double the market was allowed**. Fixed: `SizedPosition` now
+carries `reference_price_rupees`, and `notional_rupees` is the order's actual value with the budget
+kept separately as `risk_justified_notional_rupees`.
+
+*Majors.* Rounding-down was never tested — a sizer that rounds UP whenever a whole lot already fits
+passed all 91 tests, because the fixture bought 0.43 lots and the assertion recomputed its own
+division. An operator override of **zero** — the tightest key there is — was silently discarded,
+because `Decimal(0)` is falsy and the code used `or`; turning the key to "stop trading" returned the
+full derived permission and raised nothing. The order-rate window compared ISO strings across
+timezones: from Asia/Tokyo it reported **zero orders in the window**, so the rate limit never fired
+and the 10/sec registration threshold was unguarded. And twenty closed sessions that all returned
+the same figure — the ordinary state of a paper book's first month — produced a daily-loss limit of
+**₹0 that was ACTIVE**, tripping a `R.22` operator-only latch on the first paisa.
+
+*Minors, all fixed:* floats entered the gate's money path and turned a refusal into an
+`AttributeError` that recorded nothing; a `deployable_capital` branch was unreachable dead code whose
+comment asserted a falsehood; `int(a / b)` rounded UP at the 28-digit context boundary and put an
+order over its capital; `decimal.Overflow` escaped `size()` uncaught.
+
+*Six mutants survived the suite*, each proven: the Kelly numerator ignoring the edge entirely; the
+reference price returning a constant; leverage dropping the new position; the sizer rounding up; the
+variance using `n` instead of `n−1`; the dead branch deleted. Every one now has a test that kills it.
+
 **A.104 · 2026-08-13 · `F03` opens: three operator decisions on how this system decides how much,
 and when to decide nothing.**
 

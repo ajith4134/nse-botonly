@@ -28,6 +28,11 @@ from nse_algo_trader.sizing.kelly_edge_scaler import (
 )
 
 BASIS_POINTS_IN_ONE = Decimal(10_000)
+DISPERSION = Decimal("0.30")
+"""The instrument's own return dispersion, passed in explicitly.
+
+It used to be smuggled in as the calibration's `mean_captured_sigma`, which is not a dispersion at
+all — see `A.105`. Naming it here keeps the tests honest about which number the denominator is."""
 
 
 def _capture(
@@ -84,12 +89,12 @@ def test_a_well_measured_edge_is_barely_shrunk_and_a_noisy_one_is_nearly_erased(
 @pytest.mark.unit
 def test_the_kelly_fraction_is_edge_over_variance_shrunk_by_reliability() -> None:
     """The whole scaler in one assertion, against arithmetic done by hand."""
-    capture = _capture(mean_bps="40", standard_error_bps="10", sigma="0.25")
+    capture = _capture(mean_bps="40", standard_error_bps="10")
     scaler = KellyEdgeScaler()
-    scaled = scaler.scale(capture)
+    scaled = scaler.scale(capture, return_dispersion=DISPERSION)
 
     edge_fraction = Decimal(40) / BASIS_POINTS_IN_ONE
-    variance = Decimal("0.25") ** 2
+    variance = DISPERSION**2  # the RETURN's variance, not anything read off the calibration
     raw = edge_fraction / variance
     weight = Decimal(40) ** 2 / (Decimal(40) ** 2 + Decimal(10) ** 2)
 
@@ -103,14 +108,20 @@ def test_the_scaled_fraction_is_always_smaller_than_the_raw_one() -> None:
     """Shrinkage is a cap, never an amplifier — there is no input that makes it size UP."""
     scaler = KellyEdgeScaler()
     for mean, error in (("40", "1"), ("40", "20"), ("5", "5"), ("300", "0.5")):
-        scaled = scaler.scale(_capture(mean_bps=mean, standard_error_bps=error))
+        scaled = scaler.scale(
+            _capture(mean_bps=mean, standard_error_bps=error),
+            return_dispersion=DISPERSION,
+        )
         assert scaled.kelly_fraction <= scaled.raw_kelly_fraction
         assert Decimal(0) < scaled.shrinkage <= Decimal(1)
 
 
 @pytest.mark.unit
 def test_the_scaler_reports_what_an_operator_needs_to_argue_with_it() -> None:
-    scaled = KellyEdgeScaler().scale(_capture(mean_bps="40", standard_error_bps="10"))
+    scaled = KellyEdgeScaler().scale(
+        _capture(mean_bps="40", standard_error_bps="10"),
+        return_dispersion=DISPERSION,
+    )
     described = scaled.describe()
     assert "40" in described
     assert "shrunk" in described
@@ -123,7 +134,10 @@ def test_the_scaler_reports_what_an_operator_needs_to_argue_with_it() -> None:
 @pytest.mark.adversarial
 def test_an_edge_that_cannot_be_distinguished_from_zero_is_halved_or_worse() -> None:
     """`t <= 1` is the regime where Kelly is most dangerous and most confident."""
-    scaled = KellyEdgeScaler().scale(_capture(mean_bps="10", standard_error_bps="10"))
+    scaled = KellyEdgeScaler().scale(
+        _capture(mean_bps="10", standard_error_bps="10"),
+        return_dispersion=DISPERSION,
+    )
     assert scaled.shrinkage == Decimal("0.5")
     assert scaled.is_distinguishable_from_zero is False
 
@@ -136,17 +150,64 @@ def test_a_negative_edge_yields_no_position_rather_than_a_short_one() -> None:
     the edge is absent, not that its mirror image works. Sizing a short off it would be inventing a
     strategy nobody fitted.
     """
-    scaled = KellyEdgeScaler().scale(_capture(mean_bps="-15", standard_error_bps="10"))
+    scaled = KellyEdgeScaler().scale(
+        _capture(mean_bps="-15", standard_error_bps="10"),
+        return_dispersion=DISPERSION,
+    )
     assert scaled.kelly_fraction == Decimal(0)
     assert scaled.refusal_reason is not None
     assert "negative" in scaled.refusal_reason
 
 
 @pytest.mark.adversarial
-def test_a_zero_variance_calibration_is_refused_rather_than_dividing_by_it() -> None:
-    """Zero dispersion means infinite Kelly, which is the single worst answer available."""
+@pytest.mark.parametrize("dispersion", [Decimal(0), Decimal("-0.2")])
+def test_a_non_positive_dispersion_is_refused_rather_than_divided_by(dispersion: Decimal) -> None:
+    """Zero dispersion means infinite Kelly, which is the single worst answer available.
+
+    Negative is included because the field this used to read — `mean_captured_sigma` — is SIGNED
+    and is negative on nine of the operator's forty real calibrations (`A.105`).
+    """
     with pytest.raises(KellyScalingError):
-        KellyEdgeScaler().scale(_capture(mean_bps="40", standard_error_bps="10", sigma="0"))
+        KellyEdgeScaler().scale(
+            _capture(mean_bps="40", standard_error_bps="10"), return_dispersion=dispersion
+        )
+
+
+@pytest.mark.adversarial
+def test_the_dispersion_is_the_callers_and_never_read_off_the_calibration() -> None:
+    """The critical `A.105` found: `mean_captured_sigma` is the edge rescaled, not a dispersion.
+
+    Reading it made the Kelly cap fall as the edge ROSE. Here the calibration's own field is set to
+    something absurd and the answer must not move, because nothing reads it.
+    """
+    scaler = KellyEdgeScaler()
+    honest = scaler.scale(
+        _capture(mean_bps="40", standard_error_bps="8", sigma="0.30"),
+        return_dispersion=DISPERSION,
+    )
+    poisoned = scaler.scale(
+        _capture(mean_bps="40", standard_error_bps="8", sigma="-99"),
+        return_dispersion=DISPERSION,
+    )
+    assert honest.kelly_fraction == poisoned.kelly_fraction
+
+
+@pytest.mark.adversarial
+def test_a_larger_edge_never_produces_a_smaller_position() -> None:
+    """The inversion itself, asserted directly. This is the test that would have caught `A.105`.
+
+    With the dispersion and the t-statistic held fixed, doubling the edge must not shrink the size.
+    Before the fix it halved it, because the edge sat in the denominator twice over.
+    """
+    scaler = KellyEdgeScaler()
+    previous = Decimal(-1)
+    for edge in ("5", "10", "20", "40", "80", "160"):
+        scaled = scaler.scale(
+            _capture(mean_bps=edge, standard_error_bps=str(Decimal(edge) / 4)),
+            return_dispersion=DISPERSION,
+        )
+        assert scaled.kelly_fraction >= previous, f"edge {edge} sized smaller than the one below it"
+        previous = scaled.kelly_fraction
 
 
 @pytest.mark.adversarial
@@ -158,7 +219,10 @@ def test_a_zero_standard_error_does_not_claim_perfect_knowledge() -> None:
     degenerate sample becomes maximum leverage.
     """
     with pytest.raises(KellyScalingError):
-        KellyEdgeScaler().scale(_capture(mean_bps="40", standard_error_bps="0"))
+        KellyEdgeScaler().scale(
+            _capture(mean_bps="40", standard_error_bps="0"),
+            return_dispersion=DISPERSION,
+        )
 
 
 @pytest.mark.adversarial
@@ -170,7 +234,9 @@ def test_the_kelly_fraction_is_capped_at_the_whole_book() -> None:
     cash-intraday book; leverage is the risk gate's decision (`L7.02`), never a side effect of the
     sizer's arithmetic overflowing past one.
     """
-    scaled = KellyEdgeScaler().scale(_capture(mean_bps="300", standard_error_bps="5", sigma="0.02"))
+    scaled = KellyEdgeScaler().scale(
+        _capture(mean_bps="300", standard_error_bps="5"), return_dispersion=Decimal("0.02")
+    )
     assert scaled.raw_kelly_fraction > Decimal(1)
     assert scaled.kelly_fraction == Decimal(1)
     assert scaled.was_capped_at_full_capital is True
@@ -203,10 +269,11 @@ def test_shrinkage_is_monotone_in_measurement_quality(
 ) -> None:
     """More standard error must never produce MORE size. This is the property Kelly gets wrong."""
     scaler = KellyEdgeScaler()
-    tighter = scaler.scale(_capture(mean_bps=str(mean), standard_error_bps=str(error),
-    sigma=str(sigma)))
+    tighter = scaler.scale(
+        _capture(mean_bps=str(mean), standard_error_bps=str(error)), return_dispersion=sigma
+    )
     looser = scaler.scale(
-        _capture(mean_bps=str(mean), standard_error_bps=str(error * 2), sigma=str(sigma))
+        _capture(mean_bps=str(mean), standard_error_bps=str(error * 2)), return_dispersion=sigma
     )
     assert looser.shrinkage <= tighter.shrinkage
     assert looser.kelly_fraction <= tighter.kelly_fraction
@@ -229,7 +296,7 @@ def test_the_result_is_always_a_usable_fraction_of_capital(
     mean: Decimal, error: Decimal, sigma: Decimal
 ) -> None:
     scaled = KellyEdgeScaler().scale(
-        _capture(mean_bps=str(mean), standard_error_bps=str(error), sigma=str(sigma))
+        _capture(mean_bps=str(mean), standard_error_bps=str(error)), return_dispersion=sigma
     )
     assert Decimal(0) <= scaled.kelly_fraction <= Decimal(1)
     assert Decimal(0) < scaled.shrinkage <= Decimal(1)

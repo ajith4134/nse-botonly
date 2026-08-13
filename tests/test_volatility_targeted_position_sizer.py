@@ -118,9 +118,13 @@ def test_a_more_volatile_instrument_is_sized_smaller() -> None:
 
 @pytest.mark.unit
 def test_a_worse_measured_edge_is_sized_smaller_through_the_kelly_cap() -> None:
+    """A violent series on purpose: at a calm intraday sigma the Kelly fraction caps at the whole
+    book for both, and a test where both sides saturate proves nothing (`A.105`)."""
+    violent = _closes(step="80")
     sizer = VolatilityTargetedPositionSizer()
-    sharp = sizer.size(_inputs(capture=_capture(mean_bps="40", se_bps="4")))
-    fuzzy = sizer.size(_inputs(capture=_capture(mean_bps="40", se_bps="40")))
+    sharp = sizer.size(_inputs(capture=_capture(mean_bps="40", se_bps="4"), closes=violent))
+    fuzzy = sizer.size(_inputs(capture=_capture(mean_bps="40", se_bps="40"), closes=violent))
+    assert sharp.kelly.was_capped_at_full_capital is False
     assert fuzzy.kelly_notional_rupees < sharp.kelly_notional_rupees
 
 
@@ -146,13 +150,24 @@ def test_the_sizer_explains_itself_in_the_terms_that_produced_the_number() -> No
 def test_rounding_is_always_down_at_the_lot_boundary() -> None:
     """One more lot is a leverage decision wearing the costume of a rounding convention.
 
-    Constructed so the budget buys 2.9 lots: the answer is 2, never 3.
+    The previous version of this test was a TAUTOLOGY: its fixture bought 0.43 lots, so `lots == 0`
+    and the assertion recomputed the same division it was checking. `A.105` proved it by mutation —
+    a sizer that rounds UP whenever a whole lot already fits passed all 91 tests. This fixture is
+    chosen so a whole lot fits and a second one does NOT, which is the only arrangement where the
+    two roundings differ.
     """
     sizer = VolatilityTargetedPositionSizer()
-    sized = sizer.size(_inputs(lot_size=100, price="1000"))
-    affordable_lots = sized.notional_rupees / (Decimal(100) * Decimal(1000))
-    assert sized.lots == int(affordable_lots)
-    assert sized.quantity * Decimal(1000) <= sized.notional_rupees
+    sized = sizer.size(_inputs(lot_size=65, price="200", closes=_closes(step="80")))
+    lot_notional = Decimal(65) * Decimal(200)
+    exact_lots = sized.risk_justified_notional_rupees / lot_notional
+    assert exact_lots > 1, "fixture must afford at least one whole lot for this to test anything"
+    assert exact_lots % 1 != 0, "fixture must leave a part lot, or rounding cannot be observed"
+    assert sized.lots == int(exact_lots)
+    assert Decimal(sized.lots) * lot_notional <= sized.risk_justified_notional_rupees
+    assert (Decimal(sized.lots) + 1) * lot_notional > sized.risk_justified_notional_rupees
+    # And the reported notional is the ORDER's value, not the budget it was carved from.
+    assert sized.notional_rupees == Decimal(sized.quantity) * Decimal(200)
+    assert sized.notional_rupees <= sized.risk_justified_notional_rupees
 
 
 @pytest.mark.adversarial
