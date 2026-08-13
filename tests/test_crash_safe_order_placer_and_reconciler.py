@@ -160,6 +160,13 @@ def journal(tmp_path: Path) -> Iterator[OrderIntentJournal]:
         yield opened
 
 
+def _reconciler(journal: OrderIntentJournal, venue: FakeVenue) -> BrokerTruthReconciler:
+    """Reconciling the SIMULATED namespace, because that is the namespace these orders carry."""
+    return BrokerTruthReconciler(
+        journal=journal, venue=venue, namespace=OrderNamespace.SIMULATED
+    )
+
+
 def _placer(journal: OrderIntentJournal, venue: FakeVenue) -> CrashSafeOrderPlacer:
     return CrashSafeOrderPlacer(
         journal=journal, venue=venue, namespace=OrderNamespace.SIMULATED
@@ -205,6 +212,15 @@ class TestOneIntentBecomesOneOrder:
     def test_an_outage_before_dispatch_is_retried_because_it_cannot_have_landed(
         self, journal: OrderIntentJournal
     ) -> None:
+        """Three broker calls for one intent is correct ONLY for a failure that provably preceded
+        transmission — a refused TCP handshake, an unresolved name, a TLS failure.
+
+        The `R.23(c)` review was right that this test blesses the number without exercising the
+        classification that earns it. The classification is now tested where it belongs, on real
+        exception types, in `test_kite_order_execution_venue.py` and in
+        `test_order_path_review_regressions.py::TestC2...` — which asserts the opposite outcome
+        for a dropped connection, the case that used to land here and duplicate the order.
+        """
         venue = FakeVenue(unavailable_before_success=2)
         outcome = _placer(journal, venue).place(_intent(), _expression(), now=_NOW)
         assert outcome.verdict is PlacementVerdict.PLACED
@@ -275,7 +291,7 @@ class TestTheBrokerIsBelieved:
         abandoned. Refusing to conclude is the honest answer."""
         venue = FakeVenue(behaviour="timeout")
         outcome = _placer(journal, venue).place(_intent(), _expression(), now=_NOW)
-        report = BrokerTruthReconciler(journal=journal, venue=venue).reconcile(
+        report = _reconciler(journal, venue).reconcile(
             session_date=_SESSION, now=_NOW + timedelta(minutes=30)
         )
         assert report.has_unresolved
@@ -293,7 +309,7 @@ class TestTheBrokerIsBelieved:
             )
         venue = FakeVenue(behaviour="timeout")
         _placer(journal, venue).place(_intent(), _expression(), now=_NOW)
-        report = BrokerTruthReconciler(journal=journal, venue=venue).reconcile(
+        report = _reconciler(journal, venue).reconcile(
             session_date=_SESSION, now=_NOW + timedelta(minutes=30)
         )
         assert report.horizon.is_established
@@ -311,7 +327,7 @@ class TestTheBrokerIsBelieved:
         order = journal.load_order(outcome.intent_id)
         assert order is not None
         venue.orders = [_report(order.broker_tag, status="OPEN")]
-        report = BrokerTruthReconciler(journal=journal, venue=venue).reconcile(
+        report = _reconciler(journal, venue).reconcile(
             session_date=_SESSION, now=_NOW + timedelta(seconds=30)
         )
         assert report.reconciliations[0].verdict is ReconciliationVerdict.AGREED
@@ -333,7 +349,7 @@ class TestTheBrokerIsBelieved:
                 order_id=outcome.broker_order_id or "",
             )
         ]
-        report = BrokerTruthReconciler(journal=journal, venue=venue).reconcile(
+        report = _reconciler(journal, venue).reconcile(
             session_date=_SESSION, now=_NOW + timedelta(seconds=30)
         )
         assert report.reconciliations[0].verdict is ReconciliationVerdict.QUANTITY_GAP_PATCHED
@@ -342,9 +358,16 @@ class TestTheBrokerIsBelieved:
         assert patched.filled_quantity == 100
         assert patched.has_inferred_events, "an invented fill must stay marked as invented"
 
-    def test_a_real_trade_is_preferred_to_an_inference(
+    def test_a_real_trade_arriving_in_the_same_pass_is_used_directly(
         self, journal: OrderIntentJournal
     ) -> None:
+        """RENAMED after the `R.23(c)` review. The old name promised more than the body tested.
+
+        This is the EASY ordering — the report and the trade arrive together, so `_apply_trades`
+        runs before the gap check and no inference is made. The hard ordering, where an inference
+        is already committed and the real trade arrives on a later pass, is the defect the review
+        reproduced and now lives in `test_order_path_review_regressions.py::TestC3...`.
+        """
         venue = FakeVenue()
         outcome = _placer(journal, venue).place(_intent(), _expression(), now=_NOW)
         order = journal.load_order(outcome.intent_id)
@@ -363,7 +386,7 @@ class TestTheBrokerIsBelieved:
                 filled_at=_NOW + timedelta(seconds=2),
             )
         ]
-        BrokerTruthReconciler(journal=journal, venue=venue).reconcile(
+        _reconciler(journal, venue).reconcile(
             session_date=_SESSION, now=_NOW + timedelta(seconds=30)
         )
         filled = journal.load_order(outcome.intent_id)
@@ -376,7 +399,7 @@ class TestTheBrokerIsBelieved:
         self, journal: OrderIntentJournal
     ) -> None:
         venue = FakeVenue(orders=[_report("manualtag", status="COMPLETE", filled=50)])
-        report = BrokerTruthReconciler(journal=journal, venue=venue).reconcile(
+        report = _reconciler(journal, venue).reconcile(
             session_date=_SESSION, now=_NOW
         )
         assert report.reconciliations[0].verdict is ReconciliationVerdict.BROKER_ONLY
@@ -390,7 +413,7 @@ class TestTheBrokerIsBelieved:
         order = journal.load_order(outcome.intent_id)
         assert order is not None
         venue.orders = [_report(order.broker_tag, status="SUPER PENDING")]
-        report = BrokerTruthReconciler(journal=journal, venue=venue).reconcile(
+        report = _reconciler(journal, venue).reconcile(
             session_date=_SESSION, now=_NOW
         )
         assert report.reconciliations[0].verdict is ReconciliationVerdict.UNMAPPABLE
@@ -402,14 +425,21 @@ class TestTheBrokerIsBelieved:
         that doubles positions."""
         venue = FakeVenue(fetch_fails=True)
         with pytest.raises(ReconciliationRefusedError, match="could not be read"):
-            BrokerTruthReconciler(journal=journal, venue=venue).reconcile(
+            _reconciler(journal, venue).reconcile(
                 session_date=_SESSION, now=_NOW
             )
 
     def test_reconciling_twice_does_not_apply_the_same_inference_twice(
         self, journal: OrderIntentJournal
     ) -> None:
-        """The inferred trade id is deterministic, so a replay is idempotent."""
+        """The inferred trade id is deterministic, so a replay of the SAME report is idempotent.
+
+        Narrowed after the `R.23(c)` review pointed out what this does not establish: the inferred
+        id embeds the broker's filled quantity, so this holds only while that quantity is unchanged
+        between passes — which in a live session is the one thing it never is. The moving case is
+        `TestC3...` in `test_order_path_review_regressions.py`, where the real trades supersede the
+        inference instead of adding to it.
+        """
         venue = FakeVenue()
         outcome = _placer(journal, venue).place(_intent(), _expression(), now=_NOW)
         order = journal.load_order(outcome.intent_id)
@@ -423,7 +453,7 @@ class TestTheBrokerIsBelieved:
                 order_id=outcome.broker_order_id or "",
             )
         ]
-        reconciler = BrokerTruthReconciler(journal=journal, venue=venue)
+        reconciler = _reconciler(journal, venue)
         reconciler.reconcile(session_date=_SESSION, now=_NOW + timedelta(seconds=30))
         reconciler.reconcile(session_date=_SESSION, now=_NOW + timedelta(seconds=60))
         patched = journal.load_order(outcome.intent_id)

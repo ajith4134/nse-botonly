@@ -45,6 +45,8 @@ from enum import StrEnum
 from nse_algo_trader.order_path.order_execution_venue import (
     OrderExecutionVenue,
     VenueOrderReport,
+    VenueOutcomeUnknownError,
+    VenueRejectedError,
     VenueTradeReport,
     VenueUnavailableError,
 )
@@ -59,7 +61,7 @@ from nse_algo_trader.order_path.order_lifecycle_state_machine import (
     lifecycle_event_for_broker_status,
 )
 from nse_algo_trader.order_path.order_record import FillRecord, OrderRecord
-from nse_algo_trader.order_path.trading_intent import OrderPathError
+from nse_algo_trader.order_path.trading_intent import OrderNamespace, OrderPathError
 
 # The horizon is a high quantile of observed appearance delays, widened by the spread of those
 # observations. Both numbers below are properties of the ESTIMATOR, not of the market: the quantile
@@ -186,7 +188,9 @@ class BrokerTruthReconciler:
 
     journal: OrderIntentJournal
     venue: OrderExecutionVenue
+    namespace: OrderNamespace = OrderNamespace.LIVE
     _horizon_cache: VisibilityHorizon | None = field(default=None, repr=False)
+    _over_fills: list[str] = field(default_factory=list, repr=False)
 
     def visibility_horizon(self) -> VisibilityHorizon:
         """Derive the horizon from this system's own observed appearance delays (`R.03`)."""
@@ -197,7 +201,7 @@ class BrokerTruthReconciler:
         try:
             broker_orders = self.venue.fetch_orders(session_date=session_date)
             broker_trades = self.venue.fetch_trades(session_date=session_date)
-        except VenueUnavailableError as unavailable:
+        except (VenueUnavailableError, VenueOutcomeUnknownError, VenueRejectedError) as unavailable:
             raise ReconciliationRefusedError(
                 f"broker state could not be read ({unavailable}); this system will not act on its "
                 f"own view of a session it has not been able to check, because 'I could not ask' "
@@ -210,8 +214,14 @@ class BrokerTruthReconciler:
         for trade in broker_trades:
             trades_by_order[trade.broker_order_id].append(trade)
 
+        # Only this reconciler's OWN namespace. The journal holds paper and live orders side by
+        # side, and the R.23(c) review reproduced the live reconciler writing a terminal inferred
+        # event onto a SIMULATED order. The namespace is the first character of the wire tag, so
+        # the filter needs no extra state.
         local_orders = {
-            order.intent_id: order for order in self.journal.orders_for_session(session_date)
+            order.intent_id: order
+            for order in self.journal.orders_for_session(session_date)
+            if order.namespace is self.namespace
         }
         seen_intents: set[str] = set()
         reconciliations: list[OrderReconciliation] = []
@@ -253,9 +263,8 @@ class BrokerTruthReconciler:
         *,
         now: datetime,
     ) -> OrderReconciliation:
-        self._record_first_sighting(order, report, now=now)
-        for trade in sorted(trades, key=lambda candidate: candidate.filled_at):
-            self._apply_trade(order, trade)
+        self._record_first_sighting(order, report)
+        order = self._apply_trades(order, report, trades)
 
         if report.filled_quantity > order.filled_quantity:
             return self._patch_quantity_gap(order, report, now=now)
@@ -294,7 +303,7 @@ class BrokerTruthReconciler:
         )
 
     def _record_first_sighting(
-        self, order: OrderRecord, report: VenueOrderReport, *, now: datetime
+        self, order: OrderRecord, report: VenueOrderReport
     ) -> None:
         """Feed the horizon estimator with how long this order took to become visible."""
         if order.broker_order_id is not None:
@@ -307,31 +316,79 @@ class BrokerTruthReconciler:
             ),
             None,
         )
-        if submitted is not None:
-            first_seen = report.exchange_timestamp or now
+        if submitted is not None and report.exchange_timestamp is not None:
+            # Only the EXCHANGE's own timestamp measures an appearance delay. Substituting `now`
+            # measured the order's age instead, and on any path that returns before the broker id
+            # is journalled it did so on every pass — 25 passes over one order inflated the horizon
+            # to 11.4 hours (R.23(c) review). The schema now also permits one observation per
+            # intent, so this is belt and braces on purpose.
+            first_seen = report.exchange_timestamp
             if first_seen >= submitted:
                 self.journal.record_visibility_delay(
                     order.intent_id, submitted_at=submitted, first_seen_at=first_seen
                 )
 
-    def _apply_trade(self, order: OrderRecord, trade: VenueTradeReport) -> None:
-        fill = FillRecord(
-            broker_trade_id=trade.broker_trade_id,
-            quantity=trade.quantity,
-            price_paise=trade.price_paise,
-            occurred_at=trade.filled_at,
-            source=EventSource.BROKER_REPORTED,
-        )
-        if not self.journal.record_fill(order.intent_id, fill):
-            return
-        order.apply_fill(fill)
+    def _apply_trades(
+        self, order: OrderRecord, report: VenueOrderReport, trades: list[VenueTradeReport]
+    ) -> OrderRecord:
+        """Apply the broker's real executions, retiring any inference they now account for.
+
+        **The order of these two things is the whole fix.** `orders().filled_quantity` moves before
+        `trades()` lists the executions, so a first pass legitimately infers a fill for the gap.
+        When the real trades appear on a later pass they carry different ids, so nothing
+        de-duplicates them against the inference — the `R.23(c)` review reproduced the position
+        running 30 units past the ordered quantity, and the resulting over-fill exception poisoned
+        every later read. So the inference is SUPERSEDED first, the order is re-folded without it,
+        and only then do the real trades apply.
+        """
+        unseen = [
+            trade
+            for trade in sorted(trades, key=lambda candidate: candidate.filled_at)
+            if trade.broker_trade_id not in {fill.broker_trade_id for fill in order.fills}
+        ]
+        if not unseen:
+            return order
+        if order.has_inferred_events and self.journal.inferred_fill_count(order.intent_id):
+            superseded = self.journal.supersede_inferred_fills(
+                order.intent_id,
+                superseded_by=(
+                    f"the broker reported {len(unseen)} real trade(s) for order "
+                    f"{report.broker_order_id}, which account for the quantity this system had "
+                    f"inferred; the inference is withdrawn rather than added to"
+                ),
+            )
+            if superseded:
+                refolded = self.journal.load_order(order.intent_id)
+                if refolded is not None:
+                    order = refolded
+        for trade in unseen:
+            fill = FillRecord(
+                broker_trade_id=trade.broker_trade_id,
+                quantity=trade.quantity,
+                price_paise=trade.price_paise,
+                occurred_at=trade.filled_at,
+                source=EventSource.BROKER_REPORTED,
+            )
+            if order.filled_quantity + fill.quantity > order.ordered_quantity:
+                # A real over-fill is a disagreement for a human, not an exception that has already
+                # written its own row. Nothing is recorded and the conflict surfaces on `/orders`.
+                self._over_fills.append(
+                    f"{report.broker_order_id}: trade {fill.broker_trade_id} of {fill.quantity} "
+                    f"would take the order past its ordered {order.ordered_quantity} "
+                    f"(already {order.filled_quantity})"
+                )
+                continue
+            if not self.journal.record_fill(order.intent_id, fill):
+                continue
+            order.apply_fill(fill)
+        return order
 
     def _patch_quantity_gap(
         self, order: OrderRecord, report: VenueOrderReport, *, now: datetime
     ) -> OrderReconciliation:
         """Emit an inferred fill for a quantity the broker has and no trade explains."""
         missing = report.filled_quantity - order.filled_quantity
-        price = report.average_price_paise or _average_or_reference(order)
+        price = _residual_price_paise(order, report, missing)
         detail = (
             f"broker reports {report.filled_quantity} filled against {order.filled_quantity} "
             f"locally, and no trade accounts for the difference; {missing} units are INFERRED at "
@@ -509,6 +566,37 @@ def _adopt_external(report: VenueOrderReport) -> OrderReconciliation:
             "position counts, but it is never attributed to a strategy"
         ),
     )
+
+
+def _residual_price_paise(
+    order: OrderRecord, report: VenueOrderReport, missing: int
+) -> Decimal:
+    """Price the units this system is inventing — not the units the broker already averaged.
+
+    `average_price_paise` is the broker's average over ALL filled units. The inferred fill covers
+    only the MISSING ones, so reusing the overall average books a cost basis that provably
+    contradicts the number the reconciler just read. The R.23(c) review measured 2,500 paise per
+    unit of error on a 2,850-rupee stock — about 0.9%. The residual solves out of the two averages:
+
+        residual = (broker_filled x broker_average - local_filled x local_average) / missing
+
+    and if that comes out non-positive the reconciler refuses rather than booking a nonsense price.
+    """
+    broker_average = report.average_price_paise
+    if broker_average is None:
+        return _average_or_reference(order)
+    local_filled = Decimal(order.filled_quantity)
+    local_average = order.average_fill_price_paise or Decimal(0)
+    residual_value = Decimal(report.filled_quantity) * broker_average - local_filled * local_average
+    residual = residual_value / Decimal(missing)
+    if residual <= 0:
+        raise ReconciliationRefusedError(
+            f"order {order.intent_id}: the broker's average of {broker_average} over "
+            f"{report.filled_quantity} units cannot be reconciled with {local_filled} local units "
+            f"at {local_average} — the {missing} missing units solve to {residual} paise, which is "
+            f"not a price. One of the two numbers is wrong and inventing a third would hide which"
+        )
+    return residual
 
 
 def _average_or_reference(order: OrderRecord) -> Decimal:

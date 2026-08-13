@@ -182,6 +182,18 @@ def _build_transitions() -> dict[tuple[OrderLifecycleState, LifecycleEvent], Ord
     # Written as a loop rather than 40 lines of near-identical entries — the table is still data,
     # and a reader can see that the repertoire is uniform instead of having to diff the rows.
     for state in _LIVE_AT_BROKER:
+        # OPENED is in this repertoire because Kite HAS NO partially-filled status: a part-filled
+        # order reads `OPEN` with a non-zero filled quantity, so the reconciler maps it to OPENED on
+        # every pass. Without this line the commonest state in an intraday book was reported as a
+        # disagreement with the broker on every pass forever, burying the real conflicts — found by
+        # the R.23(c) review. A partially-filled order that is still open stays partially filled;
+        # every other live state goes to WORKING.
+        table.setdefault(
+            (state, LifecycleEvent.OPENED),
+            OrderLifecycleState.PARTIALLY_FILLED
+            if state is OrderLifecycleState.PARTIALLY_FILLED
+            else OrderLifecycleState.WORKING,
+        )
         table.setdefault(
             (state, LifecycleEvent.PARTIALLY_FILLED), OrderLifecycleState.PARTIALLY_FILLED
         )

@@ -194,7 +194,6 @@ def exchange_algo_identifier_from_environment(
 _VENUE_UNAVAILABLE_EXCEPTION_NAMES: frozenset[str] = frozenset(
     {
         "NetworkException",  # kite, HTTP 503 — OMS communications failure
-        "ConnectionError",  # requests, and the builtin family beneath it
         "ConnectTimeout",  # requests — the TCP handshake never completed
         "NewConnectionError",  # urllib3
         "NameResolutionError",  # urllib3
@@ -207,6 +206,16 @@ _VENUE_UNAVAILABLE_EXCEPTION_NAMES: frozenset[str] = frozenset(
 _VENUE_OUTCOME_UNKNOWN_EXCEPTION_NAMES: frozenset[str] = frozenset(
     {
         "DataException",  # kite, HTTP 502 — the OMS answered, and the answer was garbled
+        # `requests` raises ConnectionError for BOTH "connection refused" (never sent) and
+        # urllib3's ProtocolError/RemoteDisconnected and ConnectionResetError — the server took the
+        # request and then died or reset before answering, which is the canonical "your order is
+        # already at the OMS" failure. The class name cannot tell the two apart, so it belongs
+        # here: the R.23(c) review reproduced the previous classification sending ONE decision to
+        # the venue THREE times, because unavailable is the only class the placer retries.
+        "ConnectionError",
+        "ConnectionResetError",
+        "ProtocolError",
+        "RemoteDisconnected",
         "ReadTimeout",  # requests — the request WAS sent; the answer never came
         "ReadTimeoutError",  # urllib3
         "Timeout",  # requests' base timeout, when nothing more specific is raised
@@ -694,10 +703,26 @@ class KiteOrderExecutionVenue:
 
 
 def _as_rows(payload: Any) -> tuple[Mapping[str, Any], ...]:
-    """Kite answers with a list of dicts. Anything else is a payload this module will not guess."""
-    if not isinstance(payload, Sequence) or isinstance(payload, str | bytes):
-        return ()
-    return tuple(row for row in payload if isinstance(row, Mapping))
+    """Kite answers with a list of dicts. Anything else is a payload this module will not guess at.
+
+    It RAISES rather than returning an empty tuple. Returning `()` made an unreadable answer
+    indistinguishable from "the broker has no orders", and the reconciler then declared a live,
+    AMBIGUOUS order abandoned — a terminal state it never revisits. The R.23(c) review reproduced
+    exactly that against a client whose `orders()` returned `None`.
+    """
+    if payload is None or not isinstance(payload, Sequence) or isinstance(payload, str | bytes):
+        raise VenueOutcomeUnknownError(
+            f"the broker's answer was not a list of rows but {type(payload).__name__}; this is not "
+            f"evidence that there are no orders, and treating it as such is how a live order gets "
+            f"written off"
+        )
+    rows = tuple(row for row in payload if isinstance(row, Mapping))
+    if len(rows) != len(payload):
+        raise VenueOutcomeUnknownError(
+            f"{len(payload) - len(rows)} of {len(payload)} rows in the broker's answer were not "
+            f"readable as records; a partially readable order book is not an order book"
+        )
+    return rows
 
 
 def session_date_of(order: OrderRecord) -> date:

@@ -184,23 +184,44 @@ class CrashSafeOrderPlacer:
                 reason=rate_reason,
             )
 
-        # Steps 4 to 6.
-        submission_id = self.journal.record_submission_started(intent.intent_id, at=now)
+        # Steps 4 to 6. EVERY attempt gets its own journal row, before its own call.
+        #
+        # An earlier version wrote one row and then made up to three calls under it, so the crash
+        # record could not express "I may have created more than one order" — the exact question a
+        # restart has to answer. The `R.23(c)` review found it alongside the classification defect
+        # that made those extra calls dangerous in the first place.
         self.journal.record_event(
             intent.intent_id, LifecycleEvent.SUBMITTED, EventSource.LOCAL, at=now
         )
         attempts = 0
+        submission_id = 0
 
-        def _count(state: RetryCallState) -> None:
-            nonlocal attempts
+        def _open_an_attempt(state: RetryCallState) -> None:
+            nonlocal attempts, submission_id
             attempts = state.attempt_number
+            submission_id = self.journal.record_submission_started(intent.intent_id, at=now)
+
+        def _close_a_failed_attempt(state: RetryCallState) -> None:
+            outcome = state.outcome
+            if outcome is None or not outcome.failed:
+                return
+            failure = outcome.exception()
+            self.journal.record_submission_outcome(
+                submission_id,
+                SubmissionOutcome.NOT_SENT
+                if isinstance(failure, VenueUnavailableError)
+                else SubmissionOutcome.UNKNOWN,
+                at=now,
+                detail=str(failure),
+            )
 
         try:
             for attempt in Retrying(
                 retry=retry_if_exception_type(VenueUnavailableError),
                 stop=stop_after_attempt(_MAXIMUM_DISPATCH_ATTEMPTS),
                 wait=wait_random_exponential(multiplier=0.2, max=2.0),
-                before=_count,
+                before=_open_an_attempt,
+                after=_close_a_failed_attempt,
                 reraise=True,
             ):
                 with attempt:

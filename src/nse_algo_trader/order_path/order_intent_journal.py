@@ -43,6 +43,7 @@ from nse_algo_trader.order_path.broker_order_facility_facts import (
 )
 from nse_algo_trader.order_path.order_lifecycle_state_machine import (
     EventSource,
+    IllegalOrderTransitionError,
     LifecycleEvent,
     OrderLifecycleState,
 )
@@ -93,6 +94,8 @@ CREATE TABLE IF NOT EXISTS order_submission (
     settled_at TEXT
 );
 CREATE INDEX IF NOT EXISTS order_submission_by_intent ON order_submission (intent_id);
+CREATE UNIQUE INDEX IF NOT EXISTS order_submission_attempt
+    ON order_submission (intent_id, attempt);
 
 CREATE TABLE IF NOT EXISTS order_event (
     event_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,7 +110,7 @@ CREATE INDEX IF NOT EXISTS order_event_by_intent ON order_event (intent_id, even
 
 CREATE TABLE IF NOT EXISTS order_visibility_observation (
     observation_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    intent_id TEXT NOT NULL,
+    intent_id TEXT NOT NULL UNIQUE,
     submitted_at TEXT NOT NULL,
     first_seen_at TEXT NOT NULL,
     delay_seconds REAL NOT NULL
@@ -121,6 +124,7 @@ CREATE TABLE IF NOT EXISTS order_fill (
     occurred_at TEXT NOT NULL,
     source TEXT NOT NULL,
     inferred_from TEXT NOT NULL DEFAULT '',
+    superseded_by TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (intent_id, broker_trade_id)
 );
 """
@@ -169,7 +173,24 @@ class OrderIntentJournal:
         self._connection.execute("PRAGMA synchronous=FULL")
         self._connection.execute("PRAGMA foreign_keys=ON")
         self._connection.executescript(_SCHEMA)
+        self._migrate_in_place()
         self._connection.commit()
+
+    def _migrate_in_place(self) -> None:
+        """Add columns a journal written by an earlier build does not have.
+
+        `CREATE TABLE IF NOT EXISTS` does nothing to a table that already exists, so a column added
+        later would silently be missing on any journal already on disk — and this one is a journal
+        of real orders that must survive a deployment.
+        """
+        columns = {
+            row["name"]
+            for row in self._connection.execute("PRAGMA table_info(order_fill)")
+        }
+        if "superseded_by" not in columns:
+            self._connection.execute(
+                "ALTER TABLE order_fill ADD COLUMN superseded_by TEXT NOT NULL DEFAULT ''"
+            )
 
     def __enter__(self) -> OrderIntentJournal:
         return self
@@ -228,6 +249,12 @@ class OrderIntentJournal:
                 ),
             )
         except sqlite3.IntegrityError:
+            # ROLL BACK, do not just return. Python's sqlite3 has already issued BEGIN before the
+            # failing INSERT, so leaving it open holds the WAL write lock for the life of the
+            # connection — a single duplicate decision then wedges every other writer, including a
+            # concurrent reconciler trying to record a real fill. Found by the R.23(c) review,
+            # reproduced as "database is locked" against a second connection.
+            self._connection.rollback()
             return False
         self._connection.commit()
         return True
@@ -236,16 +263,25 @@ class OrderIntentJournal:
 
     def record_submission_started(self, intent_id: str, *, at: datetime) -> int:
         """Write "I am about to call the broker" and commit it. Returns the submission id."""
-        attempt = (
-            self._connection.execute(
-                "SELECT COUNT(*) FROM order_submission WHERE intent_id = ?", (intent_id,)
-            ).fetchone()[0]
-            + 1
-        )
-        cursor = self._connection.execute(
-            "INSERT INTO order_submission (intent_id, attempt, started_at) VALUES (?,?,?)",
-            (intent_id, attempt, at.isoformat()),
-        )
+        # BEGIN IMMEDIATE takes the write lock before the count is read, so two processes cannot
+        # both read N and both write N+1. The UNIQUE index is the second lock: without it, two
+        # in-flight rows could carry the same attempt number, and the attempt number is exactly
+        # what a restart reads to reconstruct how many orders may exist at the broker.
+        self._connection.execute("BEGIN IMMEDIATE")
+        try:
+            attempt = (
+                self._connection.execute(
+                    "SELECT COUNT(*) FROM order_submission WHERE intent_id = ?", (intent_id,)
+                ).fetchone()[0]
+                + 1
+            )
+            cursor = self._connection.execute(
+                "INSERT INTO order_submission (intent_id, attempt, started_at) VALUES (?,?,?)",
+                (intent_id, attempt, at.isoformat()),
+            )
+        except BaseException:
+            self._connection.rollback()
+            raise
         self._connection.commit()
         submission_id = cursor.lastrowid
         if submission_id is None:  # pragma: no cover — sqlite always assigns one
@@ -306,11 +342,36 @@ class OrderIntentJournal:
                 ),
             )
         except sqlite3.IntegrityError:
+            self._connection.rollback()  # same lock-wedging reason as `record_intent`
             return False
         self._connection.commit()
         return True
 
     # --- reading it back -------------------------------------------------------------------------
+
+    def supersede_inferred_fills(self, intent_id: str, *, superseded_by: str) -> int:
+        """Retire this order's INFERRED fills because the broker's own trades now account for them.
+
+        The row is kept and marked, never deleted: an inference this system made and later withdrew
+        is part of the audit trail, and `R.23(c)` found the alternative — leaving it in place — made
+        the position double-count the moment `trades()` caught up with `orders()`.
+        """
+        cursor = self._connection.execute(
+            "UPDATE order_fill SET superseded_by = ? WHERE intent_id = ? AND source = ?"
+            " AND superseded_by = ''",
+            (superseded_by, intent_id, EventSource.INFERRED.value),
+        )
+        self._connection.commit()
+        return cursor.rowcount
+
+    def inferred_fill_count(self, intent_id: str, *, include_superseded: bool = False) -> int:
+        """How many of this order's fills this system invented, and whether they still stand."""
+        clause = "" if include_superseded else " AND superseded_by = ''"
+        row = self._connection.execute(
+            f"SELECT COUNT(*) FROM order_fill WHERE intent_id = ? AND source = ?{clause}",  # noqa: S608 — clause is a literal chosen here, never input
+            (intent_id, EventSource.INFERRED.value),
+        ).fetchone()
+        return int(row[0])
 
     def has_intent(self, intent_id: str) -> bool:
         return (
@@ -349,14 +410,59 @@ class OrderIntentJournal:
                 inferred_from=row["inferred_from"],
             )
             for row in self._connection.execute(
-                "SELECT * FROM order_fill WHERE intent_id = ? ORDER BY occurred_at,"
-                " broker_trade_id",
+                "SELECT * FROM order_fill WHERE intent_id = ? AND superseded_by = ''"
+                " ORDER BY occurred_at, broker_trade_id",
                 (intent_id,),
             )
         }
-        for row in self._connection.execute(
-            "SELECT * FROM order_event WHERE intent_id = ? ORDER BY event_id", (intent_id,)
-        ):
+        # Events and fills are folded as ONE chronological stream, not events-then-fills.
+        #
+        # The earlier version replayed every event and only then applied the fills, which is not
+        # how any of it happened. An order that part-filled and was then cancelled — the most
+        # ordinary end-of-day event in an intraday book — reached the terminal `CANCELLED` state
+        # and only afterwards tried to apply its fill, which is an illegal transition out of a
+        # terminal state. The exception escaped `load_order`, so the order, the session, and every
+        # page that reads them raised FOREVER: a real fill sitting on disk that the system could no
+        # longer account for. Found by the `R.23(c)` adversarial review, reproduced end to end, and
+        # this ordering is the fix.
+        events = [
+            (
+                datetime.fromisoformat(row["occurred_at"]),
+                row["event_id"],
+                row,
+            )
+            for row in self._connection.execute(
+                "SELECT * FROM order_event WHERE intent_id = ? ORDER BY event_id", (intent_id,)
+            )
+        ]
+        pending_fills = sorted(fills.values(), key=lambda fill: fill.occurred_at)
+        applied_fills: set[str] = set()
+        # Does the stream contain a real submission at all? A fill can legitimately carry a
+        # timestamp EARLIER than our own SUBMITTED row — the fill is stamped by the exchange and the
+        # submission by this host, and the two clocks are not the same clock (`L0.32` measures the
+        # offset). Where a real submission exists, a fill that appears to precede it waits for it
+        # rather than manufacturing an inferred one, which the widened property test caught.
+        has_recorded_submission = any(
+            LifecycleEvent(row["event"]) is LifecycleEvent.SUBMITTED for _, _, row in events
+        )
+
+        def _apply_fills_up_to(moment: datetime | None) -> None:
+            for fill in pending_fills:
+                if fill.broker_trade_id in applied_fills:
+                    continue
+                if has_recorded_submission and order.state is OrderLifecycleState.INTENT_RECORDED:
+                    continue
+                if moment is not None and fill.occurred_at >= moment:
+                    # Ties go to the EVENT. A fill and an event stamped the same instant were
+                    # written events-first, and applying the fill first would make the journal
+                    # infer a submission for an order whose real SUBMITTED row is the very next
+                    # thing in the stream.
+                    continue
+                _ensure_submitted_before_a_fill(order, fill)
+                order.apply_fill(fill)
+                applied_fills.add(fill.broker_trade_id)
+
+        for occurred_at, _event_id, row in events:
             event = LifecycleEvent(row["event"])
             if row["broker_order_id"]:
                 order.broker_order_id = row["broker_order_id"]
@@ -365,31 +471,25 @@ class OrderIntentJournal:
                 # bare transitions: the quantities are the truth, and a replayed transition
                 # without its fill would move the state without moving the position.
                 continue
-            order.apply_event(
-                event,
-                EventSource(row["source"]),
-                at=datetime.fromisoformat(row["occurred_at"]),
-                note=row["note"],
-            )
-        if fills and order.state is OrderLifecycleState.INTENT_RECORDED:
-            # A fill exists for an order the journal never saw submitted. That is not corruption:
-            # it is the crash window this journal exists to survive — the intent was committed, the
-            # process died before the submission event was appended, and the broker went on to fill
-            # the order anyway. The submission is therefore INFERRED rather than assumed, and stays
-            # marked as inferred for the rest of the order's life.
-            first_fill = next(iter(fills.values()))
-            order.apply_event(
-                LifecycleEvent.SUBMITTED,
-                EventSource.INFERRED,
-                at=first_fill.occurred_at,
-                note=(
-                    "inferred from the existence of fill "
-                    f"{first_fill.broker_trade_id}: the order filled, so it was submitted, but no "
-                    "submission event was ever written"
-                ),
-            )
-        for fill in fills.values():
-            order.apply_fill(fill)
+            _apply_fills_up_to(occurred_at)
+            try:
+                order.apply_event(
+                    event,
+                    EventSource(row["source"]),
+                    at=occurred_at,
+                    note=row["note"],
+                )
+            except IllegalOrderTransitionError:
+                # The FOLD reconstructs; it does not validate. Validation happens at write time, in
+                # the placer and the reconciler, where an illegal event means the local view and the
+                # broker's have diverged. Here every row already happened, and two ordinary facts
+                # make a replay non-monotone: an event that arrives after a terminal state (a fill
+                # reported after a cancel), and an exchange-stamped fill that precedes a
+                # host-stamped administrative event because the two clocks differ. The quantities
+                # are the more reliable witness, so the row is kept on disk, left out of the
+                # reconstruction, and the order reads back as what actually happened.
+                continue
+        _apply_fills_up_to(None)
         return order
 
     def record_visibility_delay(
@@ -403,11 +503,20 @@ class OrderIntentJournal:
         observations. `R.03`: measured, never typed.
         """
         delay_seconds = (first_seen_at - submitted_at).total_seconds()
-        self._connection.execute(
-            "INSERT INTO order_visibility_observation (intent_id, submitted_at, first_seen_at,"
-            " delay_seconds) VALUES (?,?,?,?)",
-            (intent_id, submitted_at.isoformat(), first_seen_at.isoformat(), delay_seconds),
-        )
+        try:
+            self._connection.execute(
+                "INSERT INTO order_visibility_observation (intent_id, submitted_at, first_seen_at,"
+                " delay_seconds) VALUES (?,?,?,?)",
+                (intent_id, submitted_at.isoformat(), first_seen_at.isoformat(), delay_seconds),
+            )
+        except sqlite3.IntegrityError:
+            # One observation per intent, enforced by the schema. Before this, a single order whose
+            # status the system could not map was re-observed on every reconciliation pass, and each
+            # pass recorded the order's AGE rather than its appearance delay: 25 passes over one
+            # order produced 25 "observations" and inflated the horizon to 11.4 hours, after which
+            # nothing could ever be resolved. Found by the R.23(c) review.
+            self._connection.rollback()
+            return delay_seconds
         self._connection.commit()
         return delay_seconds
 
@@ -478,6 +587,26 @@ class OrderIntentJournal:
     def state_of(self, intent_id: str) -> OrderLifecycleState | None:
         order = self.load_order(intent_id)
         return None if order is None else order.state
+
+
+def _ensure_submitted_before_a_fill(order: OrderRecord, fill: FillRecord) -> None:
+    """A fill for an order the journal never saw submitted is the crash window, not corruption.
+
+    The intent was committed, the process died before the submission event was appended, and the
+    broker filled the order anyway. The submission is therefore INFERRED rather than assumed, and
+    stays marked inferred for the rest of the order's life.
+    """
+    if order.state is not OrderLifecycleState.INTENT_RECORDED:
+        return
+    order.apply_event(
+        LifecycleEvent.SUBMITTED,
+        EventSource.INFERRED,
+        at=fill.occurred_at,
+        note=(
+            f"inferred from the existence of fill {fill.broker_trade_id}: the order filled, so it "
+            f"was submitted, but no submission event was ever written"
+        ),
+    )
 
 
 def _expression_to_json(expression: OrderExpression) -> str:

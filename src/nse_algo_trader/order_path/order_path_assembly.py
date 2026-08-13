@@ -141,7 +141,7 @@ def assemble_order_path(
         journal=journal,
         venue=venue,
         placer=placer,
-        reconciler=BrokerTruthReconciler(journal=journal, venue=venue),
+        reconciler=BrokerTruthReconciler(journal=journal, venue=venue, namespace=namespace),
         namespace=namespace,
         latch_store=latch_store,
         rate_limiter=rate_limiter,

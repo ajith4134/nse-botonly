@@ -436,10 +436,16 @@ class TestEverySdkExceptionIsClassifiedIntoExactlyOneOutcome:
         [
             # never reached the venue — safe to send again
             (NetworkException("OMS is down", code=503), VenueUnavailableError),
-            (requests.exceptions.ConnectionError("connection refused"), VenueUnavailableError),
             (requests.exceptions.ConnectTimeout("handshake timed out"), VenueUnavailableError),
             (requests.exceptions.SSLError("tls failed"), VenueUnavailableError),
-            (ConnectionResetError("reset by peer"), VenueUnavailableError),
+            # CORRECTED after the R.23(c) review, which reproduced ONE decision reaching the venue
+            # THREE times through this classification. `requests` raises ConnectionError for BOTH
+            # "connection refused" (never sent) and RemoteDisconnected/ConnectionResetError (sent,
+            # then the server died or reset). The class name cannot tell them apart, and the
+            # asymmetry of the mistake is total: mis-filing an unsent order as unknown costs a
+            # reconciliation, mis-filing a SENT order as unsent costs a duplicate position.
+            (requests.exceptions.ConnectionError("connection refused"), VenueOutcomeUnknownError),
+            (ConnectionResetError("reset by peer"), VenueOutcomeUnknownError),
             # sent, and the answer is unreadable — an order MAY exist
             (DataException("garbled response", code=502), VenueOutcomeUnknownError),
             (requests.exceptions.ReadTimeout("read timed out"), VenueOutcomeUnknownError),
@@ -735,15 +741,29 @@ class TestPositionsAreTheUnionOfThreeViews:
 
     @pytest.mark.adversarial
     def test_an_empty_account_is_an_empty_tuple_and_not_an_error(self) -> None:
-        venue = KiteOrderExecutionVenue(_FakeKiteClient(positions_payload={}, holdings_payload=[]))
+        """An account that really holds nothing answers with empty LISTS, and that is a fact."""
+        venue = KiteOrderExecutionVenue(
+            _FakeKiteClient(positions_payload={"day": [], "net": []}, holdings_payload=[])
+        )
         assert venue.fetch_positions() == ()
 
     @pytest.mark.adversarial
-    def test_a_payload_that_is_not_a_list_of_rows_is_not_guessed_at(self) -> None:
+    def test_a_payload_that_is_not_a_list_of_rows_refuses_rather_than_reading_as_empty(
+        self,
+    ) -> None:
+        """CORRECTED after the R.23(c) review, which reproduced the earlier behaviour writing off a
+        LIVE order as abandoned.
+
+        Returning `()` for an unreadable answer made "the broker could not be read" and "the broker
+        has nothing" the same value. Downstream, an AMBIGUOUS order — the state a timed-out
+        submission creates, where an order may well be sitting at Zerodha — was then declared
+        ABANDONED, which is terminal and never revisited.
+        """
         venue = KiteOrderExecutionVenue(
             _FakeKiteClient(positions_payload={"day": None, "net": "unexpected"})
         )
-        assert venue.fetch_positions() == ()
+        with pytest.raises(VenueOutcomeUnknownError, match="not evidence that there are no"):
+            venue.fetch_positions()
 
 
 def _today_in_india() -> date:
