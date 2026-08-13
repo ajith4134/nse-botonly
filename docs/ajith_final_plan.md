@@ -4129,6 +4129,39 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
 
+**A.104 · 2026-08-13 · `F03` opens: three operator decisions on how this system decides how much,
+and when to decide nothing.**
+
+`F03` is 14 catalogue entries and nothing in it exists — there is no sizer, no gate, and nothing
+anywhere in `src/` that can refuse an order. `capital_configuration` has had **zero callers** since
+it was built (todo `0.8`, `R.11`-deferred). Interviewed rather than assumed (`R.19`).
+
+*Decision 1 — the sizer and the gate are ONE engine, six entries, not two features.* `L1.09` ·
+`L1.10` · `L7.01` · `L3.05` · `L7.02` · `L7.03`. **"How much" and "none" are the same decision**:
+sizing zero and refusing produce the same order, so splitting them yields a sizer producing numbers
+nothing checks and a gate checking numbers nothing produced — two more consumer-queued fragments,
+which is precisely what `FEATURE_MAP` exists to prevent. This slice also makes
+`capital_configuration`, `L1.17` and `L1.18` load-bearing simultaneously and closes `0.8`. The
+remaining eight (`L7.04`–`L7.09`, `L9.06`, `L9.07`) follow as their own engines under `R.18`.
+
+*Decision 2 — size is volatility-targeted and then Kelly-capped.* A risk budget sized so the
+position's expected rupee volatility hits a target, capped by a fractional Kelly computed from the
+edge `F01` already calibrated (`L1.16`, fitted to 150,364 real reversion events) over its variance.
+Vol-targeting answers *how much risk*; Kelly answers *whether the edge is worth that risk*; the cap
+exists because Kelly is fragile to edge mis-estimation and a 2× overestimate is a 2× oversize.
+**The Kelly fraction is not a constant** — `R.03` — it is shrunk by the calibration's own standard
+error, `edge² / (edge² + se²)`, so an edge measured badly sizes small by construction rather than by
+a chosen multiplier. Note this consumes the `M10` open caveat (optimistic standard errors) as a real
+input, which raises its priority.
+
+*Decision 3 — the gate's limits are layered, and the operator key only tightens.* Three tiers:
+(1) **regulatory walls** — MWPL, F&O ban, circuit bands, exchange position limits — sourced facts,
+never derived and never overridable, because an F&O ban is binary and deriving it from one's own
+history is how a system confidently trades a banned scrip; (2) **derived limits** per
+instrument/segment from its own history (realised move percentile, liquidity, spread); (3) an
+**operator override that can only TIGHTEN**. A limit that can be loosened is not a limit, and
+`R.22`'s two-key property survives only if one of the keys cannot be turned permanently.
+
 **A.103 · 2026-08-13 · `L1.18`'s adversarial review found the double-spend, and it found it in the
 one place I had told myself was safe.**
 

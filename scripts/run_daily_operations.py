@@ -1225,6 +1225,15 @@ def _log_gate_decisions_for(
 
 
 def main() -> int:
+    # The operator's configuration, loaded ONCE at the entry rather than incidentally by whichever
+    # step happens to need a broker credential first. It used to be read only inside
+    # `_refresh_kite_session` and the Angel loader, so a step that ran before either — the
+    # transaction-cost step does, with `--skip-kite` — saw a bare environment and reported
+    # `NSE_TRADING_CAPITAL_RUPEES` unset while the figure sat correctly in `.env`. The same gap
+    # was found in the dashboard the same day (`A.103`): configuration that looks done and behaves
+    # as though it is not. Existing process variables still win, so a systemd `Environment=` line
+    # beats the file.
+    load_env_file_into_environ()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--for-date",
