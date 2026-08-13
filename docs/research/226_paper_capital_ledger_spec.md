@@ -141,6 +141,44 @@ around sizing; the mode is chosen once, at construction.
   paper-mode capital source), `L1.11` P&L attribution (reads `COST_DEBIT` apart from
   `REALISED_LOSS`).
 
+## 8b · What the `R.23(c)` adversarial review changed (2026-08-13, `A.103`)
+
+Two criticals, five majors, three minors and four tautological tests — all reproduced end to end.
+The invariants above are unchanged in intent; what changed is that three of them were **not actually
+enforced**.
+
+- **I3 was defeated by concurrency.** The fold, the decision and the insert were three separate
+  transactions, so eight threads reserving ₹2,00,000 against a ₹10,00,000 book were **all accepted**
+  (15/15 trials, cross-process too), and `snapshot()` raised nothing because the checkpoint had been
+  written from the same corrupted fold. **Every write is now one `BEGIN IMMEDIATE`** spanning fold,
+  decision, insert and checkpoint. §7's adversarial list already required "a commit racing an edit";
+  the test did not exist.
+- **The fold resolved a duplicate commit key by LAST-WRITE-WINS**, deleting a live reservation and
+  handing it back as free capital. It now **refuses to fold** (`CorruptedPaperCapitalLogError`), and
+  a partial unique index makes the state unreachable in the first place.
+- **A diverged checkpoint refused reads but not writes**, so the next ordinary edit repaired it
+  silently. Writes refuse too now, and the only way back is `repair_checkpoint`, which appends a
+  `CHECKPOINT_REPAIR` event recording what was claimed against what the log says.
+- **New invariant I7** — no single event may move more than `MAXIMUM_SUPPORTED_CAPITAL_RUPEES`
+  (`A.23`, ₹1 crore), read from `capital_configuration` rather than written here. `Decimal('1E+1000000')`
+  was finite and positive, committed to the log, answered `303`, and made every later read raise
+  `decimal.Overflow`.
+- **New invariant I8** — an event's recorded stamp never precedes the one before it, and a caller
+  that states NO time gets one assigned under the write lock. Two operator edits 211 microseconds
+  apart used to see the second REFUSED as "backdated", because each thread read `now` before the
+  other committed. A caller that states a time is still held to it.
+- **`total_by_kind` now reports money that MOVED**, not money that was asked for. A ₹5,00,000 loss
+  against a ₹1,00,000 book removes ₹1,00,000; reporting the stated figure overstated the net P&L
+  implied by the kinds nine-fold, while I5 recorded the shortfall and no reader used it.
+- **A refused edit renders over the real book.** It used to render the EMPTY state, so one typo told
+  the operator their funded ledger had no capital, no history and an unreadable ceiling.
+- **`.env` loading moved out of the app factory** into `dashboard_service_entrypoint`, the module
+  systemd runs. Building an app in a test was injecting ~50 live credentials into the test process,
+  where `monkeypatch.setenv` cannot undo them.
+
+**Verified live** on the real ledger: eight concurrent commits, five accepted, three refused,
+committed exactly equal to the balance.
+
 ## 9 · Sourcing — what was searched, run, and why rejected (`R.17`)
 
 Searches run 2026-08-13 against PyPI from this box's venv: `eventsourcing`, `beancount`,

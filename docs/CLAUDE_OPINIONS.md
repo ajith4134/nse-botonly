@@ -1700,3 +1700,51 @@ it now exists because a picture found what nine assertions could not.
 **What would change my mind:** if the counting-style tests catch the next three surface defects
 before the screenshot does, then the screenshot is confirmation rather than detection and can move
 to the end of the loop. Today it was detection.
+
+## O.85 · 2026-08-13 · The defect class is now predictable, and it is "the scenario nobody wrote a test for"
+
+**Opinion:** across four consecutive `R.23(c)` reviews the criticals have not been randomly
+distributed — they cluster in whichever axis the test file never varied — and I should be searching
+that axis deliberately before the review rather than being told about it afterwards.
+
+**Reasoning:** measured over four features. `A.100`'s five criticals all lived where the code could
+say "I do not know" and said something cheaper instead — an axis the tests never varied because
+every fixture was a well-formed response. `A.103`'s two criticals both lived in **concurrency** — an
+axis where every one of the 39 tests was single-threaded, and where the specification I wrote myself
+listed "a commit racing an edit" under §7 as required and I then did not write it. The review needed
+one afternoon to find what the suite could not find in principle, because the suite had no
+representation of a second writer at all.
+
+**The operational form, which is the useful part.** Before calling a feature done, list the axes the
+test file holds CONSTANT — one process, one thread, one clock, well-formed input, sequential arrival,
+bounded magnitude, no crash mid-write — and write one adversarial test per axis. `L1.18` held six of
+those constant and had defects behind two of them. That is a checklist, not an insight, which is why
+it is worth writing down.
+
+**Confidence: measured** on the clustering across four features, **judgement** on whether the axis
+list generalises past this codebase.
+
+**What would change my mind:** a review whose criticals are spread evenly rather than clustered in
+one held-constant axis. Three of four have clustered so far; `A.98`'s I did not analyse this way and
+should re-read before treating the pattern as settled.
+
+## O.86 · 2026-08-13 · Bounding the paper book at ₹1 crore is a real constraint on the operator, and I chose it anyway
+
+**Opinion:** capping every paper-capital event at `MAXIMUM_SUPPORTED_CAPITAL_RUPEES` is correct, but
+it does narrow what the operator asked for ("editable as I need or wished") and that trade should be
+visible rather than buried in a guard clause.
+
+**Reasoning:** the unbounded version was not merely untidy — `Decimal('1E+1000000')` committed to
+the append-only log, returned `303`, and left the page raising `decimal.Overflow` on every read with
+no recovery except posting blind into a surface that could not render. A bound was required. Given a
+bound was required, `A.23`'s declared ₹1 lakh–₹1 crore range is the only defensible one, because it
+is the envelope every other engine in this project is calibrated for; an arbitrary larger number
+would be exactly the magic constant `R.03` forbids. But the operator did say "as I wished", and a
+crore is a real ceiling on that.
+
+**Confidence: reasoned.**
+
+**What would change my mind:** the operator wanting to model a book above a crore. The fix then is
+not to raise this bound — it is to raise `A.23`'s declared range, so every engine's calibration is
+re-examined at the same time. That is the point of reading the bound from `capital_configuration`
+rather than writing it here.

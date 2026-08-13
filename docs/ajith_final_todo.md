@@ -464,10 +464,32 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       structure. Fixed, and `test_every_ledger_row_carries_one_cell_per_column` now counts cells
       (`O.84`).*
 
+      ***`R.23(c)` adversarial review, 2026-08-13 (`A.103`) — two criticals, and both were mine to
+      have caught.*** *`commit_to_position` folded, decided and inserted in three separate
+      transactions: eight threads reserving Rs 200,000 each against a Rs 1,000,000 book were ALL
+      ACCEPTED, 15 trials of 15, cross-process too, with `snapshot()` raising nothing because the
+      checkpoint agreed with the corrupted fold. The suite could not have caught it — all 39 tests
+      were single-threaded, and the spec's own section 7 listed "a commit racing an edit" as
+      required. The second: the fold resolved a duplicate commit key by last-write-wins, deleting a
+      live reservation and returning it as free capital. Plus five majors — a refused edit rendered
+      the EMPTY state so one typo told the operator their funded book had no capital or history;
+      `Decimal('1E+1000000')` committed to the log, answered 303 and bricked every later read; a
+      diverged checkpoint refused reads but not writes, so the next edit repaired it silently; two
+      edits 211 microseconds apart lost one to a "backdated" refusal; `total_by_kind` overstated a
+      loss against a small book nine-fold. And four tautological tests, each proven by mutation —
+      including one that checked METHOD NAMES against a verb blocklist and passed a real public
+      `erase_history()` running `DELETE FROM paper_capital_event`.*
+
+      *All fixed. Every write is now one `BEGIN IMMEDIATE` spanning fold, decision, insert and
+      checkpoint, with a partial unique index behind it. Verified LIVE: eight concurrent commits,
+      five accepted, three refused, committed exactly equal to the balance. 55 tests.*
+
       · ⚠️ **NOT R.11-done — primary consumer queued**: nothing sizes against it yet. `F04`'s paper
       loop is the first real caller; `L1.10` must take the source by mode; `L1.11` is the named
       consumer of `COST_DEBIT` being readable apart from `REALISED_LOSS`. Tick to [x] when one
-      consumes it. The commit/release reservation path has never run outside the test suite.
+      consumes it. Commit/release HAS now run live (the `A.103` probe); no realisation has —
+      no profit, loss or cost has been written by anything but a test, because nothing simulates a
+      fill yet.
 - [ ] **1.45** P&L attribution by cost component — `L1.11`
       *(NOT A BUILD UNIT — MERGE -> `L13.15`. One engine + one panel, catalogued twice. Recorded by `A.94`.)*
 - [ ] **1.46** Cost homeostasis — `L1.12`

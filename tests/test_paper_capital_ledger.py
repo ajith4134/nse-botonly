@@ -12,7 +12,7 @@ real-data obligation is the dashboard round trip on the live server plus first c
 from __future__ import annotations
 
 import sqlite3
-from contextlib import suppress
+import threading
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -22,8 +22,10 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as hypothesis_strategies
 
+from nse_algo_trader import paper_capital_ledger
 from nse_algo_trader.capital_configuration import TradingCapital
 from nse_algo_trader.paper_capital_ledger import (
+    CorruptedPaperCapitalLogError,
     InsufficientPaperCapitalError,
     PaperCapitalCheckpointDivergedError,
     PaperCapitalError,
@@ -371,15 +373,279 @@ def test_a_corrupted_checkpoint_is_detected_rather_than_trusted(ledger_path: Pat
 
 
 @pytest.mark.adversarial
-def test_the_event_log_cannot_be_amended_through_the_public_surface(ledger_path: Path) -> None:
-    """§5 I1 — there is no edit or delete, only compensation."""
+def test_no_code_in_this_module_can_remove_or_rewrite_a_logged_event() -> None:
+    """§5 I1 — there is no edit or delete, only compensation.
+
+    This used to check METHOD NAMES against a blocklist of verbs. The `R.23(c)` review added a
+    genuine public `erase_history()` running `DELETE FROM paper_capital_event` and the test passed,
+    because "erase" was not on the list. A name is not a behaviour. The module's own source is the
+    thing that can violate the invariant, so the module's own source is what is checked.
+    """
+    source = Path(paper_capital_ledger.__file__).read_text()
+    statements = " ".join(source.split()).upper()
+    assert "DELETE FROM PAPER_CAPITAL_EVENT" not in statements
+    assert "UPDATE PAPER_CAPITAL_EVENT" not in statements
+    assert "DROP TABLE PAPER_CAPITAL_EVENT" not in statements
+    # The checkpoint is a cache and IS rewritten; the event log is not. Prove the distinction is
+    # real rather than accidental, so a future edit that folds them together fails here.
+    assert "UPDATE SET BALANCE_RUPEES = EXCLUDED.BALANCE_RUPEES" in statements
+
+
+@pytest.mark.adversarial
+def test_a_commitment_that_races_another_cannot_reserve_capital_the_book_lacks(
+    ledger_path: Path,
+) -> None:
+    """The double-spend the `R.23(c)` review reproduced 15 times out of 15.
+
+    Eight threads each reserving Rs 200,000 against a Rs 1,000,000 book: with the fold, the
+    decision and the insert in three separate transactions, ALL EIGHT were accepted and the book
+    carried Rs 1,600,000 of commitments it never had. `snapshot()` raised nothing, because the
+    checkpoint had been written from the same corrupted fold. At most five can legitimately fit.
+    """
     with _seeded(ledger_path) as ledger:
-        assert not [
-            name
-            for name in dir(ledger)
-            if not name.startswith("_")
-            and any(verb in name for verb in ("delete", "amend", "update", "overwrite"))
+        ledger.snapshot(measured_at=_at(0), live_ceiling=CEILING)
+    reservation = Decimal("200000")
+    accepted: list[int] = []
+    refused: list[int] = []
+    barrier = threading.Barrier(8)
+
+    def reserve(index: int) -> None:
+        with PaperCapitalLedger(ledger_path) as ledger:
+            barrier.wait()
+            try:
+                ledger.commit_to_position(
+                    reservation, position_key=f"RACE-{index}", reason="concurrent entry"
+                )
+            except InsufficientPaperCapitalError:
+                refused.append(index)
+            else:
+                accepted.append(index)
+
+    threads = [threading.Thread(target=reserve, args=(index,)) for index in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    with PaperCapitalLedger(ledger_path) as ledger:
+        snapshot = ledger.snapshot(measured_at=_at(9), live_ceiling=CEILING)
+    assert len(accepted) == 5, f"accepted {len(accepted)}, refused {len(refused)}"
+    assert snapshot.committed_rupees == reservation * 5
+    assert snapshot.committed_rupees <= snapshot.balance_rupees
+    assert snapshot.free_rupees == Decimal(0)
+
+
+@pytest.mark.adversarial
+def test_two_commitments_under_one_key_cannot_both_reach_the_log(ledger_path: Path) -> None:
+    """The write-path guard is not the only defence — the database enforces it too.
+
+    The fold used to resolve a duplicate key by last-write-wins, which DELETED a live reservation:
+    two Rs 300,000 commits folded to Rs 300,000 committed and Rs 700,000 free.
+    """
+    with _seeded(ledger_path) as ledger:
+        ledger.snapshot(measured_at=_at(0), live_ceiling=CEILING)
+    barrier = threading.Barrier(4)
+    outcomes: list[str] = []
+
+    def reserve() -> None:
+        with PaperCapitalLedger(ledger_path) as ledger:
+            barrier.wait()
+            try:
+                ledger.commit_to_position(
+                    Decimal("300000"), position_key="SAME-KEY", reason="racing the same key"
+                )
+            except PaperCapitalError:
+                outcomes.append("refused")
+            else:
+                outcomes.append("accepted")
+
+    threads = [threading.Thread(target=reserve) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    with PaperCapitalLedger(ledger_path) as ledger:
+        commits = [
+            event
+            for event in ledger.events()
+            if event.kind is PaperCapitalEventKind.POSITION_COMMIT
         ]
+        snapshot = ledger.snapshot(measured_at=_at(9), live_ceiling=CEILING)
+    assert outcomes.count("accepted") == 1
+    assert len(commits) == 1
+    assert snapshot.committed_rupees == Decimal("300000")
+
+
+@pytest.mark.adversarial
+def test_a_duplicate_commit_already_in_the_log_refuses_to_fold_rather_than_eating_a_reservation(
+    ledger_path: Path,
+) -> None:
+    """Defence in depth: if a duplicate ever reaches the log by any route, the fold refuses.
+
+    Written by dropping the unique index and inserting behind the public surface — the only way to
+    produce the state now, which is the point.
+    """
+    with _seeded(ledger_path) as ledger:
+        ledger.commit_to_position(
+            Decimal("300000"), position_key="RELIANCE-1", occurred_at=_at(1), reason="entry"
+        )
+        connection = sqlite3.connect(ledger_path)
+        connection.execute("DROP INDEX paper_capital_one_commit_per_position")
+        connection.execute(
+            "INSERT INTO paper_capital_event (kind, occurred_at, amount_rupees, "
+            "previous_balance_rupees, resulting_balance_rupees, position_key, reason) VALUES "
+            "('POSITION_COMMIT', ?, '300000', '1000000', '1000000', 'RELIANCE-1', 'smuggled')",
+            (_at(2).isoformat(),),
+        )
+        connection.commit()
+        connection.close()
+        # The fold refuses rather than resolving the duplicate by last-write-wins, which used to
+        # delete a live Rs 300,000 reservation and hand it back as free capital.
+        with pytest.raises(CorruptedPaperCapitalLogError):
+            ledger.fold_from_events()
+    # And REOPENING such a log fails at the door, because the unique index cannot be rebuilt over
+    # data that violates it. Loud is the point; a ledger that opens and lies is the failure.
+    with pytest.raises(CorruptedPaperCapitalLogError):
+        PaperCapitalLedger(ledger_path)
+
+
+@pytest.mark.adversarial
+def test_two_edits_in_the_same_instant_are_both_recorded(ledger_path: Path) -> None:
+    """Neither operator's edit may be lost to a clock the ledger controls.
+
+    The review posted two edits 211 microseconds apart and the SECOND was REFUSED, with a message
+    about ledger ordering: each thread had read `now` before the other committed, so a race was
+    reported as a backdated event. The log's order is `sequence`; the stamp is what a human reads
+    and must never be able to reject a legitimate edit.
+    """
+    with _seeded(ledger_path) as ledger:
+        ledger.snapshot(measured_at=_at(0), live_ceiling=CEILING)
+    barrier = threading.Barrier(2)
+    failures: list[Exception] = []
+
+    def edit(figure: str) -> None:
+        with PaperCapitalLedger(ledger_path) as ledger:
+            barrier.wait()
+            try:
+                ledger.set_balance(Decimal(figure), reason=f"set to {figure}")
+            except PaperCapitalError as failure:
+                failures.append(failure)
+
+    threads = [threading.Thread(target=edit, args=(figure,)) for figure in ("900000", "800000")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    with PaperCapitalLedger(ledger_path) as ledger:
+        kinds = [event.kind for event in ledger.events()]
+        stamps = [event.occurred_at for event in ledger.events()]
+    assert not failures, f"an edit was lost: {failures}"
+    assert kinds.count(PaperCapitalEventKind.OPERATOR_SET) == 2
+    assert stamps == sorted(stamps), "recorded stamps must never go backwards"
+
+
+@pytest.mark.adversarial
+def test_an_explicitly_backdated_stamp_is_still_refused(ledger_path: Path) -> None:
+    """The monotonic clamp applies only to callers that state NO time. A stated time is held to."""
+    with _seeded(ledger_path) as ledger:
+        ledger.set_balance(Decimal("900000"), occurred_at=_at(5), reason="first")
+        with pytest.raises(PaperCapitalError):
+            ledger.set_balance(Decimal("800000"), occurred_at=_at(4), reason="backdated")
+
+
+@pytest.mark.adversarial
+def test_a_figure_beyond_the_declared_capital_range_is_refused_before_it_reaches_the_log(
+    ledger_path: Path,
+) -> None:
+    """`Decimal('1E+1000000')` is finite and positive, and it bricked the surface.
+
+    It committed to the append-only log, the POST answered 303 — telling the operator it had
+    worked — and every later read raised `decimal.Overflow` from `balance - committed`, which is an
+    `ArithmeticError` and so was caught by nothing. Recovery existed only by posting blind into a
+    page that could not render.
+    """
+    with _seeded(ledger_path) as ledger:
+        for absurd in (Decimal("1E+1000000"), Decimal("1E+400"), ONE_CRORE + Decimal("1")):
+            with pytest.raises(PaperCapitalError):
+                ledger.set_balance(absurd, occurred_at=_at(2), reason="absurd")
+        assert ledger.fold_from_events().last_sequence == 1
+        snapshot = ledger.snapshot(measured_at=_at(3), live_ceiling=CEILING)
+    assert snapshot.balance_rupees == TEN_LAKH
+
+
+@pytest.mark.adversarial
+def test_a_crore_exactly_is_accepted_because_that_is_the_declared_maximum(
+    ledger_path: Path,
+) -> None:
+    """The bound is `A.23`'s declared range, not an arbitrary ceiling — the endpoint is inside."""
+    with _seeded(ledger_path) as ledger:
+        ledger.set_balance(ONE_CRORE, occurred_at=_at(2), reason="the top of the declared range")
+        snapshot = ledger.snapshot(measured_at=_at(3), live_ceiling=CEILING)
+    assert snapshot.balance_rupees == ONE_CRORE
+    assert snapshot.exceeds_live_ceiling is True
+
+
+@pytest.mark.adversarial
+def test_a_diverged_checkpoint_refuses_writes_as_well_and_is_repaired_only_by_an_event(
+    ledger_path: Path,
+) -> None:
+    """The half the first version missed.
+
+    When only reads refused, the next ordinary operator edit rewrote the checkpoint from the log as
+    a side effect and the divergence vanished with no record — so corruption that was not a crash
+    survived exactly until somebody clicked a button. Now the write refuses too, and the only way
+    back is an event that records what was claimed against what the log says.
+    """
+    with _seeded(ledger_path) as ledger:
+        ledger.set_balance(Decimal("700000"), occurred_at=_at(2), reason="down-size")
+    connection = sqlite3.connect(ledger_path)
+    connection.execute("UPDATE paper_capital_checkpoint SET balance_rupees = '999999'")
+    connection.commit()
+    connection.close()
+
+    with PaperCapitalLedger(ledger_path) as ledger:
+        with pytest.raises(PaperCapitalCheckpointDivergedError):
+            ledger.snapshot(measured_at=_at(3), live_ceiling=CEILING)
+        with pytest.raises(PaperCapitalCheckpointDivergedError):
+            ledger.set_balance(Decimal("500000"), occurred_at=_at(4), reason="ordinary edit")
+        repair = ledger.repair_checkpoint(occurred_at=_at(5), reason="operator investigated")
+        snapshot = ledger.snapshot(measured_at=_at(6), live_ceiling=CEILING)
+    assert repair.kind is PaperCapitalEventKind.CHECKPOINT_REPAIR
+    assert "999999" in repair.reason
+    assert "700000" in repair.reason
+    assert snapshot.balance_rupees == Decimal("700000")
+
+
+@pytest.mark.adversarial
+def test_a_loss_larger_than_the_book_is_not_reported_as_money_that_left_it(
+    ledger_path: Path,
+) -> None:
+    """`total_by_kind` is the method `L1.11` reads, and it used to sum the STATED amount.
+
+    A Rs 500,000 loss against a Rs 100,000 book removes Rs 100,000 and records Rs 400,000 unfunded.
+    Reporting Rs 500,000 of realised loss overstated the net P&L implied by the kinds nine-fold in
+    the review's reproduction, while I5 recorded the shortfall on the event and no reader used it.
+    """
+    with _seeded(ledger_path) as ledger:
+        ledger.set_balance(Decimal("100000"), occurred_at=_at(1), reason="small book")
+        ledger.record_realised_loss(
+            Decimal("500000"), position_key="TCS-1", occurred_at=_at(2), reason="blown"
+        )
+        ledger.record_realised_profit(
+            Decimal("50000"), position_key="INFY-1", occurred_at=_at(3), reason="recovery"
+        )
+        realised_loss = ledger.total_by_kind(PaperCapitalEventKind.REALISED_LOSS)
+        stated_loss = ledger.total_stated_by_kind(PaperCapitalEventKind.REALISED_LOSS)
+        shortfall = ledger.total_unfunded_shortfall_by_kind(PaperCapitalEventKind.REALISED_LOSS)
+        realised_profit = ledger.total_by_kind(PaperCapitalEventKind.REALISED_PROFIT)
+        snapshot = ledger.snapshot(measured_at=_at(4), live_ceiling=CEILING)
+    assert realised_loss == Decimal("100000")
+    assert stated_loss == Decimal("500000")
+    assert shortfall == Decimal("400000")
+    implied_by_kinds = realised_profit - realised_loss
+    assert implied_by_kinds == snapshot.balance_rupees - Decimal("100000")
 
 
 # -------------------------------------------------------------------------- property
@@ -403,7 +669,13 @@ _LEGAL_AMOUNTS = hypothesis_strategies.decimals(
 def test_the_fold_always_equals_the_checkpoint(
     tmp_path_factory: pytest.TempPathFactory, profits: list[Decimal], costs: list[Decimal]
 ) -> None:
-    """No legal sequence of events can make the cached figure disagree with a fresh replay."""
+    """No legal sequence of events can make the CACHED figure disagree with a fresh replay.
+
+    This used to compare `snapshot.balance_rupees` against `fold_from_events().balance_rupees` —
+    both computed by the same fold, so the checkpoint was never read at all. The `R.23(c)` review
+    proved it: a mutant that wrote `('999999999', '-1', 0)` into the checkpoint table AND removed
+    the agreement check left this test passing. It now reads the checkpoint STRAIGHT FROM SQL.
+    """
     path = tmp_path_factory.mktemp("fold") / "paper_capital_ledger.sqlite3"
     minute = 0
     with _seeded(path) as ledger:
@@ -419,27 +691,46 @@ def test_the_fold_always_equals_the_checkpoint(
             )
         snapshot = ledger.snapshot(measured_at=_at(minute + 1), live_ceiling=CEILING)
         replayed = ledger.fold_from_events()
-    assert snapshot.balance_rupees == replayed.balance_rupees
+        cached = ledger.stored_checkpoint_figures()
     expected = TEN_LAKH + sum(profits, Decimal(0)) - sum(costs, Decimal(0))
     assert snapshot.balance_rupees == max(expected, Decimal(0))
+    assert cached is not None
+    cached_balance, cached_committed, cached_sequence = cached
+    assert cached_balance == replayed.balance_rupees
+    assert cached_committed == replayed.committed_rupees
+    assert cached_sequence == replayed.last_sequence
+    assert cached_sequence == 1 + len(profits) + len(costs)
 
 
 @pytest.mark.property
 @settings(max_examples=60, deadline=None)
 @given(commitments=hypothesis_strategies.lists(_LEGAL_AMOUNTS, min_size=1, max_size=5))
-def test_free_capital_never_exceeds_the_balance_and_never_goes_negative(
+def test_free_capital_equals_the_balance_less_exactly_what_was_accepted(
     tmp_path_factory: pytest.TempPathFactory, commitments: list[Decimal]
 ) -> None:
+    """Free capital must track the ACCEPTED reservations, not merely stay inside a range.
+
+    The previous version asserted `0 <= free <= balance`, which `free = max(balance-committed, 0)`
+    makes true by construction: the `R.23(c)` review mutated `free_rupees` to `max(balance, 0)` —
+    ignoring commitments entirely, the exact defect the property exists to catch — and it still
+    passed. It now recomputes the expected figure from what each call actually did.
+    """
     path = tmp_path_factory.mktemp("free") / "paper_capital_ledger.sqlite3"
+    reserved = Decimal(0)
     with _seeded(path) as ledger:
         for index, amount in enumerate(commitments, start=1):
-            with suppress(InsufficientPaperCapitalError):
+            try:
                 ledger.commit_to_position(
                     amount, position_key=f"K{index}", occurred_at=_at(index), reason="entry"
                 )
+            except InsufficientPaperCapitalError:
+                assert amount > TEN_LAKH - reserved, "refused a commitment that actually fitted"
+            else:
+                reserved += amount
             snapshot = ledger.snapshot(measured_at=_at(index), live_ceiling=CEILING)
-            assert Decimal(0) <= snapshot.free_rupees <= snapshot.balance_rupees
-            assert snapshot.committed_rupees >= Decimal(0)
+            assert snapshot.committed_rupees == reserved
+            assert snapshot.free_rupees == TEN_LAKH - reserved
+            assert snapshot.balance_rupees == TEN_LAKH
 
 
 @pytest.mark.property

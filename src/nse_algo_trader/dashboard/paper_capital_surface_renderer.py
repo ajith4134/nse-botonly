@@ -22,7 +22,7 @@ live resolver and this ledger are different money, and only one of them is the b
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
 from html import escape
@@ -130,6 +130,14 @@ class PaperCapitalSurfaceState:
     total_event_count: int
     live_ceiling_rupees: Decimal | None
     unavailable_reason: str
+    refusal: str = ""
+    """What the ledger REFUSED, rendered over the book's real state rather than instead of it.
+
+    The `R.23(c)` review posted a typo into the amount field against a funded ledger and the page
+    came back saying "not seeded", "the paper book has no capital yet", "the ledger holds no events"
+    and "the operator ceiling reads unreadable" — none of which was true. A refusal must not erase
+    the thing it refused to change.
+    """
 
     @property
     def is_seeded(self) -> bool:
@@ -178,6 +186,7 @@ def absent_paper_capital_surface_state(
     ledger_path: Path,
     live_ceiling_rupees: Decimal | None,
     unavailable_reason: str,
+    refusal: str = "",
 ) -> PaperCapitalSurfaceState:
     """No ledger file, or no readable operator ceiling — stated, never rendered as zero."""
     return PaperCapitalSurfaceState(
@@ -188,11 +197,31 @@ def absent_paper_capital_surface_state(
         total_event_count=0,
         live_ceiling_rupees=live_ceiling_rupees,
         unavailable_reason=unavailable_reason,
+        refusal=refusal,
     )
 
 
+def with_refusal(state: PaperCapitalSurfaceState, refusal: str) -> PaperCapitalSurfaceState:
+    """The same page, with what the ledger refused stated on top of it.
+
+    Used by the POST route so a rejected edit renders the book AS IT STANDS plus the reason, rather
+    than a page that reports an empty ledger the operator does not have.
+    """
+    return replace(state, refusal=refusal)
+
+
 def _rupees(value: Decimal) -> str:
-    return f"Rs {value:,.2f}"
+    """Rupees, and never a zero that is not zero.
+
+    Two decimals is what an operator reads, but the review set a balance of `0.005` and the page
+    reported `Rs 0.00` in both the balance and the free tile while the badge still read TRADEABLE.
+    A displayed zero beside a green badge is a contradiction the reader has to resolve; the exact
+    figure is shown instead whenever rounding would hide a non-zero amount.
+    """
+    rounded = f"Rs {value:,.2f}"
+    if value != 0 and Decimal(rounded.removeprefix("Rs ").replace(",", "")) == 0:
+        return f"Rs {value:f}"
+    return rounded
 
 
 def _tiles(state: PaperCapitalSurfaceState) -> str:
@@ -357,6 +386,16 @@ def _truncation_note(state: PaperCapitalSurfaceState) -> str:
     )
 
 
+def _refusal_note(state: PaperCapitalSurfaceState) -> str:
+    """What the ledger refused, over the book as it actually stands."""
+    if not state.refusal:
+        return ""
+    return (
+        '<div class="note crit"><span class="badge badge-crit">edit refused</span> '
+        f"{escape(state.refusal)} <strong>Nothing below has changed.</strong></div>"
+    )
+
+
 def _unavailable_note(state: PaperCapitalSurfaceState) -> str:
     if state.is_seeded or not state.unavailable_reason:
         return ""
@@ -382,6 +421,7 @@ checkpoint; if the two ever disagree, this page refuses to show a number rather 
 cheaper one. Specification: <code>docs/research/226</code>.</p>
 
 {_why_the_real_debit_does_not_matter(state)}
+{_refusal_note(state)}
 {_unavailable_note(state)}
 {_ceiling_stamp(state)}
 {_over_committed_stamp(state)}

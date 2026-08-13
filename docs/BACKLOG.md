@@ -43,11 +43,18 @@ Status key: 🔴 not started · 🟡 in progress · 🟢 done (moved to Done) ·
   finite conflict by declaring two books; only the finite one is built. Nothing yet runs parallel
   expressions of one conviction, so the vehicle-conversion table that `L14.28` promises has no
   producer. Recorded so the "two books" resolution is not mistaken for two books existing.
-- 🔴 **Concurrency is unproven.** The ledger is SQLite opened per request with no explicit locking
-  discipline around the read-modify-write between `fold_from_events()` and `_append()`. One operator
-  posting from one browser cannot hit it; a second writer — the paper loop writing fills while the
-  operator edits the balance — is exactly the shape that would. Under adversarial review at time of
-  writing; whatever it returns lands here.
+- 🟢 **Concurrency — DONE 2026-08-13 (`A.103`).** The review reproduced the double-spend it was
+  worried about: eight threads, ₹2,00,000 each, ₹10,00,000 book, **all eight accepted**, 15/15
+  trials, cross-process too. Every write is now one `BEGIN IMMEDIATE` spanning fold, decision,
+  insert and checkpoint, with a partial unique index behind it. Verified live on the real ledger:
+  five accepted, three refused, committed exactly equal to balance.
+- 🟡 **The commit/release path HAS now run outside the test suite** — five commits and five releases
+  against the live ledger during the `A.103` concurrency probe, released afterwards and visible on
+  `/paper-capital` as events 4–13. What still has not run is a realisation: no `REALISED_PROFIT`,
+  `REALISED_LOSS` or `COST_DEBIT` has been written by anything but a test, because nothing simulates
+  a fill yet. That is `F04`'s to close.
+- 🔴 **No `repair_checkpoint` has ever been needed, so its recovery path is test-only.** It is the
+  one operation that writes after a refusal, and the only evidence it works is the suite.
 
 ## `F02` order path (2026-08-13, `A.99`) — 🟡 open
 

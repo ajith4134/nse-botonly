@@ -4129,6 +4129,50 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
 
+**A.103 · 2026-08-13 · `L1.18`'s adversarial review found the double-spend, and it found it in the
+one place I had told myself was safe.**
+
+Fourth review in a row to find criticals behind a green suite (`A.91` four, `A.98` five, `A.100`
+five, now two criticals and five majors), **every one reproduced end to end before being reported**.
+
+*The critical, and why the suite could never have caught it.* `commit_to_position` folded the log,
+decided, and inserted in **three separate transactions**. Eight threads reserving ₹2,00,000 each
+against a ₹10,00,000 book: **all eight accepted**, ₹16,00,000 committed, 15 trials out of 15, and
+`snapshot()` raised nothing because the checkpoint had been written from the same corrupted fold.
+Cross-process reproduced it. The suite could not catch it because **every test in it was
+single-threaded** — the spec's own §7 listed "a commit racing an edit" as required and no such test
+existed. The whole invariant the reservation model exists to enforce was defeated by the one
+scenario nobody wrote.
+
+*The second critical was in the FOLD, which makes it worse.* A duplicate `POSITION_COMMIT` key
+resolved by last-write-wins, so two ₹3,00,000 commits under one key folded to ₹3,00,000 committed
+and ₹7,00,000 free — money invented — and one release returned the lot. A write-path guard is not a
+guarantee when the write path is not serialised, and a fold defect is unrecoverable by replay.
+
+*Fixed:* every write is one `BEGIN IMMEDIATE` spanning fold, decision, insert and checkpoint; a
+partial unique index enforces one commit per position key in the database; the fold REFUSES a
+duplicate rather than resolving it; the diverged checkpoint now refuses **writes** as well as reads,
+repairable only by a recorded `CHECKPOINT_REPAIR` event, because the next ordinary edit used to
+repair it silently; amounts are bounded by `A.23`'s declared range, after `Decimal('1E+1000000')`
+was accepted, answered `303`, and made every later read of the page raise `decimal.Overflow`;
+`total_by_kind` reports money that actually moved rather than money that was asked for, which was
+overstating a loss against a small book nine-fold; a refused edit renders **over the real book**
+instead of a page claiming the operator has no capital and no history; and `.env` loading moved out
+of the app factory into `dashboard_service_entrypoint`, because building an app in a test was
+injecting fifty live credentials into the test process.
+
+*Four tests were tautologies, each proven by mutation.* The fold-equals-checkpoint property compared
+a fold against a fold and never read the cache — a mutant that corrupted the checkpoint AND removed
+the agreement check still passed it. The free-capital property asserted `0 <= free <= balance`,
+which the definition of `free` makes true by construction — a mutant ignoring commitments entirely
+passed. The append-only test checked METHOD NAMES against a blocklist of verbs — a real public
+`erase_history()` running `DELETE FROM paper_capital_event` passed, because "erase" was not on the
+list. All three now check the thing rather than its shadow, and eight concurrency tests exist.
+
+*Verified live:* eight concurrent commits against the real ledger, **five accepted, three refused**,
+committed exactly equal to the balance, nothing over-committed. The reservation path has now run
+outside the test suite for the first time.
+
 **A.102 · 2026-08-13 · The paper book gets its own money, and `A.101`'s resolver is scoped to live.**
 
 *The question that forced it.* The operator's real account carries a debit of **−88 rupees** — the

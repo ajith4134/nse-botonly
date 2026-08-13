@@ -8,7 +8,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/home/opc/nse-algo-trader
 ExecStart=/home/opc/nse-algo-trader/.venv/bin/python -m uvicorn \
-    nse_algo_trader.dashboard.dashboard_server:app \
+    nse_algo_trader.dashboard.dashboard_service_entrypoint:app \
     --host 0.0.0.0 --port 8080 --no-access-log
 
 # A dashboard that dies at 3am and stays dead is worse than no dashboard: the wall is

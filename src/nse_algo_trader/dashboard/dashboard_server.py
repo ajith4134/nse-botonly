@@ -34,7 +34,6 @@ from fastapi.responses import (
     RedirectResponse,
 )
 
-from nse_algo_trader.broker_credentials import load_env_file_into_environ
 from nse_algo_trader.capital_configuration import (
     CapitalConfigurationError,
     load_trading_capital_from_environment,
@@ -93,6 +92,7 @@ from nse_algo_trader.dashboard.paper_capital_surface_renderer import (
     absent_paper_capital_surface_state,
     build_paper_capital_surface_state,
     render_paper_capital_page,
+    with_refusal,
 )
 from nse_algo_trader.dashboard.regime_brain_read_model import (
     RegimeReadModelError,
@@ -317,6 +317,7 @@ SURFACED_MODULES: frozenset[str] = frozenset(
         # `L1.18` — the paper trading book's virtual money, drawn in full by `/paper-capital`.
         "nse_algo_trader.paper_capital_ledger",
         "nse_algo_trader.dashboard.paper_capital_surface_renderer",
+        "nse_algo_trader.dashboard.dashboard_service_entrypoint",
     }
 )
 """Modules that genuinely have a panel today. Declaring this is safe precisely BECAUSE
@@ -403,14 +404,12 @@ def inadmissible_depth_instruments(session_date: date) -> frozenset[int]:
 def build_dashboard_app() -> FastAPI:
     """The app. Constructed by a function so tests get a fresh instance.
 
-    The project `.env` is loaded here, as `run_daily_operations` already does at its own entry.
-    Without it the server saw NONE of the operator's configuration: `NSE_TRADING_CAPITAL_RUPEES`
-    sat correctly in `.env` and every surface that reads it reported it unset, which is the worst
-    kind of gap — the configuration looks done and the system behaves as though it is not. Existing
-    process variables win (`override=False`), so a systemd `Environment=` line still beats the file
-    and a test that sets the variable is not overwritten by it.
+    This deliberately does NOT read the project `.env`. The server needs it — without it
+    `NSE_TRADING_CAPITAL_RUPEES` sat correctly in the file and every surface reported it unset — but
+    loading it here injected roughly fifty real credentials into any process that built an app,
+    pytest included, where `monkeypatch.setenv` cannot undo them. `dashboard_service_entrypoint` is
+    the module systemd runs and the one place that load happens.
     """
-    load_env_file_into_environ()
     app = FastAPI(title="nse-algo-trader dashboard", docs_url=None, redoc_url=None)
 
     @app.get("/", response_model=None)
@@ -666,27 +665,34 @@ def build_dashboard_app() -> FastAPI:
         from a lakh to a crore, and the surface stamps an over-ceiling book rather than refusing it.
 
         A refusal from the ledger is rendered as a refusal, not swallowed into a redirect that would
-        look identical to success.
+        look identical to success — and it is rendered OVER THE BOOK AS IT STANDS. The first version
+        built the failure page from the empty state, so one typo in the amount field told the
+        operator their funded ledger had no capital, no history and an unreadable ceiling. A refusal
+        must not erase the thing it refused to change.
+
+        Timestamps are the ledger's to assign. This route deliberately does NOT pass `occurred_at`:
+        two operators posting in the same instant each captured `now` before the other committed,
+        and the second edit was rejected for being "earlier than the last event" — a race reported
+        as a backdated event. Under the write lock the ledger stamps monotonically by construction.
         """
         if not _is_authorised(request):
             return _unauthorised_html()
         now = datetime.now(IST)
+
+        def refused(failure_text: str) -> HTMLResponse:
+            return HTMLResponse(
+                render_paper_capital_page(
+                    with_refusal(_paper_capital_state(now), failure_text)
+                ),
+                status_code=400,
+            )
+
         try:
             figure = Decimal(balance_rupees.strip().replace(",", ""))
         except (ArithmeticError, ValueError):
-            return HTMLResponse(
-                render_paper_capital_page(
-                    absent_paper_capital_surface_state(
-                        measured_at=now,
-                        ledger_path=DEFAULT_PAPER_CAPITAL_LEDGER_PATH,
-                        live_ceiling_rupees=None,
-                        unavailable_reason=(
-                            f"{balance_rupees!r} is not a number this ledger will interpret, so "
-                            "nothing was written."
-                        ),
-                    )
-                ),
-                status_code=400,
+            return refused(
+                f"{balance_rupees!r} is not a number this ledger will interpret, so nothing was "
+                "written."
             )
         try:
             ceiling = load_trading_capital_from_environment()
@@ -694,22 +700,11 @@ def build_dashboard_app() -> FastAPI:
                 if not ledger.events():
                     ledger.seed_from_ceiling(
                         ceiling,
-                        occurred_at=now,
                         reason="seeded from the operator ceiling on the first dashboard write",
                     )
-                ledger.set_balance(figure, occurred_at=now, reason=reason)
+                ledger.set_balance(figure, reason=reason)
         except (PaperCapitalError, CapitalConfigurationError) as failure:
-            return HTMLResponse(
-                render_paper_capital_page(
-                    absent_paper_capital_surface_state(
-                        measured_at=now,
-                        ledger_path=DEFAULT_PAPER_CAPITAL_LEDGER_PATH,
-                        live_ceiling_rupees=None,
-                        unavailable_reason=f"the ledger refused this edit: {failure}",
-                    )
-                ),
-                status_code=400,
-            )
+            return refused(f"the ledger refused this edit: {failure}")
         redirect = RedirectResponse("/paper-capital", status_code=303)
         _remember_key(redirect, request)
         return redirect

@@ -7,6 +7,7 @@ way the rule exists to prevent. They drive the real FastAPI app through its real
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -225,10 +226,103 @@ def test_every_ledger_row_carries_one_cell_per_column(ledger_path: Path) -> None
 
 
 @pytest.mark.adversarial
+def test_a_refused_edit_still_shows_the_book_that_was_not_changed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refusal must not erase the thing it refused to change.
+
+    The `R.23(c)` review posted one typo against a funded ledger and the 400 page reported "not
+    seeded", "the paper book has no capital yet", "the ledger holds no events" and an "unreadable"
+    ceiling — four false statements about the operator's own book, none of them caused by the typo.
+    """
+    ledger_file = tmp_path / "funded.sqlite3"
+    monkeypatch.setattr(dashboard_server, "DEFAULT_PAPER_CAPITAL_LEDGER_PATH", ledger_file)
+    monkeypatch.setattr(dashboard_server, "read_access_token", lambda: None)
+    monkeypatch.setenv("NSE_TRADING_CAPITAL_RUPEES", "1000000")
+    with TestClient(dashboard_server.build_dashboard_app()) as client:
+        client.post(
+            "/paper-capital", data={"balance_rupees": "750000", "reason": "the real book"}
+        )
+        refused = client.post(
+            "/paper-capital", data={"balance_rupees": "seven lakh", "reason": "typo"}
+        )
+    assert refused.status_code == 400
+    assert "edit refused" in refused.text
+    assert "Nothing below has changed" in refused.text
+    # The book it refused to change is still on the page, in full.
+    assert "Rs 750,000.00" in refused.text
+    assert "not seeded" not in refused.text
+    assert "The ledger holds no events" not in refused.text
+    assert "unreadable" not in refused.text
+    with PaperCapitalLedger(ledger_file) as ledger:
+        assert ledger.fold_from_events().balance_rupees == Decimal("750000")
+
+
+@pytest.mark.adversarial
+def test_an_absurd_figure_cannot_reach_the_log_or_brick_the_surface(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`1E+1000000` was accepted, answered 303, and made every later GET raise `decimal.Overflow`.
+
+    Recovery existed only by posting blind into a page that could no longer render.
+    """
+    ledger_file = tmp_path / "absurd.sqlite3"
+    monkeypatch.setattr(dashboard_server, "DEFAULT_PAPER_CAPITAL_LEDGER_PATH", ledger_file)
+    monkeypatch.setattr(dashboard_server, "read_access_token", lambda: None)
+    monkeypatch.setenv("NSE_TRADING_CAPITAL_RUPEES", "1000000")
+    with TestClient(dashboard_server.build_dashboard_app()) as client:
+        client.post("/paper-capital", data={"balance_rupees": "500000", "reason": "real book"})
+        for absurd in ("1E+1000000", "1E+400", "99999999999"):
+            posted = client.post(
+                "/paper-capital", data={"balance_rupees": absurd, "reason": "absurd"}
+            )
+            assert posted.status_code == 400, absurd
+        after = client.get("/paper-capital")
+    assert after.status_code == 200
+    assert "Rs 500,000.00" in after.text
+
+
+@pytest.mark.adversarial
+def test_a_sub_paisa_balance_is_never_displayed_as_zero(ledger_path: Path) -> None:
+    """A `Rs 0.00` tile beside a green TRADEABLE badge is a contradiction the reader
+    must resolve."""
+    with PaperCapitalLedger(ledger_path) as ledger:
+        ledger.set_balance(Decimal("0.005"), occurred_at=_at(1), reason="sub-paisa book")
+    page = _page(ledger_path)
+    tiles = page.split('<div class="tiles">')[1].split("</div></div>")
+    free_tile, balance_tile = tiles[0], tiles[1]
+    assert "Rs 0.005" in free_tile
+    assert "Rs 0.005" in balance_tile
+    assert "tradeable" in page
+    # A genuine zero still reads as a zero — `committed` is legitimately Rs 0.00 here.
+    assert "Rs 0.00<" in tiles[2]
+
+
+@pytest.mark.adversarial
+def test_building_the_app_does_not_inject_the_projects_secrets_into_this_process() -> None:
+    """`.env` holds ~50 real credentials, and `monkeypatch.setenv` cannot undo what it did not set.
+
+    With the load inside the app factory, every test that built an app ran the rest of the session
+    against the operator's live secrets. The service reads `.env` in
+    `dashboard_service_entrypoint`; the factory does not.
+    """
+    canary = "ZERODHA_KITE_API_SECRET"
+    was_present = canary in os.environ
+    dashboard_server.build_dashboard_app()
+    assert (canary in os.environ) == was_present
+    source = Path(dashboard_server.__file__).read_text()
+    assert "load_env_file_into_environ" not in source
+
+
+@pytest.mark.adversarial
 def test_the_surface_is_claimed_in_the_manifest_so_the_wall_cannot_call_it_unsurfaced() -> None:
     """`R.08`/`L13.06` — a panel that exists but is not claimed reads as UNSURFACED forever."""
     assert "nse_algo_trader.paper_capital_ledger" in dashboard_server.SURFACED_MODULES
     assert (
         "nse_algo_trader.dashboard.paper_capital_surface_renderer"
+        in dashboard_server.SURFACED_MODULES
+    )
+    assert (
+        "nse_algo_trader.dashboard.dashboard_service_entrypoint"
         in dashboard_server.SURFACED_MODULES
     )
