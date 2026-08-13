@@ -151,6 +151,11 @@ def _rupees(value: Decimal) -> str:
     return rounded
 
 
+def _sigma_text(sized: SizedPosition) -> str:
+    """Volatility in bps, rendered plainly — a tile is read at a glance, not parsed."""
+    return str(sized.volatility.sigma_bps.quantize(Decimal("0.1")))
+
+
 def _tiles(state: SizingSurfaceState) -> str:
     if not state.has_decision or state.sized is None or state.verdict is None:
         return (
@@ -168,9 +173,9 @@ def _tiles(state: SizingSurfaceState) -> str:
 <div class="tile"><div class="tile-value">{sized.quantity:,}</div>
 <div class="tile-label">units — {sized.lots} lot(s) of {sized.lot_size}</div></div>
 <div class="tile"><div class="tile-value">{escape(_rupees(sized.notional_rupees))}</div>
-<div class="tile-label">notional, against {escape(_rupees(sized.deployable_rupees))} deployable</div>
-</div>
-<div class="tile"><div class="tile-value">{escape(sized.volatility.sigma_bps.quantize(Decimal('0.1')).to_eng_string())}</div>
+<div class="tile-label">notional, against
+{escape(_rupees(sized.deployable_rupees))} deployable</div></div>
+<div class="tile"><div class="tile-value">{escape(_sigma_text(sized))}</div>
 <div class="tile-label">bps volatility over {sized.volatility.horizon_bars} bar(s)</div></div>
 <div class="tile"><div class="tile-value">{badge}</div>
 <div class="tile-label">{len(verdict.refusals)} refusal(s)</div></div>
@@ -247,9 +252,11 @@ def _refusals(state: SizingSurfaceState) -> str:
     if verdict.is_allowed:
         return (
             '<div class="panel"><p class="sub">No rule refused this order. '
-            f"Limits applied: notional {escape(_rupees(verdict.limits_applied.maximum_notional_rupees))}, "
+            "Limits applied: notional "
+            f"{escape(_rupees(verdict.limits_applied.maximum_notional_rupees))}, "
             f"leverage {verdict.limits_applied.maximum_leverage.quantize(Decimal('0.01'))}x, "
-            f"collar {(verdict.limits_applied.price_collar_fraction * 100).quantize(Decimal('0.01'))}%, "
+            "collar "
+            f"{(verdict.limits_applied.price_collar_fraction * 100).quantize(Decimal('0.01'))}%, "
             f"rate {verdict.limits_applied.maximum_orders_per_rate_window} per window.</p></div>"
         )
     rows = "".join(

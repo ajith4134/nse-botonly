@@ -41,6 +41,7 @@ ROUTES = (
     "/costs",
     "/orders",
     "/paper-capital",
+    "/sizing",
 )
 
 PAGE_LOAD_TIMEOUT_MILLISECONDS = 120_000

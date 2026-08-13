@@ -101,6 +101,11 @@ from nse_algo_trader.dashboard.regime_brain_read_model import (
 from nse_algo_trader.dashboard.regime_brain_surface_renderer import (
     render_regime_brain_page,
 )
+from nse_algo_trader.dashboard.sizing_surface_renderer import (
+    SizingSurfaceState,
+    absent_sizing_surface_state,
+    render_sizing_page,
+)
 from nse_algo_trader.dashboard.transaction_cost_surface_renderer import (
     SegmentPricingAssumption,
     build_transaction_cost_surface_state,
@@ -130,6 +135,27 @@ from nse_algo_trader.paper_capital_ledger import (
     PaperCapitalError,
     PaperCapitalLedger,
 )
+from nse_algo_trader.sizing.pre_trade_risk_gate import (
+    PreTradeRiskGate,
+    RegulatoryFacts,
+    derive_limits,
+)
+from nse_algo_trader.sizing.session_risk_state_store import (
+    DEFAULT_SESSION_RISK_STATE_PATH,
+    DailyLossLimit,
+    SessionRiskState,
+    SessionRiskStateError,
+    SessionRiskStateStore,
+)
+from nse_algo_trader.sizing.sizing_inputs_from_real_stores import (
+    SizingInputAssemblyError,
+    assemble_sizing_inputs,
+    tradeable_symbols,
+)
+from nse_algo_trader.sizing.volatility_targeted_position_sizer import (
+    PositionSizingError,
+    VolatilityTargetedPositionSizer,
+)
 from nse_algo_trader.transaction_cost.charge_reconciliation_ledger import (
     ChargeReconciliationLedger,
 )
@@ -137,6 +163,30 @@ from nse_algo_trader.transaction_cost.chargeable_market_segments import Chargeab
 from nse_algo_trader.transaction_cost.nse_transaction_cost_engine import (
     NseTransactionCostEngine,
 )
+
+EQUAL_SEGMENT_COUNT = 6
+"""`R.10` — the six segments are equal by default, so each may carry one concurrent position."""
+
+SIZING_HORIZON_BARS = 5
+"""The horizon this surface works a decision over. The same five bars `F01`'s calibration is fitted
+across, so the edge and the volatility are measured over the same window rather than two."""
+
+CASH_INTRADAY_MARGIN_FRACTION = Decimal("0.20")
+"""What this surface assumes for illustration ONLY, and says so on the page.
+
+The real per-segment margin regime has no source in this system yet — `segment_margin_fractions()`
+returns `{}` on purpose, with the margin ingest (`L7.08`) as its named consumer. This figure exists
+so the page can DRAW a leverage limit; nothing trades on it, and when `L7.08` lands this constant
+goes away rather than being tuned."""
+
+REGISTRATION_THRESHOLD_ORDERS_PER_SECOND = 10
+"""NSE/INVG/67858 para B.5 — a regulatory fact, sourced (`A.101` decision 2)."""
+
+SIZING_CANDIDATES_TRIED = 40
+"""How many instruments the page walks before reporting that none could be sized.
+
+Bounded because a page load must not scan 2,400 instruments, and stated because `R.11` says a
+bounded search reports what it skipped rather than reading as exhaustive."""
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
@@ -318,6 +368,14 @@ SURFACED_MODULES: frozenset[str] = frozenset(
         "nse_algo_trader.paper_capital_ledger",
         "nse_algo_trader.dashboard.paper_capital_surface_renderer",
         "nse_algo_trader.dashboard.dashboard_service_entrypoint",
+        # `F03` — everything `/sizing` actually draws.
+        "nse_algo_trader.sizing.kelly_edge_scaler",
+        "nse_algo_trader.sizing.realised_volatility_estimator",
+        "nse_algo_trader.sizing.volatility_targeted_position_sizer",
+        "nse_algo_trader.sizing.session_risk_state_store",
+        "nse_algo_trader.sizing.pre_trade_risk_gate",
+        "nse_algo_trader.sizing.sizing_inputs_from_real_stores",
+        "nse_algo_trader.dashboard.sizing_surface_renderer",
     }
 )
 """Modules that genuinely have a panel today. Declaring this is safe precisely BECAUSE
@@ -708,6 +766,150 @@ def build_dashboard_app() -> FastAPI:
         redirect = RedirectResponse("/paper-capital", status_code=303)
         _remember_key(redirect, request)
         return redirect
+
+    def _sizing_state(now: datetime, requested_symbol: str) -> SizingSurfaceState:
+        """Work one real decision, or say exactly which store could not answer.
+
+        Picks the first instrument the calibration ladder actually covers when no symbol is asked
+        for, because a default page that always reads "no calibration" teaches nobody anything —
+        and 2,086 of 2,400 instruments have no calibration today (`R.05` run, 2026-08-13).
+        """
+        session_date = now.date()
+        session_state: SessionRiskState | None = None
+        daily_limit: DailyLossLimit | None = None
+        if DEFAULT_SESSION_RISK_STATE_PATH.exists():
+            with SessionRiskStateStore(DEFAULT_SESSION_RISK_STATE_PATH) as risk_store:
+                try:
+                    session_state = risk_store.state_for(session_date=session_date, now=now)
+                except SessionRiskStateError:
+                    session_state = None
+                daily_limit = risk_store.daily_loss_limit(as_of=session_date)
+
+        try:
+            capital = load_trading_capital_from_environment()
+        except CapitalConfigurationError as failure:
+            return absent_sizing_surface_state(
+                measured_at=now,
+                session_date=session_date,
+                state_path=DEFAULT_SESSION_RISK_STATE_PATH,
+                unavailable_reason=f"the operator ceiling cannot be read: {failure}",
+                missing_inputs=("capital_configuration",),
+            )
+
+        try:
+            universe = tradeable_symbols(as_of=session_date)
+        except SizingInputAssemblyError as failure:
+            return absent_sizing_surface_state(
+                measured_at=now,
+                session_date=session_date,
+                state_path=DEFAULT_SESSION_RISK_STATE_PATH,
+                unavailable_reason=str(failure),
+                missing_inputs=failure.missing,
+            )
+
+        candidates = [row for row in universe if not requested_symbol or row[1] == requested_symbol]
+        if not candidates:
+            return absent_sizing_surface_state(
+                measured_at=now,
+                session_date=session_date,
+                state_path=DEFAULT_SESSION_RISK_STATE_PATH,
+                unavailable_reason=(
+                    f"{requested_symbol or 'no instrument'} is not in the sizable universe — it "
+                    "needs both a lot size in the instrument master and recorded bars"
+                ),
+                missing_inputs=("instrument_master", "price_bars"),
+            )
+
+        last_failure = "no instrument could be sized"
+        last_missing: tuple[str, ...] = ()
+        for token, symbol_name, lot_size in candidates[:SIZING_CANDIDATES_TRIED]:
+            try:
+                inputs = assemble_sizing_inputs(
+                    instrument_token=token,
+                    trading_symbol=symbol_name,
+                    lot_size=lot_size,
+                    deployable_rupees=capital.total_rupees,
+                    concurrent_position_capacity=EQUAL_SEGMENT_COUNT,
+                    horizon_bars=SIZING_HORIZON_BARS,
+                    as_of=now,
+                )
+                sized = VolatilityTargetedPositionSizer().size(inputs)
+            except (SizingInputAssemblyError, PositionSizingError) as failure:
+                last_failure = str(failure)
+                last_missing = getattr(failure, "missing", ())
+                continue
+
+            limits = derive_limits(
+                deployable_rupees=capital.total_rupees,
+                traded_value_percentile_rupees=capital.total_rupees,
+                realised_move_percentile_fraction=inputs.calibration.mean_captured_sigma,
+                segment_margin_fraction=CASH_INTRADAY_MARGIN_FRACTION,
+                registration_threshold_orders_per_second=(
+                    REGISTRATION_THRESHOLD_ORDERS_PER_SECOND
+                ),
+            )
+            resting = session_state or SessionRiskState(
+                session_date=session_date,
+                opening_equity_rupees=capital.total_rupees,
+                peak_equity_rupees=capital.total_rupees,
+                realised_pnl_rupees=Decimal(0),
+                open_exposure_rupees=Decimal(0),
+                exposure_by_symbol=(),
+                orders_in_rate_window=0,
+                tripped_latches=(),
+            )
+            limit = daily_limit or DailyLossLimit(
+                limit_rupees=None,
+                sessions_observed=0,
+                sigma_daily_rupees=None,
+                z_quantile=Decimal(0),
+                unavailable_reason="no session history has been recorded",
+            )
+            verdict = PreTradeRiskGate().evaluate(
+                sized=sized,
+                state=resting,
+                facts=RegulatoryFacts(trading_symbol=symbol_name),
+                limits=limits,
+                daily_loss_limit=limit,
+            )
+            return SizingSurfaceState(
+                measured_at=now,
+                session_date=session_date,
+                sized=sized,
+                verdict=verdict,
+                session_state=session_state,
+                daily_loss_limit=daily_limit,
+                state_path=DEFAULT_SESSION_RISK_STATE_PATH,
+            )
+
+        return absent_sizing_surface_state(
+            measured_at=now,
+            session_date=session_date,
+            state_path=DEFAULT_SESSION_RISK_STATE_PATH,
+            unavailable_reason=last_failure,
+            missing_inputs=last_missing,
+        )
+
+    @app.get("/sizing", response_class=HTMLResponse)
+    def sizing_surface(request: Request, symbol: str = "") -> HTMLResponse:
+        """`F03`'s surface: a WORKED sizing decision against the real stores, plus the verdict.
+
+        The decision is computed on request from the real bar store, the real instrument master and
+        the real reversion calibration, point-in-time. That is deliberate: a page that showed a
+        cached size would be showing what the sizer said once, and the number an operator needs to
+        trust is the one it says now.
+
+        Read-only in every sense. No store is written, and the session's latches are READ rather
+        than evaluated — a page load must never halt a session, because a read that halts is a read
+        nobody can safely perform to find out where they stand.
+        """
+        if not _is_authorised(request):
+            return _unauthorised_html()
+        now = datetime.now(IST)
+        state = _sizing_state(now, symbol.strip().upper())
+        response = HTMLResponse(render_sizing_page(state))
+        _remember_key(response, request)
+        return response
 
     @app.get("/clock", response_class=HTMLResponse)
     def clock_integrity_surface(request: Request) -> HTMLResponse:

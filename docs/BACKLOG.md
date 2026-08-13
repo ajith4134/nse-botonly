@@ -54,12 +54,18 @@ the items below are what is missing, and they are the reason.
   point, or whether concentration belongs entirely to `L7.05` (per-symbol and aggregate exposure).
   Recorded rather than fixed on the spot, because the choice changes what volatility targeting
   means here.
-- ⛔ **`R.08`: F03 has NO dashboard surface.** The five modules are deliberately NOT claimed in
-  `SURFACED_MODULES`, so `/manifest` will correctly report them UNSURFACED rather than letting an
-  over-claim hide the gap. A sizing decision an operator cannot see is exactly the class of thing
-  `R.08` exists to prevent, and this is the largest open item against the slice. The surface must
-  show, per decision: the volatility budget, the Kelly cap, which bound bound it, the lot rounding,
-  and every gate refusal with its tier.
+- 🟢 **`R.08` — DONE 2026-08-13. `/sizing` is live** and works a REAL decision on request from the
+  real bar store, instrument master and calibration, point-in-time. It shows all ten steps that
+  produced the quantity, which bound decided it, and every gate refusal with its tier; an unread
+  regulatory source is shouted rather than treated as clear. All seven modules claimed in
+  `SURFACED_MODULES`; screenshotted both themes. Served in 0.09 s.
+- 🔴 **`/sizing`'s derived limits are ILLUSTRATIVE and the page must say so more loudly.** The route
+  passes `mean_captured_sigma` as the price-collar percentile (it is a dispersion, not a realised-
+  move percentile) and `CASH_INTRADAY_MARGIN_FRACTION = 0.20` as the segment margin, which has no
+  source in this system — `segment_margin_fractions()` returns `{}` on purpose. The rendered
+  leverage and collar limits are therefore shaped correctly and sourced wrongly. Named consumers:
+  `L7.08` for real margins, and a traded-value/realised-move percentile producer that does not yet
+  exist. Nothing trades on these figures today, which is the only reason this is 🔴 and not ⛔.
 - ⛔ **`R.23(c)` adversarial review has NOT run for F03.** Four consecutive reviews have found
   criticals behind a green suite (`A.91`, `A.98`, `A.100`, `A.103`). Treating this suite as evidence
   before the review has run would contradict `O.82` on the day it was written.
