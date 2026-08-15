@@ -923,6 +923,13 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       flow the wire would not have carried. All three sessions still pass, still flat at the close:
       net −Rs 9,962.65 / −Rs 1,022.36 / −Rs 2,082.25. The gate refused 197 of 592 requests and every
       one of them was a SQUARE-OFF rather than an entry (`docs/research/231`, `O.97`).
+      **Horizon staggered per instrument (`A.115`, 2026-08-15)** — the holding time is now selected
+      from the fitted grid on lower-confidence capture per bar rather than set once. It did NOT
+      solve the exit wave it was proposed for (refusals rose on all three sessions) and the run
+      found why: **the median entry waits 60 minutes for its first fill**, so the horizon expires
+      before the position exists and liquidity, not the schedule, sets the holding time
+      (`docs/research/232`, `O.98`). The selector stays on `R.03` grounds and the wave is now a
+      named open question about the FILL path.
 
 **— L10 —**
 

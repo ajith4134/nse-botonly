@@ -162,6 +162,27 @@ def assemble_sizing_inputs(
     )
 
 
+def recent_closes_available_at(
+    *,
+    instrument_token: int,
+    as_of: datetime,
+    market_data: Path = DEFAULT_MARKET_DATA_PATH,
+    closes_wanted: int = CLOSES_WANTED,
+) -> list[tuple[datetime, Decimal]]:
+    """The public read of the same availability-filtered closes `assemble_sizing_inputs` uses.
+
+    Exposed because the horizon is now CHOSEN from the deviation (`A.115`), and the deviation is
+    measured from these closes — so a caller has to see them before it can ask for inputs at a
+    horizon. Same function underneath, so the two can never diverge on what was knowable when.
+    """
+    return _recent_closes(
+        instrument_token=instrument_token,
+        as_of=as_of,
+        market_data=market_data,
+        closes_wanted=closes_wanted,
+    )
+
+
 def _recent_closes(
     *, instrument_token: int, as_of: datetime, market_data: Path, closes_wanted: int
 ) -> list[tuple[datetime, Decimal]]:

@@ -37,6 +37,10 @@ from pathlib import Path
 
 from nse_algo_trader.broker_credentials import load_env_file_into_environ
 from nse_algo_trader.capital_configuration import load_trading_capital_from_environment
+from nse_algo_trader.cost_gate.mean_reversion_edge_calibrator import ReversionCalibrationStore
+from nse_algo_trader.cost_gate.per_instrument_reversion_horizon_selector import (
+    PerInstrumentReversionHorizonSelector,
+)
 from nse_algo_trader.market_depth.market_depth_tape_store import MarketDepthTapeReader
 from nse_algo_trader.market_depth.order_book_snapshot_replay_engine import (
     OrderBookSnapshotReplayEngine,
@@ -214,6 +218,9 @@ def main() -> int:
         # comparison graduation reads being silently skipped.
         cost_pricer=NseTransactionCostEngine(seeded_nse_market_rule_store()),
         rate_gate=rate_gate,
+        # One horizon for every instrument synchronises the exits and the wire refuses the wave
+        # (`A.115`); this chooses the holding time from the fitted grid, per deviation.
+        horizon_selector=PerInstrumentReversionHorizonSelector(ReversionCalibrationStore()),
     )
 
     print(
@@ -223,6 +230,13 @@ def main() -> int:
     report = runner.run()
     print(report.describe())
     print(rate_gate.describe())
+    horizons = Counter(
+        record.detail.split(" bars")[0]
+        for record in report.decisions
+        if record.outcome == "placed" and " bars" in record.detail
+    )
+    if horizons:
+        print("horizons chosen: " + ", ".join(f"{h}b x{n}" for h, n in sorted(horizons.items())))
     print(
         f"books: {book_source.instruments_loaded} instrument(s) read from the tape, "
         f"{len(book_source.instruments_with_no_tape)} never recorded"

@@ -534,6 +534,21 @@ class ReversionCalibrationStore:
             maturity=CalibrationMaturity(str(row[9])),
         )
 
+    def calibrated_horizons(self, *, as_of: date) -> Sequence[int]:
+        """Which holding horizons have evidence at all, ascending — the grid, read not assumed.
+
+        A caller choosing a horizon must choose from what was FITTED. Hardcoding the ladder here or
+        in the caller would mean a refit that added or dropped a horizon left a stale list deciding
+        how long real positions are held.
+        """
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT DISTINCT horizon_bars FROM reversion_calibration "
+                "WHERE fitted_through <= ? ORDER BY horizon_bars",
+                [as_of.isoformat()],
+            ).fetchall()
+        return tuple(int(row[0]) for row in rows)
+
     def calibrated_buckets(self, *, horizon_bars: int, as_of: date) -> Sequence[Decimal]:
         """Which deviation depths have evidence. An empty result is a coverage statement."""
         with closing(self._connect()) as connection:

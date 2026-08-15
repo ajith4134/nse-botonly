@@ -2036,6 +2036,43 @@ touching the limiter, because the limiter is behaving correctly.
 **Confidence: measured** on the refusal pattern; **reasoned** on the staggering fix; **judgement**
 that the synchronisation explains most of 08-12's 50.4% refusal rate.
 
+**CORRECTED IN PLACE 2026-08-15, after the run — the diagnosis above is WRONG.** Staggering the
+horizon was built (`A.115`) and run on all three sessions, and the refusal rate went UP on every one
+of them (48→56, 127→129, 22→59). Two reasons, both measured (`docs/research/232`): 95% of positions
+selected the SAME horizon anyway, because with only pooled calibrations every instrument in a bucket
+reads the same grid; and, more importantly, **the horizon is not what sets holding time here at
+all** — the median entry on 2026-08-12 waited 60 minutes for its first fill, so a 25-minute horizon
+had already expired before the position existed. The exit wave is created by fills bunching onto the
+few instants where the recorded tape has fresh depth, and no scheduling change can disperse a wave
+that liquidity is creating. The original opinion is left above as written.
+
 **What would change my mind:** if dispersing the horizon leaves the refusal rate high, the collision
 is coming from the entry side after all — many instruments deviating together in a correlated move —
 and the answer would be a concurrency cap on simultaneous exits rather than a scheduling change.
+
+## O.98 · 2026-08-15 · Fill latency, not the schedule, is the most valuable open question in `F04`
+
+**Opinion:** the median entry on 2026-08-12 did not get its first fill for **60 minutes**, and that
+single number matters more than anything else currently open on this feature. A trade sized against
+a deviation measured at 09:40 and filled at 10:40 is not the trade the strategy asked for — the
+deviation it was priced on has had an hour to do whatever it was going to do. Every P&L number in
+`229`–`232` is a measurement of that, not of the strategy.
+
+**Reasoning: measured** — journals for both sessions, entry `decided_at` against first fill:
+60 minutes median and 90 maximum on 08-12, 22.5 and 40 on 08-13. Holding-time gaps of 5 to 90
+minutes against horizons of 5 and 25 minutes. All 146 positions exited on `horizon expired`, so the
+horizon triggers the exit while liquidity sets the clock.
+
+**What I think is behind it, in the order I would test:** the recorded depth tape is sparse for thin
+scrips, and `SteppedRecordedBookSource` correctly refuses a stale book (`A.110`), so an order simply
+has no counterparty to fill against for long stretches — which would make this a property of the
+CAPTURE rather than of the market. Then: the venue fills one rung per poll, so a large order in a
+thin book needs many fresh books to complete. Then: the rate gate now delays some sends.
+
+**Confidence: measured** on the latency; **reasoned** on the sparse-tape explanation; **judgement**
+on it outranking the cost gate `O.95` proposed.
+
+**What would change my mind:** if the tape turns out to hold packets for those instruments through
+the gap and the staleness threshold is simply too tight, the fix is in the threshold rather than in
+the market, and it is cheap. That is the first thing to measure — packets per instrument per
+five-minute bucket, against the gaps the fills actually waited through.

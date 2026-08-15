@@ -4043,3 +4043,11 @@ re-evaluated after a RESIZE.
   send. Erring toward refusal is the right direction for a guard, but it is a gap. The fix is a
   limiter that can wait against an injected clock rather than `time.sleep`, which is a change to
   `F02` and not to the paper loop.
+- **M21 · the median paper entry waits an HOUR for its first fill, and nothing yet explains why.**
+  Measured 2026-08-15 from the journals: entry `decided_at` to first fill is a median of 60 minutes
+  on 2026-08-12 (max 90) and 22.5 on 2026-08-13 (max 40), against horizons of 5 and 25 minutes. A
+  trade sized on a deviation measured an hour before it fills is not the trade the strategy asked
+  for, so every P&L in `docs/research/229`–`232` is partly a measurement of this. First thing to
+  check, and it is cheap: packets per instrument per five-minute bucket in the depth tape, against
+  the gaps the fills actually waited through — if the tape holds packets the staleness threshold
+  (`A.110`) is discarding, the fix is in the threshold rather than in the market. `O.98`.

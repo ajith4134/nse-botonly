@@ -51,6 +51,11 @@ from decimal import Decimal
 from typing import Protocol
 
 from nse_algo_trader.capital_configuration import TradingCapital
+from nse_algo_trader.cost_gate.per_instrument_reversion_horizon_selector import (
+    NoHorizonHasEvidenceError,
+    PerInstrumentReversionHorizonSelector,
+    SelectedHorizon,
+)
 from nse_algo_trader.market_depth.order_book_snapshot_replay_engine import BookSnapshot
 from nse_algo_trader.order_path.broker_order_facility_facts import (
     OrderProduct,
@@ -101,6 +106,8 @@ from nse_algo_trader.sizing.sizing_inputs_from_real_stores import (
     RealStorePaths,
     SizingInputAssemblyError,
     assemble_sizing_inputs,
+    deviation_and_dispersion,
+    recent_closes_available_at,
 )
 from nse_algo_trader.sizing.volatility_targeted_position_sizer import (
     PositionSizingError,
@@ -244,6 +251,9 @@ class OpenPaperPosition:
     committed_rupees: Decimal
     opened_at: datetime
     expires_at: datetime
+    horizon_bars: int = 0
+    """The holding time CHOSEN for this position, which is no longer one number for the session."""
+
     exit_intent_ids: tuple[str, ...] = ()
     """Every square-off sent for this position, in order.
 
@@ -393,6 +403,14 @@ class PaperTradingSessionRunner:
     store_paths: RealStorePaths = field(default_factory=RealStorePaths)
     """Where the bar and calibration stores live. A value rather than a fixed path so a
     verification run can point the identical code at a copy (`R.03`)."""
+
+    horizon_selector: PerInstrumentReversionHorizonSelector | None = None
+    """Chooses the holding time per deviation from the fitted grid (`A.115`).
+
+    `None` falls back to `policy.horizon_bars` for every entry, which is what the loop did before
+    and is kept only so a hermetic test can hold the horizon still while it varies something else.
+    Production passes a selector: one horizon for every instrument synchronises the exits, and the
+    rate gate refuses a wave."""
 
     rate_gate: SubmissionRateGate = field(default_factory=AlwaysPermits)
     """The wire's own ceiling (`L3.06`). Defaults to the null gate so a hermetic test can isolate
@@ -612,13 +630,21 @@ class PaperTradingSessionRunner:
         """Size it, gate it, fund it, send it — refusing at the first step that says no."""
         balance = self._ledger_balance(moment)
         try:
+            selected = self._horizon_for(instrument, moment)
+        except NoHorizonHasEvidenceError as unevidenced:
+            self._record(
+                moment, instrument, signal, outcome="no_evidenced_horizon", detail=str(unevidenced)
+            )
+            return
+        horizon_bars = selected.horizon_bars if selected is not None else self.policy.horizon_bars
+        try:
             inputs = assemble_sizing_inputs(
                 instrument_token=instrument.instrument_token,
                 trading_symbol=instrument.trading_symbol,
                 lot_size=instrument.lot_size,
                 deployable_rupees=balance,
                 concurrent_position_capacity=self.policy.concurrent_position_capacity,
-                horizon_bars=self.policy.horizon_bars,
+                horizon_bars=horizon_bars,
                 as_of=moment,
                 paths=self.store_paths,
             )
@@ -645,7 +671,7 @@ class PaperTradingSessionRunner:
         try:
             collar = realised_move_quantile_from_closes(
                 inputs.recent_closes,
-                horizon_bars=self.policy.horizon_bars,
+                horizon_bars=horizon_bars,
                 quantile=self.policy.price_collar_quantile,
             )
         except PriceCollarUnavailableError as uncollared:
@@ -704,7 +730,9 @@ class PaperTradingSessionRunner:
             decided_at=moment,
             reference_price_paise=sized.reference_price_rupees * PAISE_PER_RUPEE,
             expected_edge_bps=inputs.calibration.mean_captured_sigma,
-            horizon_minutes=max(int(self.policy.horizon.total_seconds() // 60), 1),
+            horizon_minutes=max(
+                int((self.policy.decision_step * horizon_bars).total_seconds() // 60), 1
+            ),
         )
         position_key = f"{instrument.trading_symbol}-{intent.intent_id[:12]}"
         try:
@@ -763,7 +791,8 @@ class PaperTradingSessionRunner:
             average_entry_paise=None,
             committed_rupees=sized.notional_rupees,
             opened_at=moment,
-            expires_at=moment + self.policy.horizon,
+            expires_at=moment + self.policy.decision_step * horizon_bars,
+            horizon_bars=horizon_bars,
         )
         self._record(
             moment,
@@ -773,6 +802,34 @@ class PaperTradingSessionRunner:
             verdict=verdict,
             placement=placement,
             outcome="placed",
+            detail=selected.describe() if selected is not None else "",
+        )
+
+    def _horizon_for(
+        self, instrument: PaperInstrument, moment: datetime
+    ) -> SelectedHorizon | None:
+        """This instrument's own holding time at this instant, or `None` when no selector is set.
+
+        The deviation is measured from the SAME availability-filtered closes the sizer will read,
+        so the horizon and the size are decided on one view of what was knowable.
+        """
+        if self.horizon_selector is None:
+            return None
+        closes = recent_closes_available_at(
+            instrument_token=instrument.instrument_token,
+            as_of=moment,
+            market_data=self.store_paths.market_data,
+        )
+        if not closes:
+            raise NoHorizonHasEvidenceError(
+                f"{instrument.trading_symbol} has no closes available at {moment.isoformat()}, so "
+                "its deviation cannot be measured and no horizon can be evidenced"
+            )
+        deviation, _dispersion = deviation_and_dispersion(closes)
+        return self.horizon_selector.horizon_for(
+            deviation_sigma=deviation,
+            trading_symbol=instrument.trading_symbol,
+            as_of=moment.date(),
         )
 
     def _place(self, intent: TradingIntent, moment: datetime, *, entry: bool) -> PlacementOutcome:

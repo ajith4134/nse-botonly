@@ -4129,6 +4129,32 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
 
+**A.115 · 2026-08-15 · The holding time is now SELECTED from the fitted grid per deviation — and
+the reason it was built turned out not to be true.**
+
+*Decision.* `PerInstrumentReversionHorizonSelector` chooses the holding time for each entry from the
+horizons the calibration was actually fitted on (1, 3, 5 and 10 bars), scoring each on
+lower-confidence capture per bar and refusing when no horizon covers the deviation. It replaces a
+single policy number applied to every instrument in every session. `R.03` alone justifies it: a
+holding time is a threshold, the calibration measures four of them, and the loop was consulting one.
+
+*Why it was built, and why that reason did not survive contact.* `O.97` argued that one horizon
+synchronised the exits and that the rate gate was refusing the resulting wave. Built, wired, and run
+on all three sessions, it **raised** the refusal count on every one (48→56, 127→129, 22→59) and left
+95% of positions choosing the same horizon anyway, because with only pooled calibrations in the
+store every instrument in a deviation bucket reads the same grid.
+
+*What the run found instead, and it is the more important fact.* Holding time is not governed by the
+horizon at all. **The median entry on 2026-08-12 waited 60 minutes for its first fill** — a 25-minute
+horizon had expired before the position existed. Exits bunch because FILLS bunch, onto the few
+instants where the recorded tape has fresh depth for many instruments at once, and no scheduling
+change can disperse a wave that liquidity is creating. Evidence: `docs/research/232`.
+
+*The selector stays.* It is better founded than the constant it replaced and it is the right
+mechanism the moment per-instrument calibrations exist (`BACKLOG` `M11`). It is recorded here as
+NOT having solved the problem it was proposed for, so that nobody reads its presence as evidence
+that the problem was solved.
+
 **A.114 · 2026-08-15 · The paper loop now runs behind the real rate limiter, counting in
 SIMULATED time and never queuing. Operator decision, taken on the options recorded in `M19`.**
 
