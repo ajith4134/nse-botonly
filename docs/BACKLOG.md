@@ -4006,8 +4006,8 @@ re-evaluated after a RESIZE.
 
 ### From the 2026-08-15 suite run (NOT `F04` — `F02`'s rate limiter)
 
-- **M18 · `order_submission_rate_limiter` granted 8 orders inside a 5-second window that permits 7,
-  and the test's own store pollution hid it.** Surfaced 2026-08-15 by
+- 🟢 **M18 · DONE 2026-08-15 (`A.113`).** ~~`order_submission_rate_limiter` granted 8 orders inside
+  a 5-second window that permits 7, and the test's own store pollution hid it.~~ Surfaced 2026-08-15 by
   `test_no_arrival_pattern_can_put_more_than_the_limit_in_any_window`, which Hypothesis reported as
   a `FlakyFailure`: *"Failed on the first call but did not on a subsequent one."* That wording is
   the second defect, not an excuse — the test names its sqlite store `property_{hash(gaps)}.sqlite3`,
@@ -4021,3 +4021,16 @@ re-evaluated after a RESIZE.
   regulatory threshold this sits under is 10 orders/second (`A.101`). It is a GUARD that leaks, so
   it ranks above every strategy question currently open. Not started; it is `F02`'s slice, not
   `F04`'s, and `R.18` says one engine at a time.
+- **M19 · the paper loop sends orders no rate limiter ever sees, and 21% of them would have been
+  refused.** `PaperTradingSessionRunner` builds `CrashSafeOrderPlacer` with the default
+  `AlwaysPermits` rate gate, so `F02`'s `OrderSubmissionRateLimiter` — the thing that keeps this
+  system under the 10-orders/second registration threshold (`A.101`) — is not in the paper path at
+  all. Measured 2026-08-15 by replaying all three sessions' recorded arrivals through a real
+  limiter: **335 arrivals, 265 granted, 70 refused**. Every paper P&L to date therefore assumes an
+  order flow the wire would not have accepted, which is precisely the "second code path, never
+  exercised" failure `A.108` decision 2 exists to prevent. **Not a code choice — an operator
+  question** (`R.19`): the replay steps five simulated minutes per iteration while wall time moves
+  in milliseconds, so a limiter wired in must be told whether it counts in SIMULATED time (correct
+  for the replay, and it would refuse most of a burst issued at one simulated instant) or in WALL
+  time (meaningless in a replay). Either answer changes every paper result, so it is asked before
+  it is built.

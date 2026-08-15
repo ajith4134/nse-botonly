@@ -9,6 +9,7 @@ table produces all three windows — are asserted against the real clock and the
 
 from __future__ import annotations
 
+import itertools
 import sqlite3
 import time
 from dataclasses import replace
@@ -70,6 +71,10 @@ class SteerableSessionClock:
     @property
     def now(self) -> datetime:
         return datetime.fromtimestamp(self._epoch_seconds, tz=UTC)
+
+
+_PROPERTY_STORE_ORDINAL = itertools.count()
+"""One fresh store per property CALL, replays included. See the comment at its use."""
 
 
 def broker_ceiling(maximum_orders: int, window_seconds: int) -> OrderRateLimit:
@@ -420,7 +425,11 @@ def test_no_arrival_pattern_can_put_more_than_the_limit_in_any_window(
     Checked the way the exchange would check it — over every window ending at a granted order —
     rather than by trusting the limiter's own bookkeeping.
     """
-    store = tmp_path / f"property_{abs(hash(tuple(gaps_milliseconds)))}.sqlite3"
+    # A counter, NOT a hash of the example. Hypothesis replays an example to confirm a failure,
+    # and a store named after the example is the SAME store on the replay — already full of the
+    # first call's orders, so the limiter grants fewer, the property passes, and the failure is
+    # reported as flaky instead of as the defect it was. That is how `A.113` stayed hidden.
+    store = tmp_path / f"property_{next(_PROPERTY_STORE_ORDINAL)}.sqlite3"
     clock = SteerableSessionClock(FAR_FUTURE.timestamp())
     limits = [broker_ceiling(3, 1), broker_ceiling(7, 5), broker_ceiling(11, 30)]
     limiter = limiter_on(store, limits, clock)
@@ -539,3 +548,72 @@ def test_the_margin_never_closes_the_window_entirely() -> None:
     windows = binding_windows_from([regulatory_threshold(10, 1)], jitter_seconds=5.0)
     assert windows[0].permitted_orders == 1
     assert windows[0].reserved_for_safety_margin == 9
+
+
+# --- the boundary defect Hypothesis found, and could not hold still (`A.113`) ------------------
+
+FALSIFYING_GAPS_MILLISECONDS = [
+    794, 451, 264, 0, 1305, 86, 0, 276, 327, 1237, 400, 1, 846, 259, 264, 1, 451,
+]
+"""The arrival pattern that put 8 orders inside a 5-second window permitting 7.
+
+Kept as a literal rather than left to the property to rediscover: it took a shrink to find, the
+property masked it on replay through a shared store, and a regression that only reappears when a
+generator happens to walk the same path is not a regression test.
+"""
+
+
+@pytest.mark.unit
+def test_the_arrival_pattern_that_breached_a_five_second_window_no_longer_does(
+    tmp_path: Path,
+) -> None:
+    """Counted the way an EXCHANGE would count it — by the wall clock, not the limiter's own stamp.
+
+    The limiter's bucket was internally consistent when this failed: it stamped each item with its
+    ratcheted dispatch clock, which can read one millisecond ahead of the wall clock it is anchored
+    to, so its window sat one tick later than an observer's and admitted one more order at the
+    boundary. A limiter is only correct if it is correct against the observer's clock (`A.113`).
+    """
+    clock = SteerableSessionClock(FAR_FUTURE.timestamp())
+    limiter = limiter_on(
+        tmp_path / "boundary.sqlite3",
+        [broker_ceiling(3, 1), broker_ceiling(7, 5), broker_ceiling(11, 30)],
+        clock,
+    )
+    try:
+        granted_at_milliseconds: list[int] = []
+        for gap in FALSIFYING_GAPS_MILLISECONDS:
+            clock.advance(gap / 1_000)
+            if limiter.acquire("NSE", clock.now + IMMEDIATE_VALIDITY).granted:
+                granted_at_milliseconds.append(
+                    int(clock.wall_clock_epoch_seconds() * 1_000)
+                )
+
+        for window in limiter.binding_windows:
+            for index, stamp in enumerate(granted_at_milliseconds):
+                inside = sum(
+                    1
+                    for earlier in granted_at_milliseconds[: index + 1]
+                    if earlier >= stamp - window.window_milliseconds
+                )
+                assert inside <= window.permitted_orders, (
+                    f"{inside} orders inside a {window.window_seconds}s window that permits "
+                    f"{window.permitted_orders}"
+                )
+    finally:
+        limiter.close()
+
+
+@pytest.mark.unit
+def test_the_enforced_window_is_one_clock_tick_wider_than_the_published_one() -> None:
+    """The guard is a tick, and it is derived from the clock's resolution rather than chosen."""
+    window = broker_ceiling(7, 5)
+    derived = binding_windows_from([window], jitter_seconds=0.0)[0]
+    assert derived.window_milliseconds == 5_000
+    assert derived.enforced_milliseconds == 5_001, (
+        "an item stamped exactly one window ago must still be counted; the two clocks that "
+        "produce those stamps agree only to the millisecond"
+    )
+    assert derived.enforced_milliseconds // 1_000 == derived.window_seconds, (
+        "the widening must not change which window a refusal is attributed to"
+    )

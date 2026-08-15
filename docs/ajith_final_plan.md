@@ -4129,6 +4129,53 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
 
+**A.113 · 2026-08-15 · The order-rate limiter was correct on its own clock and wrong on
+everybody else's, and one millisecond is what separated the two.**
+
+*The defect.* `test_no_arrival_pattern_can_put_more_than_the_limit_in_any_window` put **8 orders
+inside a 5-second window permitting 7**. Hypothesis reported it as a `FlakyFailure` — "failed on the
+first call but did not on a subsequent one" — which is the second defect wearing the first one's
+clothes: the property named its SQLite store after a hash of the example, so a replay of the same
+example reused the store the first call had already filled, the limiter granted fewer, and the
+property passed. The first call was the honest one.
+
+*The mechanism, measured rather than guessed.* Instrumenting the bucket showed it internally
+consistent at every step: at the breaching instant it held exactly 7 items inside its own window.
+Two clocks stamp the same instant here and agree only to the millisecond — `MonotonicallyRatcheted
+DispatchClock` stamps the item, and any observer (an exchange, a regulator, this project's own
+dashboard) stamps it from the wall clock. The ratchet read one tick ahead, so its window sat one
+tick later than the observer's, the item that had just fallen out of ITS window was still inside the
+observer's, and it admitted one more order than the observer counts as permitted. pyrate-limiter's
+own `COUNT_BEFORE_INSERT` predicate was read directly (`item_timestamp >= :current_timestamp -
+:interval`) to rule out an inclusive/exclusive boundary difference in the library — it is inclusive,
+so the library was not the cause.
+
+*Decision — widen the ENFORCED window by exactly one clock tick.* `RateLimitWindow.
+enforced_milliseconds` is the published window plus `CLOCK_TICK_MILLISECONDS`, and both the bucket's
+rates and the dashboard's budget read it. One tick is not a tuned margin: it is the smallest amount
+by which two correct readings of one instant can differ, so widening by it makes the boundary item
+count in EVERY view. Cost is 0.02% of a five-second window. *Options weighed and rejected:*
+reserving one more order from every ceiling (throws away real budget for a boundary case, and the
+margin is already derived from measured jitter); clamping the ratchet so it can never lead the wall
+clock (correct on its own merits, but the two clocks still disagree by a tick through float
+truncation, so it narrows the gap without closing it — worth doing later, recorded in `BACKLOG`);
+counting with a stricter inequality in this project's own SQL (the dashboard would then disagree
+with the bucket about the same instant, which is the failure `_orders_within` documents).
+
+*Verified:* the falsifying pattern is now a literal regression test that FAILS without the fix
+(proved by re-running it with the tick set to zero), the property holds over 2,000 fresh examples,
+and — the `R.05` pass — every recorded arrival from all three paper sessions was replayed through a
+real limiter: **265 granted, 70 refused, 0 breaches** (`scripts/verify_rate_limiter_on_recorded_
+order_flow.py`).
+
+*What the `R.05` run also found, and it is bigger than the defect:* **70 of the 335 orders those
+sessions sent (21%) would have been REFUSED by the real limiter**, because the paper loop runs the
+placer with `AlwaysPermits` rather than with a rate gate. Every paper P&L so far therefore assumes
+an order flow the wire would not have accepted. Recorded as `BACKLOG` `M19` and NOT fixed here: the
+replay steps five simulated minutes per iteration, so wiring a real limiter in requires deciding
+whether it counts in SIMULATED or WALL time, and that changes every paper result. `R.19` — it is
+interviewed, not assumed.
+
 **A.112 · 2026-08-15 · A trade that closes at exactly its entry price realises nothing, and the
 ledger was right to refuse to say otherwise.**
 

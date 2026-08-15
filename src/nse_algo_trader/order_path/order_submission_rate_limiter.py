@@ -95,6 +95,13 @@ from nse_algo_trader.order_path.broker_order_facility_facts import (
 from nse_algo_trader.order_path.trading_intent import OrderPathError
 
 MILLISECONDS_PER_SECOND = 1_000
+
+CLOCK_TICK_MILLISECONDS = 1
+"""The resolution of every clock in this module — a property of the millisecond timestamp itself.
+
+Not a tuned margin: it is the smallest amount by which two correct readings of the same instant can
+differ, and `RateLimitWindow.enforced_milliseconds` widens by exactly it so that neither reading can
+place an order outside a window the other places inside."""
 NANOSECONDS_PER_MILLISECOND = 1_000_000
 
 DEFAULT_RATE_LIMIT_STORE_PATH = (
@@ -150,8 +157,27 @@ class RateLimitWindow:
 
     @property
     def window_milliseconds(self) -> int:
-        """The window in the unit the buckets count in."""
+        """The window as PUBLISHED, in the unit the buckets count in."""
         return self.window_seconds * MILLISECONDS_PER_SECOND
+
+    @property
+    def enforced_milliseconds(self) -> int:
+        """The window this limiter actually counts over: published, plus one clock tick.
+
+        **Why it is not the published window** (`A.113`). Two clocks stamp the same instant here
+        and they agree only to the millisecond: the ratcheted dispatch clock stamps the item, and
+        whatever observes the flow afterwards — an exchange, a regulator, this project's own
+        dashboard — stamps it from the wall clock. When the ratchet reads one tick ahead, its
+        window sits one tick later than the observer's, the item that fell out of ITS window is
+        still inside the observer's, and the limiter admits one more order than the observer will
+        count as permitted. Hypothesis found exactly that: 8 orders inside a 5-second window
+        permitting 7, with the bucket internally consistent throughout.
+
+        Widening by one tick makes the boundary item count in every view of it. It costs nothing —
+        the window is 0.02% longer at five seconds — and it converts a rule that was true on the
+        limiter's clock into one that is true on anybody's.
+        """
+        return self.window_milliseconds + CLOCK_TICK_MILLISECONDS
 
 
 @dataclass(frozen=True, slots=True)
@@ -562,7 +588,7 @@ class OrderSubmissionRateLimiter:
         observed_at = datetime.fromtimestamp(now_ms / MILLISECONDS_PER_SECOND, tz=UTC)
         budgets: list[WindowBudget] = []
         for window in self.binding_windows:
-            used = self._orders_within(name, window.window_milliseconds, now_ms)
+            used = self._orders_within(name, window.enforced_milliseconds, now_ms)
             budgets.append(
                 WindowBudget(
                     exchange=name,
@@ -788,6 +814,7 @@ class OrderSubmissionRateLimiter:
         failing = self._bucket_for(exchange).failing_rate
         if failing is None:
             return None
+        # Integer division absorbs the one-tick widening: 5,001 ms is still the 5-second window.
         window_seconds = failing.interval // MILLISECONDS_PER_SECOND
         for window in self.binding_windows:
             if window.window_seconds == window_seconds:
@@ -796,7 +823,9 @@ class OrderSubmissionRateLimiter:
 
 
 def _rates_from(windows: Sequence[RateLimitWindow]) -> list[Rate]:
-    return [Rate(window.permitted_orders, window.window_milliseconds) for window in windows]
+    # `enforced_milliseconds`, not `window_milliseconds`: the bucket must count the boundary item
+    # that a differently-anchored clock would count (`A.113`).
+    return [Rate(window.permitted_orders, window.enforced_milliseconds) for window in windows]
 
 
 def _window_description(window: RateLimitWindow | None) -> str:

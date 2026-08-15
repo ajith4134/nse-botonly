@@ -1979,3 +1979,33 @@ PROFITABLE ones — entirely possible, since the cheapest trades to enter are th
 capture is being measured on deviations that are largest in thin ones — then the gate makes the
 gross worse while making the net better only by trading less, which is a different and weaker claim
 than having an edge. That comparison is worth running before the gate is wired in.
+
+## O.96 · 2026-08-15 · The flaky-test label was the defect protecting itself, and I nearly accepted it
+
+**Opinion:** when Hypothesis said *"failed on the first call but did not on a subsequent one"*, the
+cheapest reading — a flaky property, re-run it — would have been wrong, and I had already written
+that reading into `BACKLOG` `M16` about a DIFFERENT test earlier the same day. A rate limiter is a
+guard; a guard that fails once and passes on retry is exactly the shape a real breach takes when the
+retry is contaminated. The rule I would keep: **a flaky failure in a guard is a defect until proven
+otherwise, and the proof is a deterministic replay, not a second run.**
+
+**Reasoning: measured.** The replay reproduced the breach on the first attempt every time once the
+store was fresh; the contamination was the property naming its store after a hash of the example, so
+Hypothesis's confirmation run reused a store already holding the first run's orders and the limiter
+correctly granted fewer. Two defects stacked so that one hid the other, and the outer one had an
+innocent name.
+
+**On the fix itself:** widening the enforced window by one clock tick is the right shape because it
+is the only one that makes the invariant hold on ANY observer's clock rather than on ours. I
+considered clamping the ratchet so it can never lead the wall clock and rejected it as the primary
+fix — it is correct on its own merits and I would still take it, but float truncation leaves the two
+clocks disagreeing by a tick regardless, so it narrows the gap without closing it.
+
+**Confidence: measured** on the mechanism and the fix (2,000 fresh examples, plus 265 real recorded
+arrivals through a real limiter with zero breaches); **judgement** on the rule about flaky guards.
+
+**What would change my mind:** a breach that survives the one-tick widening would mean the
+disagreement between the two clocks is larger than a tick — plausible under real NTP correction
+rather than under a steerable test clock — and the answer would then be to stamp items with the
+observer's clock rather than to pad the window. That is worth testing with a wall clock that steps
+while orders are in flight, which the suite does exercise for the ratchet but not for the window.
