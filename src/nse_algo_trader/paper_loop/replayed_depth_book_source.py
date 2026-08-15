@@ -44,6 +44,10 @@ from nse_algo_trader.market_depth.order_book_snapshot_replay_engine import (
     book_snapshots_from_table,
 )
 
+INSTANTS_NEEDED_FOR_A_STEP = 2
+"""Two instants is the least that defines the grid's step — the bound used when an instrument has
+no gap distribution of its own."""
+
 MINIMUM_GAPS_FOR_A_QUANTILE = 2
 """Two gaps is the least that can be a distribution. Below it the replay engine calls nothing
 stale rather than comparing against a fabricated threshold, and this must use the same rule."""
@@ -133,11 +137,34 @@ class SteppedRecordedBookSource:
                 continue
             self._books[token] = self._forward_fill(
                 found,
-                threshold_millis=_gap_quantile(
-                    gaps_by_token.get(token), self.staleness_quantile
+                threshold_millis=self._fill_threshold(
+                    _gap_quantile(gaps_by_token.get(token), self.staleness_quantile)
                 ),
             )
         return len(candidates)
+
+    def _fill_threshold(self, derived_millis: float) -> float:
+        """The staleness bound for FILLING, which is not the same question as for a feature.
+
+        `_gap_quantile` and the replay engine both return `inf` when an instrument has too few gaps
+        to form a distribution — "call nothing stale rather than compare against a fabricated
+        threshold", which is right for a microstructure feature and wrong here. An instrument with
+        ONE recorded packet would have its book served at every later instant of the session, and an
+        order would fill against a snapshot hours old at a price with no counterparty behind it
+        (`A.117`).
+
+        With no distribution, the honest bound is the decision grid's own step: a book at least one
+        step old has been superseded by an instant the tape says nothing about. Derived from the
+        caller's grid, not chosen.
+        """
+        if derived_millis != float("inf"):
+            return derived_millis
+        if len(self.decision_instants) < INSTANTS_NEEDED_FOR_A_STEP:
+            return 0.0
+        step = self.decision_instants[1] - self.decision_instants[0]
+        # One tick INSIDE the step: a book exactly one step old has been superseded by an instant
+        # the tape says nothing about, so it is stale rather than borderline.
+        return step.total_seconds() * 1_000 - 1
 
     def _forward_fill(
         self, candidates: dict[datetime, BookSnapshot], *, threshold_millis: float
@@ -157,6 +184,21 @@ class SteppedRecordedBookSource:
             if age_millis <= threshold_millis:
                 grid[instant] = latest
         return grid
+
+    def covered_window(self) -> tuple[datetime, datetime] | None:
+        """The first and last decision instant any instrument has a book at, or `None` for none.
+
+        The depth capture is not a whole session: it starts after the open and can stop before the
+        close (`A.116`). A caller that replays outside this window is asking the loop to decide at
+        instants no order could have filled at, and every number drawn from those instants measures
+        the capture rather than the market.
+        """
+        served: list[datetime] = []
+        for grid in self._books.values():
+            served.extend(grid)
+        if not served:
+            return None
+        return min(served), max(served)
 
     def book_at(self, instrument_token: int, as_of: datetime) -> BookSnapshot | None:
         """The last book recorded at or before `as_of`, or `None` if there is none."""
@@ -180,7 +222,9 @@ class SteppedRecordedBookSource:
             self._untaped.add(instrument_token)
             return None
         ordered = sorted(snapshots, key=lambda snapshot: snapshot.receipt_time)
-        threshold_millis = self.engine.staleness_threshold_millis_for(ordered)
+        threshold_millis = self._fill_threshold(
+            self.engine.staleness_threshold_millis_for(ordered)
+        )
         grid: dict[datetime, BookSnapshot] = {}
         cursor = 0
         latest: BookSnapshot | None = None

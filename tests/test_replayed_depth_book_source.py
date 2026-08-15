@@ -128,3 +128,46 @@ def test_the_book_served_is_the_last_one_recorded_at_or_before_the_instant() -> 
     assert served.receipt_time == late.receipt_time, (
         "the book recorded AFTER the decision instant must never be the one filled against"
     )
+
+
+def test_the_covered_window_is_the_first_and_last_instant_any_book_was_served() -> None:
+    """`A.116`: the capture is not a whole session, and the loop must be told where it stops."""
+    grid = _grid(6)
+    engine = ReplayEngineDouble(
+        snapshots=[
+            _snapshot(grid[1] - timedelta(seconds=1)),
+            _snapshot(grid[3] - timedelta(seconds=1)),
+        ],
+        threshold_millis=60_000,
+    )
+    source = SteppedRecordedBookSource(engine, grid)  # type: ignore[arg-type]
+    source.book_at(TOKEN, grid[0])
+    window = source.covered_window()
+    assert window is not None
+    assert window == (grid[1], grid[3])
+
+
+def test_a_tape_that_serves_nothing_reports_no_window() -> None:
+    grid = _grid(4)
+    engine = ReplayEngineDouble(
+        snapshots=[], threshold_millis=60_000, unknown_tokens=frozenset({TOKEN})
+    )
+    source = SteppedRecordedBookSource(engine, grid)  # type: ignore[arg-type]
+    source.book_at(TOKEN, grid[0])
+    assert source.covered_window() is None
+
+
+def test_an_instrument_with_no_gap_distribution_does_not_get_an_eternal_book() -> None:
+    """`A.117`: `inf` means "call nothing stale", which is right for a feature and wrong for a fill.
+
+    One recorded packet would otherwise be served at every later instant of the session, and an
+    order would fill against a snapshot hours old at a price with no counterparty behind it.
+    """
+    grid = _grid(6)
+    engine = ReplayEngineDouble(
+        snapshots=[_snapshot(grid[0])], threshold_millis=float("inf")
+    )
+    source = SteppedRecordedBookSource(engine, grid)  # type: ignore[arg-type]
+    assert source.book_at(TOKEN, grid[0]) is not None
+    assert source.book_at(TOKEN, grid[1]) is None, "one step later the tape says nothing"
+    assert all(source.book_at(TOKEN, instant) is None for instant in grid[1:])

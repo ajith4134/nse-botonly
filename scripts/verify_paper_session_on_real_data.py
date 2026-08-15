@@ -182,6 +182,18 @@ def main() -> int:
         window_end=session_window_end,
     )
     print(f"  {with_rows} instrument(s) had recorded depth on this session")
+    tradeable_window = book_source.covered_window()
+    if tradeable_window is None:
+        print("the tape covers none of this session's decision instants")
+        return 1
+    covered = sum(
+        1 for instant in decision_instants if tradeable_window[0] <= instant <= tradeable_window[1]
+    )
+    print(
+        f"  the capture covers {tradeable_window[0].strftime('%H:%M')}-"
+        f"{tradeable_window[1].strftime('%H:%M')} — {covered} of {len(decision_instants)} "
+        f"decision instants; entries are considered only inside it (`A.116`)"
+    )
     rate_gate = SimulatedTimeSubmissionRateGate(
         clock=clock, store_path=state_directory / "rate.sqlite3"
     )
@@ -198,6 +210,7 @@ def main() -> int:
             minimum_regime_agreement=MINIMUM_REGIME_AGREEMENT,
             armed_classifiers=ARMED_CLASSIFIERS,
             price_collar_quantile=PRICE_COLLAR_QUANTILE,
+            tradeable_window=tradeable_window,
         ),
         instruments=instruments,
         clock=clock,

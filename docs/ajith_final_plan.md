@@ -4129,6 +4129,56 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
 
+**A.117 · 2026-08-15 · An instrument with no gap distribution was getting a book that never went
+stale, and it was `inf` doing it.**
+
+Found while reading the window `A.116` derived: it stretched past the last recorded packet — to
+13:00 on 2026-08-13 against a capture that stops at 12:15. The cause is a convention borrowed from
+the wrong place. `_gap_quantile` and `OrderBookSnapshotReplayEngine` both return `inf` when an
+instrument has fewer than two gaps, meaning "call nothing stale rather than compare against a
+fabricated threshold". For a microstructure FEATURE that is right. For a FILL it means an instrument
+with one recorded packet has its book served at every later instant of the session, and an order
+fills against a snapshot hours old at a price with no counterparty behind it — the invented
+counterparty the venue exists to refuse, arriving through a threshold instead of through a cache.
+
+**Decision:** with no distribution, the bound for filling is the decision grid's own step, less one
+clock tick — a book at least one step old has been superseded by an instant the tape says nothing
+about. Derived from the caller's grid rather than chosen, and it applies ONLY to the fill path; the
+replay engine's own convention for features is untouched, because the two are answering different
+questions about the same number.
+
+**A.116 · 2026-08-15 · The replay is restricted to the window the depth tape actually covers,
+derived from the tape.**
+
+*What the measurement found* (`docs/research/233`, answering `BACKLOG` `M21`). The staleness
+threshold was NOT the reason paper entries waited an hour to fill: it discards about 7% of the
+buckets that hold depth, and not one traded instrument lost more than half. The reason is that **the
+depth capture covers only part of each session** — 09:56–15:30 on 2026-08-11, 10:30–15:30 on
+2026-08-12, and 09:51–**12:15** on 2026-08-13 against a session that closes at 15:30. An entry
+decided at 09:40 on 08-12 had no recorded book until 10:30 and could not fill for fifty minutes
+whatever the strategy did.
+
+*What that invalidates.* Every number in `docs/research/229`–`232` came from replaying 76 decision
+instants against a tape covering 59, 60 and 30 of them. The arithmetic is sound and the ledger folds
+agree; the measurements are of a system running against a partly-absent market, and since the absent
+share differs by date the three sessions are not comparable with one another either.
+
+*Decision.* `PaperSessionPolicy.tradeable_window` — derived by the caller from
+`SteppedRecordedBookSource.covered_window()`, never chosen — and no entry is considered outside it.
+The clock and the streaming estimators still step through every instant, so the leakage guard and
+the classifiers are untouched; only the decision to OPEN a position is withheld where the tape
+cannot account for it. `PaperSessionReport.tradeable_steps` reports how much of the session that
+was, so a reader can never mistake a short capture for a quiet market.
+
+*Options weighed and rejected:* leaving it as it was (knowingly measuring the capture's gaps);
+loosening the staleness threshold (the measurement says it is not the constraint, and loosening it
+would fill orders against books that had genuinely gone stale); and filling at the last close where
+no book exists (inventing a counterparty, which the venue exists to refuse).
+
+*Recorded as still open:* WHY the capture is partial. Session reports sit beside the tape and have
+not been read; a recorder that stops silently at 12:15 is a worse problem than one that starts late.
+`BACKLOG` `M22`.
+
 **A.115 · 2026-08-15 · The holding time is now SELECTED from the fitted grid per deviation — and
 the reason it was built turned out not to be true.**
 

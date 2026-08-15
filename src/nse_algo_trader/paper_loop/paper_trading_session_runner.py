@@ -203,6 +203,14 @@ class PaperSessionPolicy:
     minimum_regime_agreement: float
     armed_classifiers: tuple[str, ...]
     price_collar_quantile: Decimal
+    tradeable_window: tuple[datetime, datetime] | None = None
+    """The part of the session the recorded book actually covers, or `None` for all of it.
+
+    Derived from the tape by the caller, never chosen (`A.116`). The depth capture starts late and
+    can stop early — on 2026-08-13 it ran 09:51 to 12:15 against a session that closes at 15:30 —
+    and a decision taken where no book was ever recorded cannot fill, so replaying it measures the
+    gap in the capture rather than the strategy. Instants outside the window are STEPPED (the clock
+    and the estimators keep advancing on real bars) and no entry is considered at them."""
     """Which quantile of this instrument's own realised move counts as "unusually far".
 
     Operator policy, required like the rest: a collar at the median refuses half of all normal
@@ -344,6 +352,9 @@ class PaperSessionReport:
     unfilled_at_close: tuple[str, ...]
     open_at_close: tuple[str, ...]
     halted_reason: str = ""
+    tradeable_steps: int = 0
+    """How many of `steps_taken` the recorded book actually covered (`A.116`)."""
+
 
     @property
     def net_realised_rupees(self) -> Decimal:
@@ -371,7 +382,8 @@ class PaperSessionReport:
 
     def describe(self) -> str:
         return (
-            f"{self.session_date.isoformat()}: {self.steps_taken} steps over "
+            f"{self.session_date.isoformat()}: {self.steps_taken} steps "
+            f"({self.tradeable_steps} with a recorded book) over "
             f"{self.instruments_considered} instruments, {self.orders_placed} order(s) placed, "
             f"{len(self.positions)} position(s), gross Rs {self.gross_realised_rupees} less costs "
             f"Rs {self.costs_rupees} = net Rs {self.net_realised_rupees}; balance Rs "
@@ -426,6 +438,7 @@ class PaperTradingSessionRunner:
     _positions: dict[str, OpenPaperPosition] = field(default_factory=dict, repr=False)
     _decisions: list[PaperDecisionRecord] = field(default_factory=list, repr=False)
     _halted_reason: str = field(default="", repr=False)
+    _stepped: list[datetime] = field(default_factory=list, repr=False)
 
     def __post_init__(self) -> None:
         if not self.instruments:
@@ -469,16 +482,19 @@ class PaperTradingSessionRunner:
 
         steps = 0
         last_moment = started_at
+        self._stepped = []
         for moment in self.clock.step_through_session(self.policy.decision_step):
             steps += 1
             last_moment = moment
+            self._stepped.append(moment)
             self._observe_books(moment)
             self._advance_matching(moment)
             self._apply_fills(moment)
             if self._session_is_halted(moment):
                 break
             self._close_expired_or_reversed(moment)
-            self._consider_entries(moment)
+            if self._is_tradeable(moment):
+                self._consider_entries(moment)
             self._advance_matching(moment)
             self._apply_fills(moment)
 
@@ -493,6 +509,7 @@ class PaperTradingSessionRunner:
             ended_at=closing_moment,
             steps_taken=steps,
             instruments_considered=len(self.instruments),
+            tradeable_steps=sum(1 for moment in self._stepped if self._is_tradeable(moment)),
             decisions=tuple(self._decisions),
             positions=tuple(self._positions.values()),
             gross_realised_rupees=gross,
@@ -512,6 +529,18 @@ class PaperTradingSessionRunner:
         )
 
     # --- the tape ---------------------------------------------------------------------------
+
+    def _is_tradeable(self, moment: datetime) -> bool:
+        """Whether the recorded book covers this instant at all.
+
+        Outside the window an entry could never fill, so taking one would put a position in the
+        record that the tape cannot account for — and every P&L drawn from it would be measuring
+        the capture's gaps (`A.116`).
+        """
+        window = self.policy.tradeable_window
+        if window is None:
+            return True
+        return window[0] <= moment <= window[1]
 
     def _observe_books(self, moment: datetime) -> None:
         """Give the venue the book that was recorded at this instant, and nothing newer."""

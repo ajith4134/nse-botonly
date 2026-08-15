@@ -1974,6 +1974,14 @@ a few large positions in thin scrips, and shrinking the sizer would hide that ra
 **Confidence: measured** on the cost constancy and the 08-12 composition; **reasoned** on the
 ordering above; **judgement** that the cost gate is the cheapest of the three to try.
 
+**CORRECTED IN PLACE 2026-08-15** — the claim that cost scales with TRADE COUNT is wrong. Restricting
+the replay to the window the tape covers (`A.116`) cut 2026-08-12 from 61 trades to 11 while cost
+fell only from Rs 874.38 to Rs 731.89: **82% fewer trades, 16% less cost**. Cost follows TURNOVER,
+not frequency, and the three sessions looked constant earlier only because their turnover was
+similar (`docs/research/234`). The practical consequence reverses my recommendation above: a cost
+gate that suppresses marginal entries saves far less than it appeared to, and SIZING is the lever
+cost actually responds to. The original text is left as written.
+
 **What would change my mind:** if the entries that a cost gate would suppress turn out to be the
 PROFITABLE ones — entirely possible, since the cheapest trades to enter are the liquid ones and the
 capture is being measured on deviations that are largest in thin ones — then the gate makes the

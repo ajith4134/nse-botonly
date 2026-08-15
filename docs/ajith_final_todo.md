@@ -929,7 +929,13 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       found why: **the median entry waits 60 minutes for its first fill**, so the horizon expires
       before the position exists and liquidity, not the schedule, sets the holding time
       (`docs/research/232`, `O.98`). The selector stays on `R.03` grounds and the wave is now a
-      named open question about the FILL path.
+      named open question about the FILL path. **ANSWERED and corrected (`A.116`/`A.117`,
+      2026-08-15):** the depth capture covers only part of each session — 67/76, 60/76 and 38/76
+      decision instants — and the staleness threshold was discarding only ~7%. The loop now trades
+      only inside the window the tape covers, which took rate-gate refusals to ZERO on all three
+      sessions and revealed the exit wave as entries piling up unfilled where no book existed. Final
+      numbers `docs/research/234`: 11/11/10 entries, net −Rs 8,589.78 / −Rs 505.92 / −Rs 2,464.42,
+      with 2026-08-12 the first POSITIVE gross this rebuild has produced (+Rs 225.97 before costs).
 
 **— L10 —**
 

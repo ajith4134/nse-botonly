@@ -15,7 +15,7 @@ rather than on whether a regime classifier happened to fire that afternoon.
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -763,3 +763,45 @@ def test_a_breakeven_round_trip_debits_its_costs_and_realises_nothing(
     assert gross == Decimal(0)
     assert costs == Decimal(0), "no cost pricer is attached in this harness"
     assert ledger.fold_from_events().open_commitments == (), "the capital must still be released"
+
+
+def test_no_entry_is_considered_outside_the_window_the_tape_covers(
+    tmp_path: Path, stores: RealStorePaths
+) -> None:
+    """`A.116`: a decision where no book was ever recorded cannot fill, so it is not taken.
+
+    The clock and the estimators still step through those instants — the leakage guard and the
+    streaming classifiers are unaffected — but no entry is considered, so the session's P&L stops
+    measuring the gaps in the depth capture.
+    """
+    opens_at = session_for(SESSION_DATE).opens_at
+    window = (opens_at + timedelta(hours=2), opens_at + timedelta(hours=3))
+    signals = ScriptedSignalSource(entries_at=[opens_at])
+    journal = OrderIntentJournal(tmp_path / "journal.sqlite3")
+    ledger = PaperCapitalLedger(tmp_path / "ledger.sqlite3")
+    capital = TradingCapital.of_rupees(Decimal("1000000"))
+    ledger.seed_from_ceiling(
+        capital, occurred_at=opens_at - timedelta(minutes=1), reason="seed"
+    )
+    policy = _policy(timedelta(minutes=30))
+    runner = PaperTradingSessionRunner(
+        policy=replace(policy, tradeable_window=window),
+        instruments=[
+            PaperInstrument(instrument_token=TOKEN, trading_symbol=SYMBOL, lot_size=LOT_SIZE)
+        ],
+        clock=ReplaySessionClock(session_for(SESSION_DATE), {}),
+        signal_source=signals,
+        book_source=RecordedBookHarness(),
+        journal=journal,
+        venue=SimulatedOrderExecutionVenue(),
+        ledger=ledger,
+        risk_store=SessionRiskStateStore(tmp_path / "risk.sqlite3"),
+        capital=capital,
+        store_paths=stores,
+    )
+    report = runner.run()
+    assert report.tradeable_steps < report.steps_taken, "the window must exclude some steps"
+    assert all(
+        window[0] <= record.at <= window[1] for record in report.decisions
+    ), "no decision may be recorded outside the covered window"
+    assert report.steps_taken > 0
