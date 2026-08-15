@@ -898,6 +898,29 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **4.9** 24/7 continuous paper-trading loop — `L10.01` — *unblocked 2026-08-15: `4.10` built
       the session this loop would run repeatedly. What is missing is only the scheduler and the
       multi-day state that carries between sessions, not the session itself.*
+- [x] **4.10** Market-closed real-market replay engine (§53) — `L10.02` — ***`F04` — the first
+      thing in this rebuild that produces a trading DAY rather than a component.*** Built and
+      **`R.05`-passed 2026-08-15** on the real 2026-08-11 session, full universe: **2,882
+      instruments, 76 decision instants, 218,936 decisions, 45 orders placed and squared off,
+      nothing open at the close, ledger fold agreeing with the report, net −Rs 10,824.69 on a
+      Rs 10,00,000 book.** Evidence `docs/research/229`. The loop steps point-in-time
+      (`availability_time` only), decides with the real regime panel and mean-reversion engine,
+      sizes and gates with `F03`, reserves capital in `L1.18`'s ledger BEFORE the order goes, sends
+      it through `F02`'s real journal, placer, lifecycle machine and reconciler to a venue that
+      fills from the recorded L2 depth tape, and squares off before the close (`R.01`). Spec
+      `docs/research/228`; decisions `A.108`–`A.111`; surface `/paper-session`; 35 tests including
+      the five adversarial axes §7 names. **Four real defects found by the real-data run, none
+      reachable from the hermetic suite** — a negative price collar, a division by `log10(1)`, a
+      position marked closed while still filling, and a book served however stale it was.
+      **Named open items, none of them this task:** live tick path (`A.108`'s recorded cost),
+      options fills (`2.78`/`L9.04`), the continuous scheduler (`4.9`/`L10.01`), and `BACKLOG`
+      `M13`–`M17`.
+
+**— L10 —**
+
+- [ ] **4.9** 24/7 continuous paper-trading loop — `L10.01` — *unblocked 2026-08-15: `4.10` built
+      the session this loop would run repeatedly. What is missing is only the scheduler and the
+      multi-day state that carries between sessions, not the session itself.*
 - [~] **4.10** Market-closed real-market replay engine (§53) — `L10.02` — ***`F04` — the first
       thing in this rebuild that produces a trading DAY rather than a component.*** Built 2026-08-15:
       `paper_loop/paper_trading_session_runner.py` steps a real session point-in-time, decides with

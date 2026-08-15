@@ -1917,3 +1917,33 @@ matches the store's existing rows, but the R.05 run has not yet been executed ag
 **What would change my mind:** if the backfilled bars turn out to disagree with the depth tape's own
 last-traded prices for the same instants, the bars are not the same market the book recorded and the
 join is still not verified. That comparison is worth running and is now in `BACKLOG`.
+
+## O.94 · 2026-08-15 · The first real session loses money, and that is the most useful thing this rebuild has produced
+
+**Opinion:** the `−Rs 10,824.69` on 2026-08-11 is worth more than a profitable number would have
+been, because it is the first loss this system has produced through the code that would have carried
+real money — and because its composition is legible: `Rs 868.54` of it is cost, so 92% is the edge
+being wrong rather than the friction being heavy. A profitable first run would have told me almost
+nothing, since I would not have known whether to believe it.
+
+**Reasoning: measured.** 2,882 instruments, 76 decision instants, 218,936 decisions, 45 entries, all
+squared off, ledger fold agreeing with the report (`docs/research/229`). The strategy abstained
+213,739 times and was refused by the gate 5,079 times, so the 45 entries are what survived every
+filter this project has built — and they still lost, at an average of about Rs 221 gross each.
+
+**What I think is actually wrong,** in the order I would test it: the five-bar horizon is inherited
+from the calibration and may simply be shorter than the reversion it is fitted on; the entries
+cluster in illiquid scrips (`3PLAND`, `ARCHIES`, `AMJLAND`) where the spread walk is a large
+fraction of the move, which is a selection effect of sizing by volatility budget; and the mean
+capture the calibration reports is a GROSS one-way move being compared against a round trip
+(`BACKLOG` `M12` already records that mismatch on the `/costs` page, and this run is the first place
+it shows up in rupees).
+
+**Confidence: measured** on the result, **reasoned** on the diagnosis, **judgement** on which of the
+three matters most.
+
+**What would change my mind:** the same replay on 2026-08-12 and -13 coming out positive would say
+one session is noise and I over-read it. Two more losing sessions with the same composition would
+promote the diagnosis above from reasoned to worth acting on — and the first thing I would act on is
+the horizon, because it is the only one of the three that is a single parameter rather than a
+redesign.
