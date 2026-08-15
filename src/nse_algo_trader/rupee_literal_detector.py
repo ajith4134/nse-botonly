@@ -55,6 +55,11 @@ MONEY_NAME_MARKERS: tuple[str, ...] = (
 POLICY_NAME_MARKERS: tuple[str, ...] = (
     "fraction",
     "ratio",
+    # A quantile is dimensionless BY DEFINITION — it names a position in a distribution, and the
+    # distribution supplies the unit. `PRICE_COLLAR_QUANTILE` tripped this detector on the word
+    # "price" while holding 0.95, which is not an amount of anything.
+    "quantile",
+    "percentile",
     "percent",
     "_pct",
     "multiple",
