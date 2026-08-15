@@ -236,7 +236,11 @@ def _orders_from_journal(path: Path) -> tuple[PaperOrderRow, ...]:
                 intent_id=intent_id,
                 trading_symbol=str(intent["trading_symbol"]),
                 side=str(intent["side"]),
-                state=latest_event.get(intent_id, "recorded"),
+                state=_state_from(
+                    ordered=int(intent["quantity"]),
+                    filled=filled,
+                    last_event=latest_event.get(intent_id, "recorded"),
+                ),
                 ordered_quantity=int(intent["quantity"]),
                 filled_quantity=filled,
                 average_price_paise=(value / Decimal(filled)) if filled > 0 else None,
@@ -246,22 +250,44 @@ def _orders_from_journal(path: Path) -> tuple[PaperOrderRow, ...]:
     return tuple(rows)
 
 
+def _state_from(*, ordered: int, filled: int, last_event: str) -> str:
+    """What the order IS, from the journal's own rows rather than from its last event name.
+
+    The lifecycle event log records transitions the state machine made; a fill does not always
+    produce one, because `record_fill` moves the order itself. Reading the last event alone showed
+    a fully filled order as "opened" — true of the last transition recorded, and misleading as a
+    statement about the order. Quantities are the ground truth here, and the last event is kept for
+    the orders no fill has touched.
+    """
+    if filled <= 0:
+        return last_event
+    if filled >= ordered:
+        return "filled"
+    return "partially filled"
+
+
 def _ledger_position(path: Path) -> tuple[Decimal | None, Decimal | None]:
     """Balance and open commitments, from the ledger's own checkpoint row."""
     if not path.exists():
         return None, None
+    # Amounts are stored as TEXT because they are exact rupees, so the fold happens in Decimal
+    # here rather than in SQL. `CAST(... AS REAL)` did it once, and a book that had released
+    # every commitment reported "Rs -0.00 still committed" — a float residue of about 1e-10
+    # displayed as a defect.
     with _read_only(path) as connection:
         row = connection.execute(
             "SELECT resulting_balance_rupees FROM paper_capital_event "
             "ORDER BY sequence DESC LIMIT 1"
         ).fetchone()
-        committed = connection.execute(
-            "SELECT COALESCE(SUM(CASE WHEN kind = 'POSITION_COMMIT' THEN CAST(amount_rupees AS "
-            "REAL) WHEN kind = 'POSITION_RELEASE' THEN -CAST(amount_rupees AS REAL) ELSE 0 END), 0)"
-            " AS committed FROM paper_capital_event"
-        ).fetchone()
+        committed = Decimal(0)
+        for event in connection.execute(
+            "SELECT kind, amount_rupees FROM paper_capital_event "
+            "WHERE kind IN ('POSITION_COMMIT', 'POSITION_RELEASE')"
+        ):
+            amount = Decimal(str(event["amount_rupees"]))
+            committed += amount if str(event["kind"]) == "POSITION_COMMIT" else -amount
     balance = Decimal(str(row["resulting_balance_rupees"])) if row is not None else None
-    return balance, Decimal(str(committed["committed"])) if committed is not None else None
+    return balance, committed
 
 
 def _ledger_realisations(path: Path) -> tuple[Decimal, Decimal, Decimal]:
@@ -288,6 +314,14 @@ def _tripped_latches(path: Path, session_date: date) -> tuple[str, ...]:
             (session_date.isoformat(),),
         ).fetchall()
     return tuple(f"{row['latch']}: {row['reason']}" for row in rows)
+
+
+def _paise(value: Decimal | None) -> str:
+    """A price to the paise. The unrounded quotient of a volume-weighted walk has twenty-eight
+    significant figures and none of them past the second mean anything to a reader."""
+    if value is None:
+        return "—"
+    return f"{value.quantize(Decimal('0.01'))}"
 
 
 def _rupees(value: Decimal | None) -> str:
@@ -332,7 +366,7 @@ def _orders_table(state: PaperSessionSurfaceState) -> str:
         f"<td>{escape(order.side)}</td>"
         f"<td>{escape(order.state)}</td>"
         f"<td>{order.filled_quantity}/{order.ordered_quantity}</td>"
-        f"<td>{order.average_price_paise if order.average_price_paise is not None else '—'}</td>"
+        f"<td>{_paise(order.average_price_paise)}</td>"
         f"<td>{escape(order.created_at)}</td>"
         "</tr>"
         for order in state.orders

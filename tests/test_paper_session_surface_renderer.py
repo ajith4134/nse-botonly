@@ -200,3 +200,22 @@ def test_the_measured_instant_is_stated_on_the_page(tmp_path: Path) -> None:
     )
     assert MEASURED_AT.isoformat() in page
     assert isinstance(MEASURED_AT, datetime)
+
+
+def test_a_fully_filled_order_does_not_read_as_merely_opened(tmp_path: Path) -> None:
+    """The journal's last EVENT is not the order's state — a fill moves the order directly."""
+    _write_a_session(tmp_path)
+    state = read_paper_session_state(measured_at=MEASURED_AT, root=tmp_path)
+    assert state.orders[0].state == "partially filled", "6 of 10 filled is neither open nor filled"
+
+    page = render_paper_session_page(state)
+    assert "partially filled" in page
+
+
+def test_a_price_is_shown_to_the_paise_not_to_twenty_eight_figures(tmp_path: Path) -> None:
+    """A volume-weighted walk divides; the quotient's tail is arithmetic, not information."""
+    _write_a_session(tmp_path)
+    page = render_paper_session_page(
+        read_paper_session_state(measured_at=MEASURED_AT, root=tmp_path)
+    )
+    assert "140050.00" in page
