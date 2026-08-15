@@ -4053,7 +4053,10 @@ re-evaluated after a RESIZE.
   check, and it is cheap: packets per instrument per five-minute bucket in the depth tape, against
   the gaps the fills actually waited through — if the tape holds packets the staleness threshold
   (`A.110`) is discarding, the fix is in the threshold rather than in the market. `O.98`.
-- **M22 · nobody knows WHY the depth capture is partial, and on 2026-08-13 it stopped at 12:15.**
+- 🟢 **M22 · ANSWERED 2026-08-15 (`A.118`, `docs/research/235`).** ~~Nobody knows WHY the depth
+  capture is partial, and on 2026-08-13 it stopped at 12:15.~~ A person stopped it — signal 15 at
+  12:15:06, hitting two captures in the same second; no scheduler exists and left alone it runs to
+  the close. The tape now writes a liveness record on every poll.
   The tape runs 09:56–15:30, 10:30–15:30 and 09:51–12:15 on the three recorded sessions, against a
   market open 09:15–15:30. `A.116` makes the paper loop honest about it, and does not explain it.
   Session reports sit unread beside the tape (`~/nse_archive/depth_tape/session_report_*.json`) and
@@ -4061,3 +4064,17 @@ re-evaluated after a RESIZE.
   than one that starts late: every later session would be measured against a stub and nothing in the
   system currently says so out loud. Fixing the capture is worth more than any strategy change
   currently open, because everything downstream is measured through it.
+- **M23 · the depth capture is started and stopped by hand, and nothing schedules it.**
+  Measured 2026-08-15 (`docs/research/235`): captures begin 35-90 minutes after the open because a
+  person starts them, and 2026-08-13 ended at 12:15 because a person stopped them. `A.118` makes the
+  tape honest about what it holds; it does not make the capture run. A systemd user timer starting
+  at the open and stopping after the close would fix it, and whether to run a process writing
+  gigabytes daily during market hours is an OPERATOR decision, not a code one — so it is asked, not
+  assumed (`R.19`). Until then every session is partial by however late it was launched.
+- **M24 · the recorded universe is set by a disk budget and nothing reports it as a coverage limit.**
+  `[09:51:17] admitted 652 of 9,891 instruments | projected 0.33 GiB of a 0.33 GiB budget (100%)` —
+  and 9,000 of 9,885 on 2026-08-11 run 4, at a 2.08 GiB budget. So the tape holds between 7% and 91%
+  of NSE equities depending on how much disk that run was given, which is an unrecorded `R.09`
+  constraint on every measurement taken through it. The admission decision is already computed and
+  logged; it is not carried into the liveness record or onto any surface, so a reader cannot tell a
+  quiet instrument from one that was never subscribed.

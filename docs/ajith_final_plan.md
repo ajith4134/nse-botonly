@@ -4129,6 +4129,40 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
 
+**A.118 · 2026-08-15 · The capture stopped because a person stopped it, and the tape had no way
+to say so. It does now.**
+
+*The forensic answer to `M22`* (`docs/research/235`). Nothing failed. `depth_capture_2026-08-13.log`
+records `[12:15:06] signal 15 — ending the session cleanly`, and `cross_broker_2026-08-13.log`
+records `[12:15:06] stop requested` — two independent processes ended in the same second, with no
+traceback, no error, and signal 15 rather than the 9 an OOM kill would send. No scheduler exists:
+`crontab` holds the Kite token refresh and the NSE report ingestion, the systemd user units are the
+dashboard and daily-operations, and nothing starts or stops the depth capture. Left alone it runs to
+the close on its own clock — `depth_capture_2026-08-11_run4` did exactly that at 15:30:13. The late
+starts have the same cause: a person starts it, 35 to 90 minutes after the open, and on 08-11 and
+-12 the first attempts were killed and replaced while the admission budget was retuned.
+
+*Why nothing on disk said so.* The session report is written ONCE, at the very end, after a scan of
+the whole tape. On 2026-08-13 the log stops on the line immediately before `build_session_report`,
+so the process was killed again before the verdict existed. The tape therefore carries **no
+statement at all** that it covers 09:51-12:15 of a session closing at 15:30, and every consumer read
+that silence as a full day.
+
+*Decision - a liveness record, written on every poll.* `capture_liveness_record` writes a few
+hundred bytes atomically beside the shards on each cycle: run id, first and last packet, rows,
+instruments admitted, and whether the recorder reached the session close under its own power. It
+survives `SIGKILL`, which the session report cannot. `session_was_fully_captured` returns `True`,
+`False` or `None`, three-valued on purpose — "no record" and "stopped early" are different facts,
+and collapsing them is precisely how a three-hour tape came to be read as a whole session. Surfaced
+on `/paper-session` above the risk latches, because the replay's numbers are only as complete as the
+tape beneath them.
+
+*Deliberately NOT decided here* (`R.19`): whether the capture should run on a schedule from the open.
+That is an operator decision about a process that writes gigabytes daily during market hours, and it
+is `BACKLOG` `M23`. The disk-budget limit on the recorded universe — 652 of 9,891 equities on
+2026-08-13, 100% of a 0.33 GiB budget — is `M24`, and it is a `R.09` constraint nothing currently
+reports.
+
 **A.117 · 2026-08-15 · An instrument with no gap distribution was getting a book that never went
 stale, and it was `inf` doing it.**
 

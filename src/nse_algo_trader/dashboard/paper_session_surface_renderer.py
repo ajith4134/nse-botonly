@@ -23,7 +23,13 @@ from decimal import Decimal
 from html import escape
 from pathlib import Path
 
+from nse_algo_trader.market_depth.capture_liveness_record import (
+    CaptureLivenessError,
+    read_liveness_records,
+)
+
 DEFAULT_PAPER_SESSION_ROOT = Path("~/.nse_algo_trader/paper_verification").expanduser()
+DEFAULT_DEPTH_TAPE_ROOT = Path("~/nse_archive/depth_tape").expanduser()
 
 _STATUS_CRITICAL = "#b3261e"
 _STATUS_WARNING = "#8a6100"
@@ -86,6 +92,15 @@ class PaperSessionSurfaceState:
     available_sessions: tuple[date, ...] = ()
     unavailable_reason: str = ""
     missing_stores: tuple[str, ...] = field(default=())
+    capture_coverage: str = ""
+    """What the depth capture says about the session this replay was measured on (`A.118`).
+
+    A replay is only as complete as the tape under it, and on 2026-08-13 the capture stopped three
+    hours before the close while nothing on the page said so."""
+
+    capture_stopped_early: bool | None = None
+    """`True`, `False`, or `None` when no capture run left a record — never collapsed, because
+    "stopped early" and "we do not know" are different things to tell a reader."""
 
     @property
     def has_session(self) -> bool:
@@ -153,6 +168,7 @@ def read_paper_session_state(
             missing_stores=("paper_session_directory",),
         )
     chosen = session_date if session_date in sessions else sessions[0]
+    coverage, stopped_early = _capture_coverage(chosen)
     directory = root / chosen.isoformat()
     journal_path = directory / "journal.sqlite3"
     ledger_path = directory / "ledger.sqlite3"
@@ -194,7 +210,25 @@ def read_paper_session_state(
         tripped_latches=latches,
         available_sessions=sessions,
         missing_stores=missing,
+        capture_coverage=coverage,
+        capture_stopped_early=stopped_early,
     )
+
+
+def _capture_coverage(session_date: date) -> tuple[str, bool | None]:
+    """What the depth capture recorded about this session, read from the tape's own record."""
+    try:
+        records = read_liveness_records(DEFAULT_DEPTH_TAPE_ROOT, session_date)
+    except CaptureLivenessError as unreadable:
+        return f"the capture's own record is unreadable: {unreadable}", None
+    if not records:
+        return (
+            "the capture left no coverage record for this session — it predates `A.118`, so how "
+            "much of the day it holds is UNKNOWN and was derived from the packets instead",
+            None,
+        )
+    complete = any(record.ended_at_session_close for record in records)
+    return " · ".join(record.describe() for record in records), not complete
 
 
 def _read_only(path: Path) -> sqlite3.Connection:
@@ -377,6 +411,19 @@ def _orders_table(state: PaperSessionSurfaceState) -> str:
     )
 
 
+def _capture(state: PaperSessionSurfaceState) -> str:
+    if not state.capture_coverage:
+        return '<p class="sub">No session selected.</p>'
+    if state.capture_stopped_early:
+        return (
+            f'<div class="absent"><strong>The capture stopped before the session did.</strong> '
+            f"{escape(state.capture_coverage)}</div>"
+        )
+    if state.capture_stopped_early is None:
+        return f'<div class="absent">{escape(state.capture_coverage)}.</div>'
+    return f'<p class="sub">{escape(state.capture_coverage)}</p>'
+
+
 def _latches(state: PaperSessionSurfaceState) -> str:
     if not state.tripped_latches:
         return '<p class="sub">No latch tripped in this session.</p>'
@@ -423,6 +470,12 @@ each request. Nothing here is a status anybody maintains. Sessions recorded:
 that took it flat before the close (`R.01`). A fill price is the volume-weighted walk of the book
 that was actually recorded at that instant — never a modelled slippage.</p>
 {_orders_table(state)}
+
+<h2>What the depth capture covered</h2>
+<p class="sub">A replay is only as complete as the tape under it. On 2026-08-13 the capture stopped
+three hours before the close and nothing said so, and every figure above was drawn from a session
+the loop could only half see (`A.118`).</p>
+{_capture(state)}
 
 <h2>Risk latches</h2>
 <p class="sub">Read-only. The loop can halt itself and can never un-halt itself (`R.22`); clearing a

@@ -2084,3 +2084,29 @@ on it outranking the cost gate `O.95` proposed.
 the gap and the staleness threshold is simply too tight, the fix is in the threshold rather than in
 the market, and it is cheap. That is the first thing to measure — packets per instrument per
 five-minute bucket, against the gaps the fills actually waited through.
+
+## O.99 · 2026-08-15 · The capture is the instrument, and it has been the least-examined thing in the system
+
+**Opinion:** four rounds of strategy work — cost gates, horizons, rate limits, staleness thresholds —
+were all conducted through a measuring instrument nobody had inspected, and every one of the
+surprises came from the instrument rather than the market. The exit wave was orders piling up where
+no book existed. The hour-long fill latency was a capture that started 75 minutes late. The
+2026-08-13 half-session was a person pressing Ctrl-C. None of it was the strategy.
+
+**Reasoning: measured** (`docs/research/233`, `235`). The logs answered in ten minutes what four
+rounds of inference had circled: `signal 15` at 12:15:06 in two processes at once, no scheduler in
+`crontab` or systemd, and a run on 2026-08-11 that reached 15:30:13 unaided, proving the capture
+ends on its own when left alone.
+
+**The rule I would keep:** when a measurement surprises you, examine the instrument before the
+subject. I did the opposite three times running — staggered the horizon, wired a rate gate, bounded
+a staleness threshold — and each was a real improvement that did not explain what I was looking at.
+The logs were on disk the whole time and cost nothing to read.
+
+**Confidence: measured** on the forensics; **judgement** on the rule, though it is the kind of
+judgement that gets cheaper the more instruments a system has, and this one now has many.
+
+**What would change my mind:** if the capture ran a full session from the open and the paper results
+still looked like this, the instrument would be exonerated and the strategy would be the subject
+again. That is exactly the test `M23` unblocks, and it is worth more than any further strategy work
+until it is run.

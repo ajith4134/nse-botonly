@@ -936,6 +936,12 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       sessions and revealed the exit wave as entries piling up unfilled where no book existed. Final
       numbers `docs/research/234`: 11/11/10 entries, net −Rs 8,589.78 / −Rs 505.92 / −Rs 2,464.42,
       with 2026-08-12 the first POSITIVE gross this rebuild has produced (+Rs 225.97 before costs).
+      **Why the capture is partial, answered (`A.118`, `docs/research/235`):** nothing failed — the
+      captures are started and stopped BY HAND, and 2026-08-13 ended at 12:15:06 on a signal 15 that
+      hit two capture processes in the same second. No scheduler exists. The recorder now writes a
+      liveness record on every poll that survives `SIGKILL`, and `/paper-session` shows it. Left
+      open and NOT assumed: scheduling the capture (`M23`, operator decision) and the disk budget
+      that caps the recorded universe at 652 of 9,891 instruments (`M24`).
 
 **— L10 —**
 

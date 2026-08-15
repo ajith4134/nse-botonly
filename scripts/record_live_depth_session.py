@@ -410,11 +410,16 @@ def main() -> int:
         classifier=classifier,
         admission_decision=decision,
         session_ends_at=session_close.astimezone(UTC),
+        # `A.118`: so the tape states its own coverage as it goes. The full session report is
+        # written once at the end and was lost on 2026-08-13 when the process was stopped before
+        # it could be built — leaving a three-hour tape that read as a whole day.
+        tape_root=arguments.tape_root,
+        capture_run_id=capture_run_id,
     )
 
     def handle_signal(signal_number: int, _frame: FrameType | None) -> None:
         log(f"signal {signal_number} — ending the session cleanly")
-        recorder.request_stop()
+        recorder.request_stop(reason=f"signal {signal_number}")
 
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)

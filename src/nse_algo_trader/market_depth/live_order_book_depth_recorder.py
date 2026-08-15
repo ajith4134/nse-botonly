@@ -24,7 +24,13 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
+from pathlib import Path
 
+from nse_algo_trader.market_depth.capture_liveness_record import (
+    CaptureLivenessError,
+    liveness_now,
+    write_liveness,
+)
 from nse_algo_trader.market_depth.depth_capture_admission_controller import (
     AdmissionDecision,
 )
@@ -83,6 +89,8 @@ class LiveOrderBookDepthRecorder:
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         writer_poll_seconds: float = 0.5,
         writer_join_timeout_seconds: float = 60.0,
+        tape_root: Path | None = None,
+        capture_run_id: str = "",
     ) -> None:
         if not shards:
             raise DepthRecorderError("a capture needs at least one shard")
@@ -98,6 +106,13 @@ class LiveOrderBookDepthRecorder:
         self._stopped = False
         self._writer_poll_seconds = writer_poll_seconds
         self._writer_join_timeout_seconds = writer_join_timeout_seconds
+        # `A.118`: without a tape root there is nowhere to leave a statement of coverage, and the
+        # recorder still records — a capture is worth more than its status file.
+        self._tape_root = tape_root
+        self._capture_run_id = capture_run_id or f"{clock():%H%M%S}"
+        self._started_at = clock()
+        self._reached_session_close = False
+        self._stop_reason = ""
 
     @property
     def shards(self) -> tuple[ShardRuntime, ...]:
@@ -196,17 +211,64 @@ class LiveOrderBookDepthRecorder:
             shard.feed.start(self._handler_for(shard))
 
     def run_until_session_end(self, poll_seconds: float = 1.0) -> None:
-        """Block until the session's close, a stop request, or a writer death."""
+        """Block until the session's close, a stop request, or a writer death.
+
+        The liveness record is rewritten on every poll, so a capture killed at any instant leaves
+        a statement of what it had covered by then (`A.118`). It is cheap — a few hundred bytes,
+        atomically replaced — and it is the only thing that survives a `SIGKILL`.
+        """
         while not self._stop_requested.is_set():
+            self._record_liveness(reached_session_close=False)
             if self._clock() >= self._session_ends_at:
+                self._reached_session_close = True
                 break
             if any(shard.statistics.writer_exception for shard in self._shards):
+                self._stop_reason = "a shard writer died"
                 break
             time.sleep(poll_seconds)
+        self._record_liveness(reached_session_close=self._reached_session_close)
 
-    def request_stop(self) -> None:
+    def request_stop(self, reason: str = "") -> None:
         """Ask the session to end early — safe from a signal handler."""
+        if reason:
+            self._stop_reason = reason
         self._stop_requested.set()
+
+    def _record_liveness(self, *, reached_session_close: bool) -> None:
+        """Write what this run has covered so far. Never raises into the capture loop.
+
+        A capture that dies because it could not write a status file is worse than one that keeps
+        recording without it, so the failure is swallowed here — and it cannot pass unnoticed,
+        because the absence of the record is itself read as "coverage unknown" downstream.
+        """
+        if self._tape_root is None:
+            return
+        first = min(
+            (s.statistics.first_packet_at for s in self._shards if s.statistics.first_packet_at),
+            default=None,
+        )
+        last = max(
+            (s.statistics.last_packet_at for s in self._shards if s.statistics.last_packet_at),
+            default=None,
+        )
+        try:
+            write_liveness(
+                liveness_now(
+                    session_date=self._session_date,
+                    capture_run_id=self._capture_run_id,
+                    started_at=self._started_at,
+                    first_packet_at=first,
+                    last_packet_at=last,
+                    rows_written=sum(s.statistics.packets_written for s in self._shards),
+                    instruments_admitted=self._admission_decision.admitted_count,
+                    session_ends_at=self._session_ends_at,
+                    ended_at_session_close=reached_session_close,
+                    stop_reason=self._stop_reason,
+                ),
+                self._tape_root,
+            )
+        except CaptureLivenessError:
+            return
 
     def shed(self, instrument_tokens: Sequence[int]) -> None:
         """Unsubscribe instruments mid-session under budget pressure."""
