@@ -914,7 +914,11 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       position marked closed while still filling, and a book served however stale it was.
       **Named open items, none of them this task:** live tick path (`A.108`'s recorded cost),
       options fills (`2.78`/`L9.04`), the continuous scheduler (`4.9`/`L10.01`), and `BACKLOG`
-      `M13`–`M17`.
+      `M13`–`M17`. **Re-run on 2026-08-12 and 2026-08-13 (2026-08-15)** — every session this
+      project holds a depth tape for. All three pass: 146 entries, none open at the close, ledger
+      fold agreeing each time, net −Rs 10,824.69 / −Rs 1,202.88 / −Rs 2,160.15. Comparison and what
+      it shows about cost versus edge: `docs/research/230`. A fifth real-data defect surfaced and
+      was fixed (`A.112`).
 
 **— L10 —**
 

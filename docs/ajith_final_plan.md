@@ -4129,6 +4129,26 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
 
+**A.112 · 2026-08-15 · A trade that closes at exactly its entry price realises nothing, and the
+ledger was right to refuse to say otherwise.**
+
+The 2026-08-13 replay stopped on `PaperCapitalError: realised profit must be positive, and -0 is
+not`. An illiquid scrip had entered and exited against the same untouched book, so the round trip
+realised exactly zero, and the loop offered that zero to `record_realised_profit`.
+
+**The ledger is not the defect.** `_bounded_positive_rupees` refuses a zero-rupee movement because
+an event of zero rupees is a statement ABOUT the book rather than a movement IN it, and a log full
+of them would make the fold's history unreadable without changing its result. That rule was written
+before this feature existed and it held correctly under a case nobody had constructed.
+
+**Decision:** a breakeven round trip records no realisation event — and still debits its costs,
+releases its capital, and reports its zero P&L to the session risk state. A breakeven trade is not
+a free one, and the two are easy to conflate in code that treats "no event" as "nothing happened".
+
+**Fifth real-data defect in `F04`, and the fifth no hermetic test could reach**: a synthetic ladder
+always moves the price between two fills, and only a real book on a thin scrip stands perfectly
+still for five bars.
+
 **A.111 · 2026-08-15 · A position was marked closed while its entry was still filling, and the
 first real session is the only place that could have shown it.**
 

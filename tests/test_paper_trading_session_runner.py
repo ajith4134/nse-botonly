@@ -705,3 +705,61 @@ def test_the_close_squares_off_in_rounds_until_nothing_is_left_unexited(
         if order.side is TradeLeg.BUY
     )
     assert sold <= bought, "no round may sell more than the entry actually filled"
+
+
+def test_a_breakeven_round_trip_debits_its_costs_and_realises_nothing(
+    tmp_path: Path, stores: RealStorePaths
+) -> None:
+    """`A.112`: a trade that closes at its entry price realises no movement, and is not free.
+
+    The ledger refuses an event of zero rupees — a zero is a statement about the book rather than
+    a movement in it — so the loop must not offer it one. Found on the 2026-08-13 replay, where an
+    illiquid scrip entered and exited against the same untouched book.
+    """
+    from nse_algo_trader.paper_loop.paper_trading_session_runner import OpenPaperPosition
+
+    position = OpenPaperPosition(
+        position_key="FLAT-1",
+        entry_intent_id="entry",
+        instrument=PaperInstrument(
+            instrument_token=TOKEN, trading_symbol=SYMBOL, lot_size=LOT_SIZE
+        ),
+        side=TradeLeg.BUY,
+        ordered_quantity=10,
+        filled_quantity=10,
+        average_entry_paise=Decimal("100000"),
+        committed_rupees=Decimal("10000"),
+        opened_at=session_for(SESSION_DATE).opens_at,
+        expires_at=session_for(SESSION_DATE).opens_at + timedelta(minutes=25),
+    )
+    position.exit_ordered_quantity = 10
+    position.exit_filled_quantity = 10
+    position.average_exit_paise = Decimal("100000")
+    assert position.realised_rupees() == Decimal(0)
+
+    runner, ledger, risk_store, _journal = _runner(
+        tmp_path,
+        stores,
+        signal_source=ScriptedSignalSource(),
+        book_source=RecordedBookHarness(),
+        step=timedelta(minutes=60),
+    )
+    opens_at = session_for(SESSION_DATE).opens_at
+    risk_store.open_session(
+        session_date=SESSION_DATE,
+        opening_equity_rupees=Decimal("1000000"),
+        occurred_at=opens_at,
+    )
+    ledger.commit_to_position(
+        Decimal("10000"),
+        position_key="FLAT-1",
+        occurred_at=opens_at,
+        reason="entry",
+    )
+    runner._positions["FLAT-1"] = position
+    gross, costs = runner._account_for_closed_positions(
+        opens_at + timedelta(hours=6)
+    )
+    assert gross == Decimal(0)
+    assert costs == Decimal(0), "no cost pricer is attached in this harness"
+    assert ledger.fold_from_events().open_commitments == (), "the capital must still be released"

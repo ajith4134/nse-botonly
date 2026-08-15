@@ -1947,3 +1947,35 @@ one session is noise and I over-read it. Two more losing sessions with the same 
 promote the diagnosis above from reasoned to worth acting on — and the first thing I would act on is
 the horizon, because it is the only one of the three that is a single parameter rather than a
 redesign.
+
+## O.95 · 2026-08-15 · Three sessions in, the cost is the constant and the edge is the variable — and one session was pure cost
+
+**Opinion:** `O.94` said the 08-11 loss was 92% edge and 8% cost, and named the horizon as the first
+thing I would test. Two more sessions say the diagnosis was incomplete rather than wrong, and they
+change what I would do first. On 2026-08-12 the strategy was **flat gross** — Rs 5.39 lost per entry
+across 61 entries — and still lost Rs 1,202.88, because cost took Rs 874.38 of it. **At this trade
+size the edge is indistinguishable from zero and the cost is not**, and the first thing to act on is
+therefore the trade SIZE and the entry COUNT, not the horizon.
+
+**Reasoning: measured** (`docs/research/230`). Cost across three sessions: Rs 868.54, Rs 874.38,
+Rs 876.01 — a spread of Rs 7.47 across universes differing fourfold and entry counts differing by
+50%, because the charge is dominated by per-order brokerage and per-trade statutory floors and
+scales with the NUMBER of round trips rather than their size. Gross across the same three:
+−Rs 9,956, −Rs 329, −Rs 1,284. One of those is not like the others, and it is the variance that is
+large, not the mean.
+
+**What I would now do, in order:** (1) make the cost gate binding on ENTRY — `F01` already prices
+a round trip, and an entry whose expected capture does not clear its own priced cost should never
+reach the sizer, which would have suppressed most of 08-12's 61 entries; (2) then revisit the
+five-bar horizon, since `O.94`'s argument for it still stands and is now testable against three
+sessions rather than one; (3) leave the sizer alone until both are done — the 08-11 loss came from
+a few large positions in thin scrips, and shrinking the sizer would hide that rather than fix it.
+
+**Confidence: measured** on the cost constancy and the 08-12 composition; **reasoned** on the
+ordering above; **judgement** that the cost gate is the cheapest of the three to try.
+
+**What would change my mind:** if the entries that a cost gate would suppress turn out to be the
+PROFITABLE ones — entirely possible, since the cheapest trades to enter are the liquid ones and the
+capture is being measured on deviations that are largest in thin ones — then the gate makes the
+gross worse while making the net better only by trading less, which is a different and weaker claim
+than having an edge. That comparison is worth running before the gate is wired in.

@@ -871,14 +871,20 @@ class PaperTradingSessionRunner:
                 continue
             realised = position.realised_rupees()
             gross += realised
-            if realised >= 0:
+            # A round trip that closes at exactly its entry price realises NOTHING, and the ledger
+            # refuses a zero movement for a good reason: an event of zero rupees is a statement
+            # about the book rather than a movement in it. Costs are still debited and capital is
+            # still released below — a breakeven trade is not a free one. Found on the 2026-08-13
+            # replay, where an illiquid scrip entered and exited on the same untouched book
+            # (`A.112`).
+            if realised > 0:
                 self.ledger.record_realised_profit(
                     realised,
                     position_key=position.position_key,
                     occurred_at=moment,
                     reason=f"{position.position_key} closed: {position.close_reason}",
                 )
-            else:
+            elif realised < 0:
                 self.ledger.record_realised_loss(
                     -realised,
                     position_key=position.position_key,

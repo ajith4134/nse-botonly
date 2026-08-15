@@ -4003,3 +4003,21 @@ re-evaluated after a RESIZE.
   sourced (`docs/research/222` covers the order API, not this). It changes every paper fill on an
   illiquid scrip, so it is an operator question rather than a code choice. Surfaced by the
   2026-08-11 replay, where one entry filled 5,232 units across hours (`A.111`).
+
+### From the 2026-08-15 suite run (NOT `F04` — `F02`'s rate limiter)
+
+- **M18 · `order_submission_rate_limiter` granted 8 orders inside a 5-second window that permits 7,
+  and the test's own store pollution hid it.** Surfaced 2026-08-15 by
+  `test_no_arrival_pattern_can_put_more_than_the_limit_in_any_window`, which Hypothesis reported as
+  a `FlakyFailure`: *"Failed on the first call but did not on a subsequent one."* That wording is
+  the second defect, not an excuse — the test names its sqlite store `property_{hash(gaps)}.sqlite3`,
+  so a replay of the SAME example reuses the store the first call already filled, the limiter grants
+  fewer orders the second time, and the property passes. The first call is the honest one.
+  Falsifying gaps (milliseconds): `[794, 451, 264, 0, 1305, 86, 0, 276, 327, 1237, 400, 1, 846, 259,
+  264, 1, 451]` against limits `broker_ceiling(3,1)`, `(7,5)`, `(11,30)`. **Two fixes needed and
+  they are separable:** give each Hypothesis call its own store (test isolation), then find why the
+  limiter's own bookkeeping disagrees with a window counted the way the exchange would count it —
+  which is exactly the failure mode `R.03`'s derived rate limit exists to prevent, since the
+  regulatory threshold this sits under is 10 orders/second (`A.101`). It is a GUARD that leaks, so
+  it ranks above every strategy question currently open. Not started; it is `F02`'s slice, not
+  `F04`'s, and `R.18` says one engine at a time.
