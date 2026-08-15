@@ -159,7 +159,22 @@ def main() -> int:
     # book source holds exactly those instants and reads each instrument's tape exactly once.
     grid_clock = ReplaySessionClock(session_for(session_date), {})
     decision_instants = list(grid_clock.step_through_session(DECISION_STEP))
-    book_source = SteppedRecordedBookSource(replay_engine, decision_instants)
+    book_source = SteppedRecordedBookSource(
+        replay_engine, decision_instants, staleness_quantile=STALENESS_QUANTILE
+    )
+    # One streamed pass over the session for the whole universe. Per-instrument reads are correct
+    # and put the first full-universe attempt on course for six hours of scanning.
+    session_window_start = session_for(session_date).opens_at - timedelta(hours=4)
+    session_window_end = session_for(session_date).closes_at + timedelta(hours=4)
+    print(f"reading the depth tape for {len(instruments)} instruments in one pass...")
+    with_rows = book_source.preload(
+        MarketDepthTapeReader(arguments.tape_root),
+        [instrument.instrument_token for instrument in instruments],
+        session_date=session_date,
+        window_start=session_window_start,
+        window_end=session_window_end,
+    )
+    print(f"  {with_rows} instrument(s) had recorded depth on this session")
     runner = PaperTradingSessionRunner(
         policy=PaperSessionPolicy(
             session_date=session_date,

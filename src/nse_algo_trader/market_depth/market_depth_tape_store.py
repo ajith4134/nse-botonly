@@ -279,6 +279,48 @@ class MarketDepthTapeReader:
             if child.is_dir() and child.name.startswith("session_date=")
         )
 
+    def iter_session_tables_for_instruments(
+        self,
+        instrument_tokens: Sequence[int],
+        window_start: datetime,
+        window_end: datetime,
+        session_date: date,
+        *,
+        batch_rows: int = 100_000,
+        time_column: str = "receipt_time",
+    ) -> Iterator[pa.Table]:
+        """Stream one session's rows for a SET of instruments, in file order, in batches.
+
+        `read_instrument_window` filters to ONE instrument, and a consumer that needs many pays a
+        full scan of the day per instrument: the paper loop's first full-universe run was on course
+        for six hours of scanning against a session it reads once. This yields the same rows in one
+        pass, in batches, so the caller can fold as it goes rather than materialising an
+        eleven-million-row table.
+
+        The rows are NOT sorted here. Batches arrive in file order, which is append order, and a
+        caller that needs time order per instrument must say so itself rather than inherit an
+        ordering guarantee this makes no attempt to keep.
+        """
+        if time_column not in ("receipt_time", "exchange_time"):
+            raise DepthTapeStoreError(f"unknown time column {time_column!r}")
+        if not instrument_tokens:
+            raise DepthTapeStoreError(
+                "no instruments asked for; an empty set would scan the whole session and return "
+                "nothing, which is the most expensive way to say no"
+            )
+        field = arrow_dataset.field
+        scanner = self._dataset(session_date).scanner(
+            filter=(
+                field("instrument_token").isin(list(instrument_tokens))
+                & (field(time_column) >= window_start)
+                & (field(time_column) < window_end)
+            ),
+            batch_size=batch_rows,
+        )
+        for batch in scanner.to_batches():
+            if batch.num_rows:
+                yield pa.Table.from_batches([batch])
+
     def read_instrument_window(
         self,
         instrument_token: int,
