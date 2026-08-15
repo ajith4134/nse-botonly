@@ -2009,3 +2009,33 @@ disagreement between the two clocks is larger than a tick — plausible under re
 rather than under a steerable test clock — and the answer would then be to stamp items with the
 observer's clock rather than to pad the window. That is worth testing with a wall clock that steps
 while orders are in flight, which the suite does exercise for the ratchet but not for the window.
+
+## O.97 · 2026-08-15 · The rate gate refused exits, not entries, and that is a risk finding rather than an accounting one
+
+**Opinion:** I expected the rate limiter to cut the paper loop's ENTRY count and it cut none of it —
+45, 61 and 40 entries before and after, identical. What it refused was square-offs, 384 legs across
+three sessions where 189 had been enough before. The reason matters more than the number: every
+position runs the same five-bar horizon, so they expire in waves, and a wave of square-offs at one
+simulated instant is exactly the shape the 1-second ceiling of 10 refuses.
+
+**Why that is a risk statement.** A position whose horizon has expired and whose exit is refused
+stays on the book another five minutes, holding market risk the strategy did not intend — and it
+does so precisely when many positions want out at once, which is when the market is most likely to
+be moving against them. The ungated paper record could not show this at all.
+
+**Reasoning: measured** (`docs/research/231`), from the journals: entries unchanged, square-off legs
+up 2-3x, refusals 100% attributed to the 1-second ceiling, and every session still flat by the
+close.
+
+**What I would do about it, and it is not to raise the ceiling:** stagger the horizon per position
+so expiries disperse. The horizon is currently one policy number applied to every entry, which is
+what synchronises them; drawing it per instrument from the calibration's own measured horizon would
+disperse the wave AND be better-founded than the single number is today. I would try that before
+touching the limiter, because the limiter is behaving correctly.
+
+**Confidence: measured** on the refusal pattern; **reasoned** on the staggering fix; **judgement**
+that the synchronisation explains most of 08-12's 50.4% refusal rate.
+
+**What would change my mind:** if dispersing the horizon leaves the refusal rate high, the collision
+is coming from the entry side after all — many instruments deviating together in a correlated move —
+and the answer would be a concurrency cap on simultaneous exits rather than a scheduling change.

@@ -60,9 +60,11 @@ from nse_algo_trader.order_path.broker_order_facility_facts import (
 )
 from nse_algo_trader.order_path.broker_truth_reconciler import BrokerTruthReconciler
 from nse_algo_trader.order_path.crash_safe_order_placer import (
+    AlwaysPermits,
     CrashSafeOrderPlacer,
     PlacementOutcome,
     PlacementVerdict,
+    SubmissionRateGate,
 )
 from nse_algo_trader.order_path.order_intent_journal import OrderIntentJournal
 from nse_algo_trader.order_path.order_record import OrderExpression, OrderRecord
@@ -392,6 +394,11 @@ class PaperTradingSessionRunner:
     """Where the bar and calibration stores live. A value rather than a fixed path so a
     verification run can point the identical code at a copy (`R.03`)."""
 
+    rate_gate: SubmissionRateGate = field(default_factory=AlwaysPermits)
+    """The wire's own ceiling (`L3.06`). Defaults to the null gate so a hermetic test can isolate
+    the loop, and `SimulatedTimeSubmissionRateGate` is what production passes — without it the
+    paper record assumes an order flow the wire would not have accepted (`A.114`)."""
+
     cost_pricer: RoundTripCostPricer | None = None
     regulatory_facts: RegulatoryFactsSource = field(default_factory=UncheckedRegulatoryFacts)
     sizer: VolatilityTargetedPositionSizer = field(default_factory=VolatilityTargetedPositionSizer)
@@ -412,6 +419,7 @@ class PaperTradingSessionRunner:
             journal=self.journal,
             venue=self.venue,
             namespace=OrderNamespace.SIMULATED,
+            rate_gate=self.rate_gate,
         )
         self._reconciler = BrokerTruthReconciler(
             journal=self.journal,

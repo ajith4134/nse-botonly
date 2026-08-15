@@ -56,6 +56,9 @@ from nse_algo_trader.paper_loop.paper_trading_session_runner import (
     PaperTradingSessionRunner,
 )
 from nse_algo_trader.paper_loop.replayed_depth_book_source import SteppedRecordedBookSource
+from nse_algo_trader.paper_loop.simulated_time_submission_rate_gate import (
+    SimulatedTimeSubmissionRateGate,
+)
 from nse_algo_trader.replay_session_clock import ReplaySessionClock, session_for
 from nse_algo_trader.sizing.session_risk_state_store import SessionRiskStateStore
 from nse_algo_trader.sizing.sizing_inputs_from_real_stores import (
@@ -138,7 +141,7 @@ def main() -> int:
     capital = load_trading_capital_from_environment()
     state_directory = arguments.state_directory / session_date.isoformat()
     state_directory.mkdir(parents=True, exist_ok=True)
-    for stale in ("journal.sqlite3", "ledger.sqlite3", "risk.sqlite3"):
+    for stale in ("journal.sqlite3", "ledger.sqlite3", "risk.sqlite3", "rate.sqlite3"):
         (state_directory / stale).unlink(missing_ok=True)
 
     ledger = PaperCapitalLedger(state_directory / "ledger.sqlite3")
@@ -175,6 +178,9 @@ def main() -> int:
         window_end=session_window_end,
     )
     print(f"  {with_rows} instrument(s) had recorded depth on this session")
+    rate_gate = SimulatedTimeSubmissionRateGate(
+        clock=clock, store_path=state_directory / "rate.sqlite3"
+    )
     runner = PaperTradingSessionRunner(
         policy=PaperSessionPolicy(
             session_date=session_date,
@@ -207,6 +213,7 @@ def main() -> int:
         # Without this the report's costs are zero, and a zero cost beside a non-zero gross is the
         # comparison graduation reads being silently skipped.
         cost_pricer=NseTransactionCostEngine(seeded_nse_market_rule_store()),
+        rate_gate=rate_gate,
     )
 
     print(
@@ -215,6 +222,7 @@ def main() -> int:
     )
     report = runner.run()
     print(report.describe())
+    print(rate_gate.describe())
     print(
         f"books: {book_source.instruments_loaded} instrument(s) read from the tape, "
         f"{len(book_source.instruments_with_no_tape)} never recorded"

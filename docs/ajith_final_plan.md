@@ -4129,6 +4129,42 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
 
+**A.114 · 2026-08-15 · The paper loop now runs behind the real rate limiter, counting in
+SIMULATED time and never queuing. Operator decision, taken on the options recorded in `M19`.**
+
+`A.113`'s `R.05` run measured what the paper loop had been assuming: **70 of the 335 orders the
+three sessions sent — 21% — would have been refused by the real limiter**, because the loop built
+its placer with `AlwaysPermits`. Every paper P&L to that point described an order flow the wire
+would not have carried, which is precisely the "second code path, never exercised" failure `A.108`
+decision 2 exists to prevent.
+
+*Decision 1 — the limiter counts in SIMULATED time.* Its clock seams are driven from the replay
+clock, so a session replayed on a Saturday afternoon is rate-limited exactly as that session would
+have been. The operator chose this over wall time and over a switchable both-clocks design. Wall
+time is meaningless in a replay — a day's orders arrive within seconds of it, so the gate would be
+inert on a fast host and punitive on a slow one, and the result would depend on the machine rather
+than on the market.
+
+*Decision 2 — the gate never queues, and this one was forced by the code rather than chosen.*
+`OrderSubmissionRateLimiter.acquire` waits for budget by SLEEPING in real seconds. A replay's clock
+does not advance while it sleeps, so an order queued behind the five-second window would block the
+process for five real seconds and still be refused, and one queued against a twenty-five-minute
+intent validity would block for twenty-five real minutes. `SimulatedTimeSubmissionRateGate`
+therefore asks only whether there is room AT the decision instant. That is also the honest semantics
+for a five-minute step: there is no "later" inside one simulated instant, and the next opportunity
+is the next step.
+
+**Recorded cost, and it is a real one:** the live path WILL queue — an order that waits 200 ms for
+budget is sent, not dropped — and this gate cannot exercise that behaviour. So the queueing half of
+`L3.06` remains verified only by its own tests, and the paper record now under-counts what a live
+session would send rather than over-counting it. Erring toward refusal is the right direction for a
+guard, and the gap is named rather than papered over (`BACKLOG` `M20`).
+
+**What it changes in the numbers:** a burst of entries decided at one instant is truncated to what
+the tightest window permits — three orders per second, seven per five seconds — and the rest are
+refused with the ceiling that refused them named in the session report. Every paper result before
+this decision is superseded by the re-run recorded in `docs/research/231`.
+
 **A.113 · 2026-08-15 · The order-rate limiter was correct on its own clock and wrong on
 everybody else's, and one millisecond is what separated the two.**
 

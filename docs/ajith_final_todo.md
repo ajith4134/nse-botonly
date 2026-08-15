@@ -918,7 +918,11 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       project holds a depth tape for. All three pass: 146 entries, none open at the close, ledger
       fold agreeing each time, net −Rs 10,824.69 / −Rs 1,202.88 / −Rs 2,160.15. Comparison and what
       it shows about cost versus edge: `docs/research/230`. A fifth real-data defect surfaced and
-      was fixed (`A.112`).
+      was fixed (`A.112`). **Re-run again behind the REAL rate limiter (`A.114`, 2026-08-15)** —
+      the loop no longer runs with a null rate gate, so the paper record stops assuming an order
+      flow the wire would not have carried. All three sessions still pass, still flat at the close:
+      net −Rs 9,962.65 / −Rs 1,022.36 / −Rs 2,082.25. The gate refused 197 of 592 requests and every
+      one of them was a SQUARE-OFF rather than an entry (`docs/research/231`, `O.97`).
 
 **— L10 —**
 

@@ -407,6 +407,9 @@ SURFACED_MODULES: frozenset[str] = frozenset(
         "nse_algo_trader.paper_loop.paper_session_signal_source",
         "nse_algo_trader.paper_loop.simulated_execution_venue",
         "nse_algo_trader.order_path.simulated_order_execution_venue",
+        "nse_algo_trader.paper_loop.replayed_depth_book_source",
+        "nse_algo_trader.paper_loop.simulated_time_submission_rate_gate",
+        "nse_algo_trader.order_path.order_submission_rate_limiter",
         "nse_algo_trader.dashboard.paper_session_surface_renderer",
     }
 )

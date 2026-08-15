@@ -4021,8 +4021,8 @@ re-evaluated after a RESIZE.
   regulatory threshold this sits under is 10 orders/second (`A.101`). It is a GUARD that leaks, so
   it ranks above every strategy question currently open. Not started; it is `F02`'s slice, not
   `F04`'s, and `R.18` says one engine at a time.
-- **M19 · the paper loop sends orders no rate limiter ever sees, and 21% of them would have been
-  refused.** `PaperTradingSessionRunner` builds `CrashSafeOrderPlacer` with the default
+- 🟢 **M19 · DONE 2026-08-15 (`A.114`).** ~~The paper loop sends orders no rate limiter ever sees,
+  and 21% of them would have been refused.~~ `PaperTradingSessionRunner` builds `CrashSafeOrderPlacer` with the default
   `AlwaysPermits` rate gate, so `F02`'s `OrderSubmissionRateLimiter` — the thing that keeps this
   system under the 10-orders/second registration threshold (`A.101`) — is not in the paper path at
   all. Measured 2026-08-15 by replaying all three sessions' recorded arrivals through a real
@@ -4034,3 +4034,12 @@ re-evaluated after a RESIZE.
   for the replay, and it would refuse most of a burst issued at one simulated instant) or in WALL
   time (meaningless in a replay). Either answer changes every paper result, so it is asked before
   it is built.
+- **M20 · the paper loop's rate gate cannot exercise QUEUING, only refusal.**
+  `SimulatedTimeSubmissionRateGate` asks for budget at the decision instant and takes no for an
+  answer, because `OrderSubmissionRateLimiter.acquire` waits by sleeping in real seconds and a
+  replay's clock does not advance while it sleeps (`A.114` decision 2). The live path will queue —
+  an order that waits 200 ms for budget is sent, not dropped — so that half of `L3.06` is still
+  verified only by its own tests, and the paper record now UNDER-counts what a live session would
+  send. Erring toward refusal is the right direction for a guard, but it is a gap. The fix is a
+  limiter that can wait against an injected clock rather than `time.sleep`, which is a change to
+  `F02` and not to the paper loop.
