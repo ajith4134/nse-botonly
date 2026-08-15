@@ -258,12 +258,25 @@ class OpenPaperPosition:
     close_reason: str = ""
 
     @property
+    def open_quantity(self) -> int:
+        """What is still at risk: filled on the entry and not yet filled back on an exit."""
+        return max(self.filled_quantity - self.exit_filled_quantity, 0)
+
+    @property
     def is_open(self) -> bool:
-        return self.closed_at is None
+        """Derived from the quantities, never latched by `closed_at`.
+
+        It WAS latched, and the first real session showed why that is wrong: a position was
+        squared off for the 377 units that had filled, marked closed, and then its entry order
+        kept filling — to 5,232 — with nothing left willing to exit the rest, because every exit
+        path tested `closed_at`. A position is open exactly while quantity is open, and
+        `closed_at` records when it last went flat rather than deciding whether it is.
+        """
+        return self.open_quantity > 0
 
     @property
     def unexited_quantity(self) -> int:
-        """Filled and not yet sent for exit — what a square-off still has to sell or buy back."""
+        """Filled and not yet SENT for exit — what a square-off still has to sell or buy back."""
         return max(self.filled_quantity - self.exit_ordered_quantity, 0)
 
     @property
@@ -784,7 +797,7 @@ class PaperTradingSessionRunner:
         `horizon_bars`, so holding past it is holding on an edge nobody measured.
         """
         for position in list(self._positions.values()):
-            if not position.is_open or position.unexited_quantity <= 0:
+            if position.unexited_quantity <= 0:
                 continue
             if moment >= position.expires_at:
                 self._square_off(position, moment, reason="horizon expired")
@@ -799,12 +812,24 @@ class PaperTradingSessionRunner:
 
     def _square_off_everything(self, moment: datetime, *, reason: str) -> None:
         """The close. Everything filled goes flat, through the same path, on the same book."""
-        for position in list(self._positions.values()):
-            if position.is_open and position.unexited_quantity > 0:
-                self._square_off(position, moment, reason=reason)
-        self._observe_books(moment)
-        self._advance_matching(moment)
-        self._apply_fills(moment)
+        # Rounds, not one pass: squaring off draws more fills out of the venue, and an entry that
+        # was still filling when its exit went in leaves a residual that needs its own exit. The
+        # loop stops when nothing is left unexited or when a round changes nothing — never on a
+        # chosen number of attempts, and what is left is REPORTED rather than assumed away.
+        previous_unexited = -1
+        while True:
+            unexited = sum(
+                position.unexited_quantity for position in self._positions.values()
+            )
+            if unexited == 0 or unexited == previous_unexited:
+                break
+            previous_unexited = unexited
+            for position in list(self._positions.values()):
+                if position.unexited_quantity > 0:
+                    self._square_off(position, moment, reason=reason)
+            self._observe_books(moment)
+            self._advance_matching(moment)
+            self._apply_fills(moment)
 
     def _square_off(self, position: OpenPaperPosition, moment: datetime, *, reason: str) -> None:
         """Send the opposite leg for exactly what filled — never for what was ordered."""

@@ -3995,3 +3995,11 @@ re-evaluated after a RESIZE.
   saturating the machine; a Hypothesis deadline is the likely cause but it has not been confirmed,
   and a leakage-guard property test is the last one to wave away as flaky. Re-run under load and
   read the falsifying example before deciding.
+- **M17 · a MARKET order rests across books in the paper venue, and a real one does not.**
+  `SimulatedOrderExecutionVenue` fills an order one rung per poll from whatever book it currently
+  holds, so a market order too large for the visible ladder keeps working for the rest of the
+  session. At a real broker it does not: the unfilled remainder is either cancelled or converted to
+  a limit at the last traded price, and WHICH of those NSE does is a fact this project has not
+  sourced (`docs/research/222` covers the order API, not this). It changes every paper fill on an
+  illiquid scrip, so it is an operator question rather than a code choice. Surfaced by the
+  2026-08-11 replay, where one entry filled 5,232 units across hours (`A.111`).

@@ -51,6 +51,13 @@ CHOPPINESS_PERIOD = 14
 MINIMUM_BARS_FOR_A_RANGE = 2
 """A true range needs a previous close, so nothing can be measured from one bar."""
 
+MINIMUM_PERIODS_FOR_THE_CHOPPINESS_NORMALISER = 2
+"""The choppiness index divides by `log10(periods)`, which is exactly zero at one period.
+
+Not a tuning floor — the formula has no value there at all. Two closes produce exactly one true
+range, which is the case a live replay hits on the first instrument whose history begins with the
+session (`A.110`)."""
+
 MINIMUM_BARS_FOR_MATURITY = WILDER_PERIOD * 2
 """Wilder smoothing needs roughly two periods before its recursion stops being dominated
 by its own seed. Below this the classifier still computes — `R.04` — but reports itself
@@ -200,6 +207,13 @@ class TrendStrengthRegimeClassifier:
         if window_span <= 0.0 or summed_true_range <= 0.0:
             return 100.0  # no span at all is the most range-bound state possible
         periods = len(true_ranges)
+        if periods < MINIMUM_PERIODS_FOR_THE_CHOPPINESS_NORMALISER:
+            # The index normalises by `log10(periods)`, which is ZERO at one period — the
+            # formula is undefined there rather than merely imprecise. Found by `F04`'s first
+            # real-session replay (`A.110`), on an instrument whose second bar of the day was
+            # the first one available: two closes make exactly one true range. "No evidence
+            # either way" is the same answer the branch above gives for too little history.
+            return 50.0
         raw = 100.0 * math.log10(summed_true_range / window_span) / math.log10(periods)
         return min(100.0, max(0.0, raw))
 

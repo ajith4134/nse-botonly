@@ -385,3 +385,24 @@ def test_a_deviation_above_the_mean_goes_short_not_long() -> None:
     decision = engine.decide(_belief(MarketRegime.RANGING))
     if decision.is_actionable:
         assert decision.action is MeanReversionAction.ENTER_SHORT
+
+
+def test_two_bars_do_not_divide_by_a_zero_normaliser() -> None:
+    """`A.110`: the choppiness index normalises by `log10(periods)`, zero at one period.
+
+    Found by `F04`'s first real-session replay, on an instrument whose available history began
+    with the session itself. Two closes make exactly one true range, and the formula has no value
+    there — so the classifier must answer "no evidence", not raise out of a decision.
+    """
+    from nse_algo_trader.regime.trend_strength_regime_classifier import (
+        TrendStrengthRegimeClassifier,
+    )
+
+    classifier = TrendStrengthRegimeClassifier()
+    classifier.observe(101.0, 99.0, 100.0)
+    classifier.observe(102.0, 100.0, 101.5)
+    reading = classifier.reading()
+    assert 0.0 <= reading.choppiness_index <= 100.0
+    assert not classifier.is_mature
+    opinion = classifier.opinion(datetime(2026, 8, 11, 9, 20, tzinfo=ZoneInfo("Asia/Kolkata")))
+    assert not opinion.is_mature

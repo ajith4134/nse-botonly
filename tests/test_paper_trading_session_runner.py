@@ -640,3 +640,68 @@ def test_the_report_reads_back_as_one_line(tmp_path: Path, stores: RealStorePath
     assert report.ended_at.tzinfo is not None
     assert report.started_at <= report.ended_at
     assert report.started_at.astimezone(UTC) <= report.ended_at.astimezone(UTC)
+
+
+def test_a_position_is_open_while_quantity_is_open_not_while_a_flag_says_so(
+    tmp_path: Path, stores: RealStorePaths
+) -> None:
+    """`A.111`: the first real session squared off 377 units of a position that grew to 5,232.
+
+    The entry was still filling when its horizon expired. The exit went in for what had filled,
+    the position was marked closed, and every later exit path tested that flag — so the remaining
+    4,855 units had nothing willing to sell them. Openness is now derived from the quantities.
+    """
+    from nse_algo_trader.paper_loop.paper_trading_session_runner import OpenPaperPosition
+
+    position = OpenPaperPosition(
+        position_key="TEST-1",
+        entry_intent_id="entry",
+        instrument=PaperInstrument(
+            instrument_token=TOKEN, trading_symbol=SYMBOL, lot_size=LOT_SIZE
+        ),
+        side=TradeLeg.BUY,
+        ordered_quantity=5232,
+        filled_quantity=377,
+        average_entry_paise=Decimal("3238"),
+        committed_rupees=Decimal("1000"),
+        opened_at=session_for(SESSION_DATE).opens_at,
+        expires_at=session_for(SESSION_DATE).opens_at + timedelta(minutes=25),
+    )
+    position.exit_ordered_quantity = 377
+    position.exit_filled_quantity = 377
+    position.closed_at = session_for(SESSION_DATE).opens_at + timedelta(minutes=30)
+    assert not position.is_open
+
+    # The entry keeps filling after the exit was sent — the exact real-session case.
+    position.filled_quantity = 5232
+    assert position.is_open, "a position with 4,855 units still on the book is not closed"
+    assert position.open_quantity == 5232 - 377
+    assert position.unexited_quantity == 5232 - 377
+
+
+def test_the_close_squares_off_in_rounds_until_nothing_is_left_unexited(
+    tmp_path: Path, stores: RealStorePaths
+) -> None:
+    """Squaring off draws more fills, which can leave a residual that needs its own exit."""
+    entry_at = session_for(SESSION_DATE).opens_at + timedelta(minutes=5)
+    runner, _ledger, _risk, journal = _runner(
+        tmp_path,
+        stores,
+        signal_source=ScriptedSignalSource(entries_at=[entry_at]),
+        book_source=RecordedBookHarness(quantity_per_rung=2),
+        step=timedelta(minutes=30),
+    )
+    report = runner.run()
+    for position in report.positions:
+        assert position.unexited_quantity == 0 or position.position_key in report.open_at_close
+    sold = sum(
+        order.ordered_quantity
+        for order in journal.orders_for_session(SESSION_DATE)
+        if order.side is TradeLeg.SELL
+    )
+    bought = sum(
+        order.ordered_quantity
+        for order in journal.orders_for_session(SESSION_DATE)
+        if order.side is TradeLeg.BUY
+    )
+    assert sold <= bought, "no round may sell more than the entry actually filled"

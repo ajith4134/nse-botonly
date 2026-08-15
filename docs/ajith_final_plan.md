@@ -4129,6 +4129,73 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
 
+**A.111 · 2026-08-15 · A position was marked closed while its entry was still filling, and the
+first real session is the only place that could have shown it.**
+
+The 2026-08-11 replay squared off `3PLAND` for the 377 units that had filled when its horizon
+expired, marked the position closed, and then watched the entry order keep filling — to 5,232 units.
+Every exit path tested the closed flag, so the remaining 4,855 units had nothing willing to sell
+them, and the session report said the book was flat. It was not.
+
+*Why no test could have found it.* The hermetic harness fills an entry within the step it is sent,
+because a synthetic ladder is deep enough to absorb it. A real book is not: a 5,232-unit order in an
+illiquid scrip fills a rung at a time across hours, and the horizon expires long before it is done.
+The defect needs an entry that is still working when its own exit goes in, which is a shape a
+fixture author has no reason to write.
+
+**Decision:** openness is DERIVED from the quantities — `filled_quantity - exit_filled_quantity` —
+and `closed_at` records when a position last went flat rather than deciding whether it is flat. The
+close squares off in rounds until nothing is unexited or a round changes nothing, and whatever is
+left is reported as open at the close rather than assumed away.
+
+**Recorded as an open question, not resolved** (`R.19`): a MARKET order in this simulated venue
+rests across books and fills rung by rung for as long as the session lasts, which is not how a
+market order behaves at a real broker. What NSE actually does with the unfilled remainder of a
+market order — cancel it, or convert it to a limit at the last traded price — is an exchange fact
+this project has not sourced, and guessing it would change every paper fill. `BACKLOG` `M17`.
+
+**A.110 · 2026-08-15 · The first real session found three defects in code that was already passing
+its tests, and two of them were in components built weeks ago.**
+
+`F04`'s `R.05` replay of 2026-08-11 did not reach its second decision instant on the first attempt.
+Each failure below is recorded because each is a class of defect the hermetic suite structurally
+cannot produce: they all need a real instrument with a real history that nobody would have thought
+to write down.
+
+*1 — the price collar was reading a mean CAPTURE, and a capture can be negative.* `derive_limits`
+asks for `realised_move_percentile_fraction`, and both `/sizing` and the new loop were handing it
+the reversion calibration's `mean_captured_sigma`. That figure is the mean move the strategy
+CAPTURED in a deviation bucket — legitimately negative wherever the strategy lost — and
+`DerivedLimits` rejects a non-positive collar, so the gate raised out of the middle of a decision on
+the first losing scrip. **Decision:** the collar is now measured from the instrument's own closes,
+`realised_move_quantile_from_closes`, as a nearest-rank quantile of the absolute move over the
+decision horizon; the quantile is operator policy with no default, and an instrument whose history
+cannot support one is REFUSED rather than given a borrowed collar. `/sizing` carried the identical
+latent defect and now uses the same function.
+
+*2 — the choppiness index divides by `log10(periods)`, which is exactly zero at one period.*
+`TrendStrengthRegimeClassifier` guarded on "fewer than two closes"; two closes make exactly one true
+range, and the normaliser is zero there. Every hermetic test fed it more history than that. The real
+session hit it on the first instrument whose available bars began with the session itself.
+**Decision:** at fewer than two periods the index is undefined and the classifier answers "no
+evidence either way" — the same answer its existing too-little-history branch gives — rather than
+raising.
+
+*3 — the recorded book was re-read per lookup, and it was served however stale it was.*
+`OrderBookSnapshotReplayEngine.book_at` re-reads the instrument's whole parquet window on every
+call. Correct for the one-shot microstructure surface it was written for; for a loop asking once per
+instrument per step over an 11.4-million-row tape it does not finish. **Decision:**
+`SteppedRecordedBookSource` reads each instrument once and resolves it onto the clock's own grid —
+and, the part that matters more than the speed, serves a book forward only while it is fresh by
+THAT instrument's own derived gap quantile. `book_at` returns the last snapshot at or before an
+instant however old it is; filling against an hour-old book is filling at a price with no
+counterparty behind it, so past the threshold the answer is no book and nothing fills.
+
+**The pattern, recorded because it will repeat:** all three were in code with passing tests, and all
+three needed real data of a shape nobody would invent — a losing calibration bucket, an instrument
+whose history starts today, a tape that stops. `R.05` is not a formality applied to finished work;
+on this slice it was the most productive hour of the build.
+
 **A.109 · 2026-08-15 · `F04`'s loop is built, and four decisions were taken inside it.**
 
 The paper session runner, its signal source and its `R.05` harness landed today. Four choices were
