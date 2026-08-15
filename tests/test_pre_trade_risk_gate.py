@@ -498,3 +498,65 @@ def test_the_segment_margin_table_is_empty_on_purpose() -> None:
     from nse_algo_trader.sizing.pre_trade_risk_gate import segment_margin_fractions
 
     assert segment_margin_fractions() == {}
+
+
+# --- the price collar, measured from the instrument's own history (`A.110`) ------------------
+
+
+def _closes(prices: list[str]) -> list[tuple[datetime, Decimal]]:
+    start = datetime(2026, 8, 11, 9, 15, tzinfo=ZoneInfo("Asia/Kolkata"))
+    return [
+        (start + timedelta(minutes=5 * index), Decimal(price))
+        for index, price in enumerate(prices)
+    ]
+
+
+def test_the_collar_is_a_quantile_of_the_instruments_own_move() -> None:
+    """Nearest-rank on the sample: the collar is a move this scrip actually made."""
+    from nse_algo_trader.sizing.pre_trade_risk_gate import realised_move_quantile_from_closes
+
+    # Two-bar moves off this tape: 1/100, 2/100, 2/101, 2/102 — the largest is 0.02, and the
+    # collar is that observation rather than anything interpolated between two of them.
+    closes = _closes(["100", "100", "101", "102", "103", "104"])
+    collar = realised_move_quantile_from_closes(
+        closes, horizon_bars=2, quantile=Decimal("0.95")
+    )
+    assert collar == Decimal("0.02")
+    median = realised_move_quantile_from_closes(closes, horizon_bars=2, quantile=Decimal("0.5"))
+    assert median < collar
+
+
+def test_an_instrument_that_never_moved_sets_no_collar() -> None:
+    """Refused rather than defaulted: a limit price cannot be checked against a range of zero."""
+    from nse_algo_trader.sizing.pre_trade_risk_gate import (
+        PriceCollarUnavailableError,
+        realised_move_quantile_from_closes,
+    )
+
+    with pytest.raises(PriceCollarUnavailableError, match="did not move"):
+        realised_move_quantile_from_closes(
+            _closes(["100"] * 10), horizon_bars=2, quantile=Decimal("0.95")
+        )
+
+
+def test_too_few_closes_for_the_horizon_is_refused_not_shortened() -> None:
+    from nse_algo_trader.sizing.pre_trade_risk_gate import (
+        PriceCollarUnavailableError,
+        realised_move_quantile_from_closes,
+    )
+
+    with pytest.raises(PriceCollarUnavailableError, match="cannot measure a move"):
+        realised_move_quantile_from_closes(
+            _closes(["100", "101"]), horizon_bars=5, quantile=Decimal("0.95")
+        )
+
+
+def test_a_negative_mean_capture_can_never_reach_the_collar_again() -> None:
+    """The defect `A.110` records: a mean CAPTURE is not a move, and it can be negative."""
+    from nse_algo_trader.sizing.pre_trade_risk_gate import realised_move_quantile_from_closes
+
+    falling = _closes(["100", "99", "98", "97", "96", "95"])
+    collar = realised_move_quantile_from_closes(
+        falling, horizon_bars=2, quantile=Decimal("0.95")
+    )
+    assert collar > 0, "a collar is a DISTANCE; a falling instrument still has one"

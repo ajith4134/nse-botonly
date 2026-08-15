@@ -55,6 +55,7 @@ from nse_algo_trader.paper_loop.paper_trading_session_runner import (
     PaperSessionPolicy,
     PaperTradingSessionRunner,
 )
+from nse_algo_trader.paper_loop.replayed_depth_book_source import SteppedRecordedBookSource
 from nse_algo_trader.replay_session_clock import ReplaySessionClock, session_for
 from nse_algo_trader.sizing.session_risk_state_store import SessionRiskStateStore
 from nse_algo_trader.sizing.sizing_inputs_from_real_stores import (
@@ -80,6 +81,10 @@ STALENESS_QUANTILE = 0.95
 ARMED_CLASSIFIERS = ("trend_strength", "volatility", "session_phase")
 MINIMUM_REGIME_CONCENTRATION = 0.30
 MINIMUM_REGIME_AGREEMENT = 0.50
+
+# The collar quantile: a price further from the reference than the scrip travels in 19 of 20
+# horizons is not a price, it is a hope. Policy, stated here rather than defaulted anywhere.
+PRICE_COLLAR_QUANTILE = Decimal("0.95")
 
 
 def instruments_priced_on(
@@ -149,6 +154,12 @@ def main() -> int:
         session_date=session_date,
         staleness_quantile=STALENESS_QUANTILE,
     )
+    clock = ReplaySessionClock(session_for(session_date), {})
+    # The grid the loop will actually ask about, taken from a clock stepped the same way, so the
+    # book source holds exactly those instants and reads each instrument's tape exactly once.
+    grid_clock = ReplaySessionClock(session_for(session_date), {})
+    decision_instants = list(grid_clock.step_through_session(DECISION_STEP))
+    book_source = SteppedRecordedBookSource(replay_engine, decision_instants)
     runner = PaperTradingSessionRunner(
         policy=PaperSessionPolicy(
             session_date=session_date,
@@ -161,16 +172,17 @@ def main() -> int:
             minimum_regime_concentration=MINIMUM_REGIME_CONCENTRATION,
             minimum_regime_agreement=MINIMUM_REGIME_AGREEMENT,
             armed_classifiers=ARMED_CLASSIFIERS,
+            price_collar_quantile=PRICE_COLLAR_QUANTILE,
         ),
         instruments=instruments,
-        clock=ReplaySessionClock(session_for(session_date), {}),
+        clock=clock,
         signal_source=MeanReversionPaperSignalSource(
             minimum_regime_concentration=MINIMUM_REGIME_CONCENTRATION,
             minimum_regime_agreement=MINIMUM_REGIME_AGREEMENT,
             armed_classifiers=ARMED_CLASSIFIERS,
             market_data=arguments.market_data,
         ),
-        book_source=replay_engine,
+        book_source=book_source,
         journal=OrderIntentJournal(state_directory / "journal.sqlite3"),
         venue=SimulatedOrderExecutionVenue(),
         ledger=ledger,
@@ -188,6 +200,10 @@ def main() -> int:
     )
     report = runner.run()
     print(report.describe())
+    print(
+        f"books: {book_source.instruments_loaded} instrument(s) read from the tape, "
+        f"{len(book_source.instruments_with_no_tape)} never recorded"
+    )
 
     outcomes = Counter(record.outcome for record in report.decisions)
     print("\ndecision outcomes:")

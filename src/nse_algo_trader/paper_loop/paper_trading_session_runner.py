@@ -82,9 +82,11 @@ from nse_algo_trader.replay_session_clock import ReplaySessionClock
 from nse_algo_trader.sizing.pre_trade_risk_gate import (
     DerivedLimits,
     PreTradeRiskGate,
+    PriceCollarUnavailableError,
     RegulatoryFacts,
     RiskGateVerdict,
     derive_limits,
+    realised_move_quantile_from_closes,
 )
 from nse_algo_trader.sizing.session_risk_state_store import (
     DailyLossLimit,
@@ -191,6 +193,12 @@ class PaperSessionPolicy:
     minimum_regime_concentration: float
     minimum_regime_agreement: float
     armed_classifiers: tuple[str, ...]
+    price_collar_quantile: Decimal
+    """Which quantile of this instrument's own realised move counts as "unusually far".
+
+    Operator policy, required like the rest: a collar at the median refuses half of all normal
+    prices, and one at the maximum refuses nothing.
+    """
 
     def __post_init__(self) -> None:
         if self.decision_step <= timedelta(0):
@@ -203,6 +211,10 @@ class PaperSessionPolicy:
             raise PaperSessionError(
                 "a capacity of zero concurrent positions cannot hold the position the sizer is "
                 "about to divide the book by"
+            )
+        if not Decimal(0) < self.price_collar_quantile < Decimal(1):
+            raise PaperSessionError(
+                f"a collar quantile of {self.price_collar_quantile} is not a quantile"
             )
         if not Decimal(0) < self.segment_margin_fraction <= Decimal(1):
             raise PaperSessionError(
@@ -605,10 +617,30 @@ class PaperTradingSessionRunner:
                 detail="the session has no equity mark, so no loss can be measured against it",
             )
             return
+        # The collar is measured from THIS instrument's own closes. It was the calibration's
+        # `mean_captured_sigma` for one afternoon, which is a mean CAPTURE and is legitimately
+        # negative for a bucket where the strategy lost — the real-data run threw out of the middle
+        # of a decision on the first negative one (`A.110`).
+        try:
+            collar = realised_move_quantile_from_closes(
+                inputs.recent_closes,
+                horizon_bars=self.policy.horizon_bars,
+                quantile=self.policy.price_collar_quantile,
+            )
+        except PriceCollarUnavailableError as uncollared:
+            self._record(
+                moment,
+                instrument,
+                signal,
+                sized=sized,
+                outcome="no_price_collar",
+                detail=str(uncollared),
+            )
+            return
         limits = derive_limits(
             deployable_rupees=balance,
             traded_value_percentile_rupees=balance,
-            realised_move_percentile_fraction=inputs.calibration.mean_captured_sigma,
+            realised_move_percentile_fraction=collar,
             segment_margin_fraction=self.policy.segment_margin_fraction,
             registration_threshold_orders_per_second=(
                 self.policy.registration_threshold_orders_per_second

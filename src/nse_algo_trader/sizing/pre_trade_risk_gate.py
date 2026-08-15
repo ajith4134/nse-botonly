@@ -33,9 +33,10 @@ because a book that has hit its daily loss limit does not need a per-order opini
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from decimal import Decimal
+from datetime import datetime
+from decimal import ROUND_CEILING, Decimal
 from enum import Enum
 
 from nse_algo_trader.sizing.session_risk_state_store import (
@@ -250,6 +251,73 @@ class RiskGateVerdict:
             )
         reasons = " | ".join(refusal.describe() for refusal in self.refusals)
         return f"{self.trading_symbol}: REFUSED — {reasons}"
+
+
+class PriceCollarUnavailableError(RiskGateError):
+    """The instrument's own realised move could not be measured, so no collar can be derived.
+
+    Refused rather than substituted. A collar is the answer to "how far does this scrip actually
+    travel over the decision horizon", and a borrowed or defaulted answer is a limit that describes
+    a different instrument — which is worse than admitting the limit cannot be formed, because it
+    still refuses and permits orders with an authority it has not earned.
+    """
+
+
+def realised_move_quantile_from_closes(
+    closes: Sequence[tuple[datetime, Decimal]], *, horizon_bars: int, quantile: Decimal
+) -> Decimal:
+    """A quantile of the instrument's OWN absolute move over the decision horizon, as a fraction.
+
+    This is what `derive_limits` means by `realised_move_percentile_fraction`, and it is measured
+    from the same closes the sizer read rather than borrowed from anywhere. It was borrowed once:
+    the caller passed the reversion calibration's `mean_captured_sigma`, which is a mean CAPTURE
+    and is legitimately NEGATIVE for a bucket where the strategy lost — and a negative collar is
+    not a tighter limit, it is an exception thrown from the middle of a decision (`A.110`).
+
+    The horizon is the same one the calibration was fitted over, so the collar answers the question
+    the trade actually poses: over the time this position is meant to be held, how far does this
+    instrument move when it moves unusually far?
+
+    Args:
+        closes: `(timestamp, close)` pairs, oldest first — the sizer's own `recent_closes`.
+        horizon_bars: how many bars ahead the move is measured over.
+        quantile: which quantile counts as "unusually far". Operator policy, no default: a collar
+            at the median would refuse half of all normal prices, and one at the maximum refuses
+            nothing.
+
+    Raises:
+        PriceCollarUnavailableError: fewer closes than the horizon needs, a non-positive price, or
+            an instrument that did not move at all across the window.
+    """
+    if not Decimal(0) < quantile < Decimal(1):
+        raise RiskGateError(f"a collar quantile of {quantile} is not a quantile")
+    if horizon_bars <= 0:
+        raise RiskGateError(f"a horizon of {horizon_bars} bars is not a horizon")
+    if len(closes) <= horizon_bars:
+        raise PriceCollarUnavailableError(
+            f"{len(closes)} closes cannot measure a move over {horizon_bars} bars; the collar is "
+            "refused rather than defaulted"
+        )
+    moves: list[Decimal] = []
+    for index in range(len(closes) - horizon_bars):
+        start = closes[index][1]
+        end = closes[index + horizon_bars][1]
+        if start <= 0:
+            raise PriceCollarUnavailableError(
+                f"a close of {start} cannot anchor a fractional move"
+            )
+        moves.append(abs(end - start) / start)
+    moves.sort()
+    # Nearest-rank on the sorted sample: no interpolation between two observations, because an
+    # interpolated collar is a price this instrument never actually travelled.
+    rank = int((quantile * Decimal(len(moves))).to_integral_value(rounding=ROUND_CEILING))
+    collar = moves[min(max(rank, 1), len(moves)) - 1]
+    if collar <= 0:
+        raise PriceCollarUnavailableError(
+            "this instrument did not move at all across the window, so its own history sets no "
+            "collar; a limit price cannot be checked against a range of zero"
+        )
+    return collar
 
 
 def derive_limits(

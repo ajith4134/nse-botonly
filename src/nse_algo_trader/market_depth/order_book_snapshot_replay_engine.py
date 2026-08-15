@@ -643,6 +643,24 @@ class OrderBookSnapshotReplayEngine:
         weight = position - lower
         return ordered[lower] * (1 - weight) + ordered[upper] * weight
 
+    def session_snapshots_for(self, instrument_token: int) -> list[BookSnapshot]:
+        """Every recorded book for this instrument in this session, in receipt order.
+
+        Public because a consumer that needs the session ONCE — the paper loop, which asks for a
+        book at every decision instant — would otherwise re-read the whole parquet window per call.
+        Raises the same `UnknownInstrumentError` for a token this session never recorded.
+        """
+        return self._snapshots_for(instrument_token)
+
+    def staleness_threshold_millis_for(self, snapshots: Sequence[BookSnapshot]) -> float:
+        """The instrument's OWN gap quantile — what "stale" means for this scrip, not a constant.
+
+        Public for the same reason as `session_snapshots_for`: a consumer deciding whether a book
+        may still be filled against must use the same threshold the microstructure surface uses,
+        or the two describe different sessions.
+        """
+        return self._derived_staleness_threshold_millis(snapshots)
+
     def replay_instrument(self, instrument_token: int) -> Iterator[MicrostructureFeatureRow]:
         """One row per TRANSITION, in replay order.
 

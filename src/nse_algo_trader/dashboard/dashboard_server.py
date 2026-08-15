@@ -142,8 +142,10 @@ from nse_algo_trader.paper_capital_ledger import (
 )
 from nse_algo_trader.sizing.pre_trade_risk_gate import (
     PreTradeRiskGate,
+    PriceCollarUnavailableError,
     RegulatoryFacts,
     derive_limits,
+    realised_move_quantile_from_closes,
 )
 from nse_algo_trader.sizing.regulatory_facts_from_ingest_store import (
     assemble_regulatory_facts,
@@ -191,6 +193,10 @@ REGISTRATION_THRESHOLD_ORDERS_PER_SECOND = 10
 """NSE/INVG/67858 para B.5 — a regulatory fact, sourced (`A.101` decision 2)."""
 
 SIZING_CANDIDATES_TRIED = 600
+
+PRICE_COLLAR_QUANTILE = Decimal("0.95")
+"""Which quantile of an instrument's own realised move counts as "unusually far" — the same policy
+figure the paper loop runs with, so the page shows the limit the loop would actually apply."""
 """How many instruments the page walks before reporting that none could be sized.
 
 Bounded because a page load must not scan the whole universe, and stated because `R.11` says a
@@ -884,10 +890,25 @@ def build_dashboard_app() -> FastAPI:
                 last_missing = getattr(failure, "missing", ())
                 continue
 
+            # The collar is a quantile of THIS instrument's own realised move over the horizon.
+            # It read the calibration's `mean_captured_sigma` until 2026-08-15, which is a mean
+            # CAPTURE and is legitimately negative for a losing bucket — this page would have
+            # raised out of the middle of a decision on the first such scrip (`A.110`).
+            try:
+                collar = realised_move_quantile_from_closes(
+                    inputs.recent_closes,
+                    horizon_bars=SIZING_HORIZON_BARS,
+                    quantile=PRICE_COLLAR_QUANTILE,
+                )
+            except PriceCollarUnavailableError as uncollared:
+                last_failure = str(uncollared)
+                last_missing = ("price_bars",)
+                continue
+
             limits = derive_limits(
                 deployable_rupees=capital.total_rupees,
                 traded_value_percentile_rupees=capital.total_rupees,
-                realised_move_percentile_fraction=inputs.calibration.mean_captured_sigma,
+                realised_move_percentile_fraction=collar,
                 segment_margin_fraction=CASH_INTRADAY_MARGIN_FRACTION,
                 registration_threshold_orders_per_second=(
                     REGISTRATION_THRESHOLD_ORDERS_PER_SECOND

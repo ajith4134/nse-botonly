@@ -148,8 +148,12 @@ def stores(tmp_path: Path) -> RealStorePaths:
     market_data = tmp_path / "market_data.sqlite3"
     calibration = tmp_path / "calibration.sqlite3"
     opens_at = session_for(SESSION_DATE).opens_at
-    # A flat tape with one dip, so the deviation the sizer reads is real and non-zero.
-    closes = [CLOSE_RUPEES] * 118 + [CLOSE_RUPEES * Decimal("0.98"), CLOSE_RUPEES]
+    # A tape that actually moves, because a scrip that never moves sets no price collar and the
+    # gate refuses it — correctly, and it would make every test below assert on a refusal instead
+    # of on the loop. A deterministic sawtooth plus one dip: real movement, no randomness.
+    closes = [
+        CLOSE_RUPEES + Decimal(index % 7) * Decimal("0.5") for index in range(118)
+    ] + [CLOSE_RUPEES * Decimal("0.98"), CLOSE_RUPEES]
     _write_bars(
         market_data,
         closes=closes,
@@ -273,6 +277,7 @@ def _policy(step: timedelta = timedelta(minutes=5)) -> PaperSessionPolicy:
         minimum_regime_concentration=0.5,
         minimum_regime_agreement=0.5,
         armed_classifiers=("trend_strength", "volatility", "session_phase"),
+        price_collar_quantile=Decimal("0.95"),
     )
 
 
