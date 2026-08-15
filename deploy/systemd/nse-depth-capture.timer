@@ -1,0 +1,27 @@
+[Unit]
+Description=Start the NSE depth capture before the open, every session day
+Documentation=file:///home/opc/nse-algo-trader/docs/research/235_why_the_depth_capture_stopped.md
+
+[Timer]
+# 09:05 IST, ten minutes before the 09:15 open. The launcher spends about two minutes ranking
+# liquidity and sizing admission before it reaches "capturing", and the measured cost of starting
+# late is exact: every session recorded so far began 35 to 90 minutes after the open because a
+# person started it, and the paper loop then replayed decision instants with no book behind them
+# (`docs/research/233`, `A.116`).
+#
+# The host runs on GMT, so the timezone is stated rather than assumed.
+OnCalendar=Mon..Fri 09:05 Asia/Kolkata
+
+# NO RandomizedDelaySec. The sibling ingest timer spreads its load because it reaches a
+# bot-walled NSE host; this one subscribes to a broker feed it is entitled to, and every second
+# of jitter is a second of the open not recorded.
+
+# If the machine was off when the firing was due, start on boot anyway: a capture beginning at
+# 11:00 still records four and a half hours that would otherwise be lost, and one beginning after
+# the close exits immediately because the recorder's own clock has already passed session end.
+Persistent=true
+
+Unit=nse-depth-capture.service
+
+[Install]
+WantedBy=timers.target

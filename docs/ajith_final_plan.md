@@ -4129,6 +4129,45 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
 
+**A.119 · 2026-08-15 · OPERATOR DECISION — the depth capture is scheduled from the open.**
+
+`A.118` established that the capture starts and stops by hand and recorded the scheduling question
+as `BACKLOG` `M23`, explicitly NOT taken, because a process writing gigabytes daily during market
+hours is the operator's call. **The operator took it on 2026-08-15: schedule it from the open.**
+
+*What was installed.* A systemd USER timer firing `Mon..Fri 09:05 Asia/Kolkata` — ten minutes ahead
+of the 09:15 open, because the launcher spends about two minutes ranking liquidity and sizing
+admission before it reaches `capturing`. The host runs on GMT, so the timezone is stated in the unit
+rather than inherited. No `RandomizedDelaySec`: the sibling ingest timer spreads its load because it
+reaches a bot-walled NSE host, whereas this subscribes to a broker feed it is entitled to, and every
+second of jitter is a second of the open not recorded. `Persistent=true`, because a capture starting
+at 11:00 after a reboot still records four and a half hours, and one starting after the close exits
+at once on the recorder's own clock.
+
+*Nothing stops it.* There is no stop timer, and there deliberately is not one: `run_until_session
+_end` ends the process at the close under its own clock, which `depth_capture_2026-08-11_run4` did
+at 15:30:13 when nobody interfered. `Restart=on-failure` only — a clean exit at the close is a
+success. `TimeoutStopSec=300` is what 2026-08-13 lacked: the capture was killed again while building
+its session report, and the tape lost its verdict.
+
+*The holiday guard is in CODE, not in the unit.* A timer fires on weekdays and cannot know which
+weekdays the exchange is shut. `is_capture_worth_starting` asks the NSE calendar and exits 0 with a
+logged reason, so a holiday never appears as a failed unit — a red unit that is expected trains an
+operator to ignore red units. Verified on real data the day it was written: 2026-08-15 is a
+Saturday, and the unit ran to `Result=success` having recorded nothing.
+
+*The three policy inputs the launcher refuses to default (`R.03`) are stated in the unit where an
+operator can see them:* `--retention-sessions 10` (two trading weeks; the tape is the largest thing
+this project writes, 1.3 GiB at 652 instruments and 10 GiB at 9,000), `--disk-budget-fraction 0.30`
+(of free disk measured at start — about 7 GiB of today's 23 GiB), and
+`--minimum-coverage-fraction 0.9`, which is the operator's OWN prior value read out of the
+2026-08-12 session reports rather than invented. The first two are chosen and flagged for review;
+they are the only numbers here that were not measured from something.
+
+*Still not decided:* the disk budget caps the recorded universe at a fraction of NSE — 652 of 9,891
+instruments on 2026-08-13 — and nothing reports that as an `R.09` coverage limit (`BACKLOG` `M24`).
+Scheduling the capture does not widen it.
+
 **A.118 · 2026-08-15 · The capture stopped because a person stopped it, and the tape had no way
 to say so. It does now.**
 

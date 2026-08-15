@@ -4064,7 +4064,10 @@ re-evaluated after a RESIZE.
   than one that starts late: every later session would be measured against a stub and nothing in the
   system currently says so out loud. Fixing the capture is worth more than any strategy change
   currently open, because everything downstream is measured through it.
-- **M23 · the depth capture is started and stopped by hand, and nothing schedules it.**
+- 🟢 **M23 · DONE 2026-08-15 (`A.119`) — operator decision taken.** ~~The depth capture is started
+  and stopped by hand, and nothing schedules it.~~ A systemd user timer now fires Mon-Fri 09:05 IST;
+  the holiday guard is in code and verified on a real Saturday; nothing stops it because the
+  recorder ends itself at the close.
   Measured 2026-08-15 (`docs/research/235`): captures begin 35-90 minutes after the open because a
   person starts them, and 2026-08-13 ended at 12:15 because a person stopped them. `A.118` makes the
   tape honest about what it holds; it does not make the capture run. A systemd user timer starting

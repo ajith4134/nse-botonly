@@ -942,6 +942,13 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       liveness record on every poll that survives `SIGKILL`, and `/paper-session` shows it. Left
       open and NOT assumed: scheduling the capture (`M23`, operator decision) and the disk budget
       that caps the recorded universe at 652 of 9,891 instruments (`M24`).
+      **Capture SCHEDULED (`A.119`, operator decision 2026-08-15):** systemd user timer
+      `nse-depth-capture.timer`, Mon-Fri 09:05 IST, armed and verified — next firing
+      Mon 2026-08-17 03:35 GMT. Holiday guard in code (`is_capture_worth_starting`), exercised on
+      the real calendar. Units live in `deploy/systemd/` and are installed under
+      `~/.config/systemd/user/`. From the next session the tape should cover the whole day, which
+      is the test that tells whether the paper results were the strategy or the instrument
+      (`O.99`).
 
 **— L10 —**
 

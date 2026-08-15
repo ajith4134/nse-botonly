@@ -26,7 +26,7 @@ import queue
 import signal
 import sys
 import zipfile
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from types import FrameType
 from zoneinfo import ZoneInfo
@@ -66,6 +66,7 @@ from nse_algo_trader.market_depth.market_depth_tape_store import (
     MarketDepthTapeReader,
     MarketDepthTapeStore,
 )
+from nse_algo_trader.nse_trading_session_calendar import NseTradingSessionCalendar
 
 IST = ZoneInfo("Asia/Kolkata")
 DEFAULT_TAPE_ROOT = Path("/home/opc/nse_archive/depth_tape")
@@ -244,6 +245,22 @@ def report(recorder: LiveOrderBookDepthRecorder, label: str) -> None:
         )
 
 
+def is_capture_worth_starting(
+    today: date, calendar: NseTradingSessionCalendar | None = None
+) -> bool:
+    """Whether the exchange is open today, logged either way (`A.119`).
+
+    A timer fires on weekdays and cannot know the holiday calendar; only this can. Exiting quietly
+    on a holiday keeps it out of the failure log, where a red unit that is expected teaches an
+    operator to ignore red units.
+    """
+    sessions = calendar or NseTradingSessionCalendar()
+    if sessions.is_trading_session(today):
+        return True
+    log(f"{today.isoformat()} is not an NSE session — nothing to capture")
+    return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tape-root", type=Path, default=DEFAULT_TAPE_ROOT)
@@ -268,11 +285,25 @@ def main() -> int:
         help="how much of the session an instrument must cover to be judged usable — "
         "a policy input, like retention, and deliberately not defaulted",
     )
+    parser.add_argument(
+        "--only-on-trading-days",
+        action="store_true",
+        help="exit quietly when today is not an NSE session — for a scheduler that fires on "
+        "weekdays and cannot know the exchange holiday calendar (`A.119`)",
+    )
     parser.add_argument("--max-buffered-rows", type=int, default=20_000)
     parser.add_argument("--max-seconds-between-flushes", type=float, default=60.0)
     arguments = parser.parse_args()
 
     load_env_file_into_environ()
+
+    # Before anything opens a broker session or reads a liquidity file: a timer can fire on
+    # weekdays, and only the exchange calendar knows which weekdays are holidays. Exiting 0 keeps
+    # a holiday out of the failure log, where it would train an operator to ignore red units.
+    if arguments.only_on_trading_days and not is_capture_worth_starting(
+        datetime.now(IST).date()
+    ):
+        return 0
     credentials = load_broker_api_credentials(BrokerName.ZERODHA_KITE)
     token_record = KiteAccessTokenFileStore().load_if_still_valid()
     if token_record is None:
