@@ -3969,3 +3969,29 @@ re-evaluated after a RESIZE.
   at one end only. The `/costs` page places the two tables adjacently without stating this, so a
   reader comparing 40 bps of capture against an 8.9-bps floor reads a wider margin than exists. The
   arithmetic is right in each table and misleading between them.
+
+### From `F04` (the paper trading session loop, 2026-08-15)
+
+- **M13 · `paper_loop/simulated_execution_venue.py` is an orphan (`R.06`).** The loop drives
+  `F02`'s protocol-conforming `SimulatedOrderExecutionVenue` (`A.109` decision 2), so the stateless
+  ladder calculator written on 2026-08-13 has no caller but its own test. It measures one thing the
+  survivor does not — `queue_ahead_quantity`, the size resting ahead of a passive limit — which is
+  worth porting across as a diagnostic before the module is deleted. Judgement recorded in `O.92`,
+  including the one future need that would justify keeping it (a pre-trade "what would this cost
+  against the book right now" panel, where a venue-free ladder walk is the right shape).
+- **M14 · the backfilled bars have not been checked against the depth tape they will be filled
+  against.** `scripts/backfill_five_minute_bars.py` fetches five-minute bars from Kite for the
+  instruments the tape recorded, but nothing yet compares a bar's close to the tape's own
+  last-traded price at the same instant. If they disagree, the signal and the fill are describing
+  different markets and the `F04` join is still unverified. Recorded in `O.93` as the thing that
+  would change my mind about the acquisition being sufficient.
+- **M15 · a position that cannot be exited is reported, not resolved.** When the tape has no book at
+  the close, `open_at_close` names the position and the loop stops there. That is the honest
+  behaviour today, and it is not a resolution: `R.01` wants a flat book, and the answer is either a
+  mark-to-last-trade with the absence stamped on it, or a carry-forward the next session inherits.
+  Neither is built, and the choice is an operator decision that has not been taken.
+- **M16 · `tests/test_bitemporal_bar_store.py::test_no_read_ever_returns_a_bar_that_was_not_yet_available`
+  failed once under load and passes in isolation.** Observed 2026-08-15 while a Kite backfill was
+  saturating the machine; a Hypothesis deadline is the likely cause but it has not been confirmed,
+  and a leakage-guard property test is the last one to wave away as flaky. Re-run under load and
+  read the falsifying example before deciding.

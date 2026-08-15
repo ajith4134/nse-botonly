@@ -300,6 +300,20 @@ class SimulatedOrderExecutionVenue:
         """Supply the current book for one instrument. Fills come from this and nowhere else."""
         self._books[snapshot.instrument_token] = snapshot
 
+    def forget_book(self, instrument_token: int) -> bool:
+        """Drop the book for one instrument, so nothing fills from a snapshot that has expired.
+
+        Without this, a book supplied once is filled against forever: a replay whose tape stops
+        mid-session — a capture that dropped, an instrument that stopped ticking — would keep
+        filling orders from the last snapshot it ever saw, at prices that no longer had a
+        counterparty behind them. That is exactly the invented fill history this venue exists to
+        refuse, arriving through the back door of a stale cache rather than a missing one.
+
+        Returns whether a book was actually dropped, so a caller can record the moment liquidity
+        stopped being observable rather than inferring it later.
+        """
+        return self._books.pop(instrument_token, None) is not None
+
     def has_book_for(self, instrument_token: int) -> bool:
         return instrument_token in self._books
 

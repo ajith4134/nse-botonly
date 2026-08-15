@@ -112,12 +112,35 @@ semantics on top of it, which no library supplies for this book.
 
 ## 6 · Modules (`R.14`)
 
+**AS BUILT, 2026-08-15 — this section was superseded while building; see `A.109`.**
+
 ```
 src/nse_algo_trader/paper_loop/
-  simulated_execution_venue.py     fills against the RECORDED ladder; queue position, partials
-  replayed_session_clock.py        steps bars point-in-time; availability_time is the only guard
   paper_trading_session_runner.py  signal -> sizer -> gate -> intent -> venue -> ledger, one day
+  paper_session_signal_source.py   the real regime panel + mean-reversion engine, fed bar by bar
+                                   on `availability_time <= decision_instant` and nothing else
+src/nse_algo_trader/
+  replay_session_clock.py          ALREADY EXISTED (`L0.13`) — used as-is, not rebuilt
+src/nse_algo_trader/order_path/
+  simulated_order_execution_venue.py  ALREADY EXISTED (`F02`) — the venue the loop actually drives
+src/nse_algo_trader/dashboard/
+  paper_session_surface_renderer.py   `/paper-session`, folded from the stores the session wrote
+scripts/
+  verify_paper_session_on_real_data.py  the `R.05` pass
+  backfill_five_minute_bars.py          acquires the bars a session needs (`R.16`)
 ```
+
+Two changes from the plan above, both recorded as decisions in `A.109`:
+
+* **`replayed_session_clock.py` was not built.** `replay_session_clock.ReplaySessionClock` already
+  advances only forward, already owns the `L0.11` firewall, and is already covered by the
+  `wall_clock_access_detector` AST scan. A second clock without that guard is the one a future
+  caller would reach for.
+* **`paper_loop/simulated_execution_venue.py` is not in the fill path.** §3 requires the order to
+  go THROUGH the order path, and the placer accepts only an `OrderExecutionVenue`; `F02`'s
+  protocol-conforming simulated venue is that, walks the same recorded ladder, and models
+  rung-by-rung partial fills across polls. The stateless calculator is an orphan carried in
+  `BACKLOG` as `M13`, with `queue_ahead_quantity` the one measurement worth porting out of it.
 
 ## 7 · Verification plan
 

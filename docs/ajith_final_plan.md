@@ -4129,6 +4129,51 @@ The 280 surviving documents, by cluster. Read the source before rebuilding any e
 *End of catalog. New ideas are inserted at their dependency position per the protocol at the top of this
 file — never appended here.*
 
+**A.109 · 2026-08-15 · `F04`'s loop is built, and four decisions were taken inside it.**
+
+The paper session runner, its signal source and its `R.05` harness landed today. Four choices were
+made while building that change what the spec `docs/research/228` described, and each is recorded
+here rather than left in the code.
+
+*1 — the replayed clock is `L0.13`'s existing one, not a new module.* `docs/research/228` §6 listed
+`replayed_session_clock.py` inside `paper_loop/`. Building it would have produced a second clock
+beside `replay_session_clock.ReplaySessionClock`, which already advances only forward, already owns
+the `L0.11` causal-leakage firewall, and is already guarded by `wall_clock_access_detector`'s AST
+scan for `datetime.now` in the replay path. A second clock without that guard would be the one a
+future caller reaches for. **Superseded:** `228` §6's three-module list is now two modules plus the
+existing clock.
+
+*2 — the loop drives `F02`'s `SimulatedOrderExecutionVenue`, and `paper_loop/simulated_execution_venue.py`
+is not in the path.* `A.108` decision 2 requires the order to go THROUGH the order path, and the
+placer accepts only an `OrderExecutionVenue`. The protocol-conforming venue built in `F02` is the
+one that satisfies it, walks the same recorded ladder, and models rung-by-rung partial fills across
+polls. The `paper_loop` venue written on 2026-08-13 is a stateless ladder calculator that duplicates
+that walk; it is now an ORPHAN under `R.06` and is carried in `BACKLOG` with one open question —
+whether its `queue_ahead_quantity` measurement (the size resting ahead of a passive limit, which the
+protocol venue does not report) is worth porting across before it is deleted.
+
+*3 — a position may be squared off in more than one leg.* The first implementation sent one exit for
+`filled_quantity`, and the tests found two defects at once: a position exited mid-session on its
+horizon was exited AGAIN at the close (selling twice what was bought, manufacturing a short), and an
+entry that kept filling after its exit was sent left a residual nobody closed. Positions now carry
+every exit intent and an `exit_ordered_quantity`, and a square-off is sent for the UNEXITED
+quantity only. `R.01` is the reason it cannot be left as an edge case: a residual that survives the
+close is exactly the overnight carry this system is not allowed to have.
+
+*4 — the venue must be told when a book is GONE.* `SimulatedOrderExecutionVenue` kept the last book
+it was given forever, so a replay whose tape stopped mid-session kept filling orders at prices that
+no longer had a counterparty. `forget_book` was added and the loop calls it whenever the tape has no
+snapshot at the decision instant. Found by the adversarial test the spec's §7 required, not by
+review.
+
+*Also acquired, under `R.16`:* the bar store ended 2026-08-05 and the depth tape starts 2026-08-11,
+so no single date had both a signal source and a book to fill against — the R.05 pass was
+impossible on the data as it stood. `scripts/backfill_five_minute_bars.py` fetches the missing
+five-minute bars from Kite for exactly the instruments the tape recorded, with
+`availability_time = bar_timestamp + interval` so the backfilled rows carry the same point-in-time
+discipline as the rest. Scoping the verification down to what happened to be on disk was the
+alternative, and `R.16` forbids it.
+
 **A.108 · 2026-08-13 · `F04` opens: two operator decisions on how a trading day runs itself.**
 
 `F04` is the feature the whole rebuild has been walking toward — end-to-end paper trading — and it

@@ -877,7 +877,14 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 
 - [ ] **4.1** Deficit-driven replay curriculum — `L5.39`
 - [ ] **4.2** Live universe-wide paper loop — `L5.40`
-- [ ] **4.3** Historical bar replay source + replay universe feed — `L5.41`
+- [~] **4.3** Historical bar replay source + replay universe feed — `L5.41` — *built 2026-08-15 as
+      `F04`'s input half. `paper_session_signal_source.bars_available_at` is the replay source and
+      reads `availability_time <= decision_instant` ONLY, so the leakage guard is in the reader
+      rather than in every caller; `verify_paper_session_on_real_data.instruments_priced_on` is the
+      replay universe feed (every instrument with a lot size AND bars on that exact session).
+      `scripts/backfill_five_minute_bars.py` acquires the bars a session needs (`A.109`, `R.16`).
+      `[~]` not `[x]`: only the 5-minute interval is sourced, and only from Kite — the multi-source
+      windowing `L0.15` describes is not wired in here.*
 - [ ] **4.4** Replay-to-live handoff — `L5.42`
 - [ ] **4.5** Point-in-time universe + corporate-action adjustment inside replay (§53 slice 2) — `L5.43`
 - [ ] **4.6** Prequential learning + provenance-separable memory (§53 slice 3) — `L5.44`
@@ -888,8 +895,21 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 
 **— L10 —**
 
-- [ ] **4.9** 24/7 continuous paper-trading loop — `L10.01`
-- [ ] **4.10** Market-closed real-market replay engine (§53) — `L10.02`
+- [ ] **4.9** 24/7 continuous paper-trading loop — `L10.01` — *unblocked 2026-08-15: `4.10` built
+      the session this loop would run repeatedly. What is missing is only the scheduler and the
+      multi-day state that carries between sessions, not the session itself.*
+- [~] **4.10** Market-closed real-market replay engine (§53) — `L10.02` — ***`F04` — the first
+      thing in this rebuild that produces a trading DAY rather than a component.*** Built 2026-08-15:
+      `paper_loop/paper_trading_session_runner.py` steps a real session point-in-time, decides with
+      the real regime panel and mean-reversion engine, sizes and gates with `F03`, reserves capital
+      in `L1.18`'s ledger BEFORE the order goes, sends it through `F02`'s real journal, placer,
+      lifecycle machine and reconciler to a venue that fills from the recorded L2 depth tape, then
+      squares off everything before the close (`R.01`). Spec `docs/research/228`, decisions `A.108`
+      + `A.109`, surface `/paper-session`. 20 tests including the five adversarial axes §7 names —
+      three real defects found by them, all recorded in `A.109`. **Open before `[x]`:** the `R.05`
+      full-session pass on the real tape (blocked until the bar backfill for a depth-tape date
+      completes), the live tick path (`A.108`'s recorded cost), options fills (`L9.04`), and the
+      continuous scheduler that makes it 24/7 (`4.9`/`L10.01`).
 - [ ] **4.11** Non-blocking high-fidelity replay prebuild — `L10.03`
 - [ ] **4.12** Autonomous unattended Breeze 1s replay — `L10.04`
 - [ ] **4.13** Multi-broker fleet auto-activation in the replay loop — `L10.05`

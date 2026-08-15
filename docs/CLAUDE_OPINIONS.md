@@ -1852,3 +1852,68 @@ output next to them.
 archive is the right acquisition path for band prices — I believe it carries a per-scrip band file,
 and I have NOT verified that either, which is exactly why it is written here as a belief and logged
 in `BACKLOG` as an unbuilt adapter rather than a cheap win.
+
+---
+
+## O.91 · 2026-08-15 · The tests found three defects the design review would not have, and all three were about time
+
+**Opinion:** `F04`'s spec §7 adversarial list was worth more than any amount of re-reading the code,
+and the reason is that all three defects it caught are invisible in a single-step reading. A double
+square-off, a residual that outlives its exit, and a venue filling from a book that no longer
+exists are each *correct* at every individual line; they are wrong only across steps, and only a
+loop that actually runs many steps can show it.
+
+**Reasoning:** measured. Every one was found by running the session, not by reading it. The
+double-exit surfaced as three orders in a journal that should have held two; the stale-book fill
+surfaced because the "book vanishes mid-session" test PASSED when it should have failed, which is
+the failure mode a test-suite reader almost never notices — a green assertion that proved the
+opposite of what it claimed. I would not have found any of them by inspection, and I do not think a
+review agent reading the diff would have either.
+
+**Confidence: measured.**
+
+**What would change my mind:** an adversarial review that finds a fourth defect of the same class by
+reading alone. That would say the axis is inspectable after all and I was simply not looking hard
+enough.
+
+## O.92 · 2026-08-15 · Two simulated venues is one too many, and the newer one is the one that should go
+
+**Opinion:** `paper_loop/simulated_execution_venue.py` (2026-08-13) should be deleted after its one
+genuinely new measurement — `queue_ahead_quantity`, the size resting ahead of a passive limit — is
+ported into `order_path/simulated_order_execution_venue.py`. Keeping both is the `R.06` orphan rule
+being violated by the most plausible-looking route there is: the orphan is newer, better documented,
+and does one thing the survivor does not.
+
+**Reasoning:** reasoned. The order path accepts only an `OrderExecutionVenue`, and `A.108` decision
+2 makes going through the order path the whole point of the slice, so the stateless ladder
+calculator cannot be in the fill path without inverting that decision. What it adds is real but
+small: the protocol venue never fills a passive limit at all (conservative, not optimistic), and so
+it under-reports rather than over-reports — it simply cannot say HOW FAR from filling a resting
+order was. That is a diagnostic, not a fill, and it belongs on the venue that actually holds orders.
+
+**Confidence: reasoned** — I have read both and run one; I have not yet written the port.
+
+**What would change my mind:** if a later slice needs to price a hypothetical fill WITHOUT placing
+an order (a pre-trade "what would this cost against the book right now" panel), the stateless
+calculator is the right shape for exactly that and should stay, renamed to what it is — a ladder
+walk calculator, not a venue.
+
+## O.93 · 2026-08-15 · The data gap was the real blocker, and acquiring the bars was cheaper than arguing about it
+
+**Opinion:** the honest `R.05` for `F04` needed one date carrying both five-minute bars and a
+recorded order book, and no such date existed — bars ended 2026-08-05, the depth tape starts
+2026-08-11. The right move was to fetch the missing bars, not to run two half-verifications and
+call their conjunction a pass.
+
+**Reasoning:** measured — the two coverage queries are in this session's log. A run on 2026-08-05
+would have refused every fill for want of a book, and a run on 2026-08-11 would have abstained on
+every instrument for want of bars; each looks like a clean pass of the half it exercises, and
+together they prove nothing about the join, which is the only part `F04` adds.
+
+**Confidence: measured** on the gap, **reasoned** on the fix being sufficient — the backfill is
+running as this is written and its `availability_time` convention (`bar_timestamp + interval`)
+matches the store's existing rows, but the R.05 run has not yet been executed against it.
+
+**What would change my mind:** if the backfilled bars turn out to disagree with the depth tape's own
+last-traded prices for the same instants, the bars are not the same market the book recorded and the
+join is still not verified. That comparison is worth running and is now in `BACKLOG`.

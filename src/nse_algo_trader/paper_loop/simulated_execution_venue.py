@@ -113,9 +113,7 @@ class SimulatedFill:
                 f"RESTING: {self.requested_quantity} behind {self.queue_ahead_quantity} already "
                 "showing at this price"
             )
-        walk = " + ".join(
-            f"{level.quantity}@{level.price_paise}" for level in self.levels_consumed
-        )
+        walk = " + ".join(f"{level.quantity}@{level.price_paise}" for level in self.levels_consumed)
         slip = self.slippage_paise
         return (
             f"{self.outcome.value}: {self.filled_quantity}/{self.requested_quantity} at average "
@@ -165,9 +163,7 @@ class SimulatedExecutionVenue:
         """
         _require_positive_quantity(quantity)
         if limit_price_paise <= 0:
-            raise SimulatedVenueError(
-                f"a limit price of {limit_price_paise} paise is not a price"
-            )
+            raise SimulatedVenueError(f"a limit price of {limit_price_paise} paise is not a price")
         ladder = self._ladder_for(book, side)
         if not ladder:
             return self._refused(

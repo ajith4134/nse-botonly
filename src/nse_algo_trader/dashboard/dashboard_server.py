@@ -94,6 +94,10 @@ from nse_algo_trader.dashboard.paper_capital_surface_renderer import (
     render_paper_capital_page,
     with_refusal,
 )
+from nse_algo_trader.dashboard.paper_session_surface_renderer import (
+    read_paper_session_state,
+    render_paper_session_page,
+)
 from nse_algo_trader.dashboard.regime_brain_read_model import (
     RegimeReadModelError,
     measure_regime_brain,
@@ -392,6 +396,12 @@ SURFACED_MODULES: frozenset[str] = frozenset(
         "nse_algo_trader.sizing.sizing_inputs_from_real_stores",
         "nse_algo_trader.sizing.regulatory_facts_from_ingest_store",
         "nse_algo_trader.dashboard.sizing_surface_renderer",
+        # `F04` — everything `/paper-session` actually draws.
+        "nse_algo_trader.paper_loop.paper_trading_session_runner",
+        "nse_algo_trader.paper_loop.paper_session_signal_source",
+        "nse_algo_trader.paper_loop.simulated_execution_venue",
+        "nse_algo_trader.order_path.simulated_order_execution_venue",
+        "nse_algo_trader.dashboard.paper_session_surface_renderer",
     }
 )
 """Modules that genuinely have a panel today. Declaring this is safe precisely BECAUSE
@@ -943,6 +953,28 @@ def build_dashboard_app() -> FastAPI:
         now = datetime.now(IST)
         state = _sizing_state(now, symbol.strip().upper())
         response = HTMLResponse(render_sizing_page(state))
+        _remember_key(response, request)
+        return response
+
+    @app.get("/paper-session", response_class=HTMLResponse)
+    def paper_session_surface(request: Request, session: str = "") -> HTMLResponse:
+        """`F04`'s surface: the day the paper loop ran, folded out of the stores it wrote.
+
+        Nothing is replayed on request. A paper session is a run, not a query — re-running it on a
+        page load would take minutes and would show a different day to two readers refreshing at
+        once — so this page reads what the last run recorded and says plainly when there is none.
+        """
+        if not _is_authorised(request):
+            return _unauthorised_html()
+        now = datetime.now(IST)
+        requested: date | None = None
+        if session.strip():
+            try:
+                requested = date.fromisoformat(session.strip())
+            except ValueError:
+                requested = None
+        state = read_paper_session_state(measured_at=now, session_date=requested)
+        response = HTMLResponse(render_paper_session_page(state))
         _remember_key(response, request)
         return response
 
