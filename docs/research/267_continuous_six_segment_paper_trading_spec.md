@@ -70,7 +70,7 @@ rows; every projected row's `availability_time` is `>=` its `trade_date`; the as
 ## S1 · Derivative capture universe selection
 
 **What it is.** The engine that decides which F&O tokens the depth capture subscribes, so the five
-non-cash bots get an intraday tape. Operator decision (`A.146c`): **all futures + near-expiry
+non-cash bots get an intraday tape. Operator decision (`A.146`): **all futures + near-expiry
 option chains around the money**.
 
 **Algorithm — the band is MEASURED, not typed (`R.03`).** A strike count ("ATM ± 10") is exactly the
@@ -161,7 +161,7 @@ empty universe rather than being skipped; the MCX bot records `NO DATA` and is n
 ## S4 · Live execution and the one portfolio book
 
 **What it is.** The path from a proposal to a fill to a closed trade, on the live tape, under one
-book. Operator decision (`A.146d`): **one portfolio book with portfolio-wide bounds**.
+book. Operator decision (`A.146`): **one portfolio book with portfolio-wide bounds**.
 
 **Algorithm, in order per tick:**
 
@@ -192,7 +192,7 @@ same open positions.
 
 ## S5 · Walk-forward archive replay
 
-**What it is.** What the loop does while the exchange is closed. Operator decision (`A.146a`):
+**What it is.** What the loop does while the exchange is closed. Operator decision (`A.146`):
 **walk forward through the archive, never repeating a session**.
 
 **Algorithm.** A persisted cursor names the last archived session replayed. While closed, the loop

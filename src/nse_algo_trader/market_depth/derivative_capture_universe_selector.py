@@ -1,4 +1,4 @@
-"""Choose the F&O contracts the depth capture subscribes (`A.142`, cadence set by `A.146c`).
+"""Choose the F&O contracts the depth capture subscribes (`A.142`, cadence set by `A.146`).
 
 **Why this exists.** `A.142` measured it exactly: today's depth tape holds **2,135,786 ticks over
 1,845 instrument tokens, and every one of them is `NSE` cash**. Zero `NFO-OPT`, `NFO-FUT` or `MCX`

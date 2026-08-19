@@ -1,4 +1,4 @@
-"""Tests for the F&O capture universe selector (`A.142` / `A.146c`), written BEFORE the engine.
+"""Tests for the F&O capture universe selector (`A.142` / `A.146`), written BEFORE the engine.
 
 `A.142` measured the reason five of six segment bots have no intraday tape: *"they are not short of
 data because the data does not exist — they are short of it because nothing ever asked for it."*

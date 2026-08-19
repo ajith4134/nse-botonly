@@ -2528,7 +2528,7 @@ re-evaluated after a RESIZE.
   history probe; no bot decides on it. Closing it means a second parser for the legacy layout plus a
   derived contract id, and it only becomes worth building if deep F&O history is backfilled.
 
-## The F&O tape exists for the first time, and the subscription ceiling is not what it says (2026-08-19, `A.146c`)
+## The F&O tape exists for the first time, and the subscription ceiling is not what it says (2026-08-19, `A.146`)
 
 - 🟢 **`A.142` is implemented and the tape carried NFO for the first time in this project's life.**
   `derivative_capture_universe_selector` selects every live future plus each underlying's nearest

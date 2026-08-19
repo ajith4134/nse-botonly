@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""`R.05` real-data verification for the F&O capture universe (`A.142` / `A.146c`).
+"""`R.05` real-data verification for the F&O capture universe (`A.142` / `A.146`).
 
 Answers three questions with measurements rather than assertions:
 
@@ -94,6 +94,7 @@ def _cash_turnover_by_token(connection: sqlite3.Connection) -> dict[int, float]:
         SELECT instrument_token, SUM(volume * close_price)
         FROM price_bars
         WHERE bar_timestamp >= DATE('now', '-5 days')
+          AND availability_time <= DATETIME('now')
         GROUP BY instrument_token
         """
     ).fetchall()

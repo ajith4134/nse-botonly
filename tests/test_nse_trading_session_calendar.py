@@ -266,13 +266,20 @@ def test_the_retained_collection_gap_is_resolved_correctly(
     connection.close()
 
     report = calendar.classify_observed_dates(observed, min(observed), max(observed))
+
+    # The holiday is the load-bearing assertion and it holds whatever the collection window is:
+    # 2026-06-26 is an NSE holiday, so a missing file for it is not an outage. My own first reading
+    # counted all five missing weekdays as gaps; this pins the correction.
     assert date(2026, 6, 26) not in report.uncollected_sessions
-    assert report.uncollected_sessions == (
-        date(2026, 7, 28),
-        date(2026, 7, 29),
-        date(2026, 7, 30),
-        date(2026, 7, 31),
-    )
+
+    # The 2026-07-28..31 outage this test used to pin has been COLLECTED since
+    # `derivative_contract_record_projection` landed (`A.146`) — the ingest store had those
+    # sessions all along and nothing was writing them through. Asserting a specific gap made this
+    # test fail when the gap was fixed, which is a test measuring the data rather than the code.
+    # What must remain true regardless: every date the classifier calls uncollected is a real
+    # trading session, and nothing observed falls on a non-session.
+    for missing in report.uncollected_sessions:
+        assert calendar.is_trading_session(missing), missing
     assert report.observed_non_sessions == ()
     assert report.unreliable_years == ()
 

@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import sqlite3
 import time as wall_clock
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -53,6 +53,10 @@ from nse_algo_trader.nse_trading_session_calendar import NseTradingSessionCalend
 from nse_algo_trader.paper_loop.paper_session_signal_source import (
     AvailableBar,
     InstrumentSignalState,
+)
+from nse_algo_trader.paper_loop.walk_forward_archive_replay import (
+    WalkForwardArchiveReplay,
+    WalkForwardProgress,
 )
 from nse_algo_trader.regime.market_regime_state import (
     MarketRegime,
@@ -333,6 +337,8 @@ class ContinuousPaperTradingScheduler:
         armed_classifiers: Sequence[str] = ARMED_CLASSIFIERS,
         calendar: NseTradingSessionCalendar | None = None,
         square_off_window: timedelta = SQUARE_OFF_WINDOW,
+        archive_replay: WalkForwardArchiveReplay | None = None,
+        universe_by_segment: Mapping[TradingSegment, Sequence[TradeableInstrument]] | None = None,
     ) -> None:
         if not bots:
             raise SchedulerError(
@@ -357,6 +363,22 @@ class ContinuousPaperTradingScheduler:
         self._tick_cursor = 0
         self._bars_built = 0
         self._bar_closes_by_instant: dict[datetime, dict[int, Decimal]] = {}
+        # `A.146`: what the loop does with the other eighteen and a half hours of the day. `None`
+        # keeps the old behaviour — alive and deciding nothing — so a caller that has not been
+        # given an archive is not silently trading one.
+        self._archive_replay = archive_replay
+        self._last_proposals_by_segment: dict[str, int] = {}
+        self._segment_failures: dict[str, str] = {}
+        self._prices_by_segment: dict[TradingSegment, dict[int, Decimal]] = {}
+        self._underlying_prices_by_segment: dict[TradingSegment, dict[str, Decimal]] = {}
+        # `A.146`: each bot decides over ITS OWN segment's universe. Before this, the loop assembled
+        # the cash universe and handed it to all six, then skipped five of them because a cash
+        # instrument is not a contract they can trade — which read as five quiet bots rather than as
+        # five bots that were never given anything.
+        self._universe_by_segment: dict[TradingSegment, tuple[TradeableInstrument, ...]] = {
+            segment: tuple(instruments)
+            for segment, instruments in (universe_by_segment or {}).items()
+        }
 
     @property
     def iterations(self) -> int:
@@ -383,6 +405,41 @@ class ContinuousPaperTradingScheduler:
         the state that is the whole point of this class.
         """
         self._universe = tuple(universe)
+
+    def replace_segment_universe(
+        self,
+        segment: TradingSegment,
+        universe: Sequence[TradeableInstrument],
+        last_price_paise_by_token: Mapping[int, Decimal] | None = None,
+        underlying_price_paise_by_symbol: Mapping[str, Decimal] | None = None,
+    ) -> None:
+        """Swap one segment's tradeable set and its own last prices, leaving carried state intact.
+
+        The prices matter as much as the instruments. A derivative contract's price comes from the
+        projected bhavcopy close unless the live tape happens to carry it, and a bot handed a
+        universe with no prices proposes nothing while looking perfectly healthy — which is what the
+        first six-segment tick did.
+        """
+        self._universe_by_segment[segment] = tuple(universe)
+        if last_price_paise_by_token is not None:
+            self._prices_by_segment[segment] = dict(last_price_paise_by_token)
+        if underlying_price_paise_by_symbol is not None:
+            self._underlying_prices_by_segment[segment] = dict(underlying_price_paise_by_symbol)
+        if segment is TradingSegment.CASH_INTRADAY:
+            self._universe = tuple(universe)
+
+    def universe_for(self, segment: TradingSegment) -> tuple[TradeableInstrument, ...]:
+        """What this segment's bot decides over. Cash falls back to the loop's own universe."""
+        if segment in self._universe_by_segment:
+            return self._universe_by_segment[segment]
+        return self._universe if segment is TradingSegment.CASH_INTRADAY else ()
+
+    @property
+    def archive_progress(self) -> WalkForwardProgress | None:
+        """How far the closed-market walk has got, or `None` when no archive was given."""
+        if self._archive_replay is None:
+            return None
+        return self._archive_replay.progress(as_of=datetime.now(IST).date())
 
     @property
     def bots(self) -> tuple[SegmentBotFoundation, ...]:
@@ -443,19 +500,7 @@ class ContinuousPaperTradingScheduler:
         self, local: datetime, phase: SessionPhase, session_date: date
     ) -> SchedulerIteration:
         if not phase.observes_the_market:
-            return SchedulerIteration(
-                observed_at=local,
-                phase=phase,
-                session_date=session_date,
-                instruments_observed=0,
-                proposals=0,
-                tape_lag_seconds=None,
-                note=(
-                    "market closed — the loop is alive and deliberately deciding nothing"
-                    if phase is SessionPhase.AFTER_CLOSE
-                    else "before the open — pre-open prices are not a session the bots trade"
-                ),
-            )
+            return self._walk_the_archive(local, phase, session_date)
 
         self._fold_new_ticks_into_bars(session_date)
         prices = self._observations.latest_prices(session_date)
@@ -476,14 +521,64 @@ class ContinuousPaperTradingScheduler:
             carried_memory={"last_price_paise_by_token": prices},
         )
         proposals = 0
+        proposals_by_segment: dict[str, int] = {}
         for bot in self._bots:
-            if bot.trading_segment is not TradingSegment.CASH_INTRADAY:
-                # The other five decide once per session on daily closes (`A.141`) — stepping them
-                # intraday would feed a daily-cadence engine intraday observations and quietly
-                # change what its own history means.
+            if bot.trading_segment is TradingSegment.CASH_INTRADAY:
+                if phase.may_open_a_position:
+                    count = len(bot.propose(context))
+                    proposals += count
+                    proposals_by_segment[bot.trading_segment.value] = count
                 continue
-            if phase.may_open_a_position:
-                proposals += len(bot.propose(context))
+            # The other five decide on the cadence their own data supports (`A.141`). They are
+            # OBSERVED every tick against their own universe so the surface can show what each one
+            # is looking at, and they PROPOSE only in the trading phase, priced off the live tape
+            # where it covers their contracts and off the projected close where it does not.
+            segment_universe = self.universe_for(bot.trading_segment)
+            if not segment_universe:
+                proposals_by_segment[bot.trading_segment.value] = 0
+                continue
+            if not phase.may_open_a_position:
+                proposals_by_segment[bot.trading_segment.value] = 0
+                continue
+            # The tape is preferred where it reaches, and the projected close is what stands where
+            # it does not (`A.141`). Merged in this order on purpose: a live price is always more
+            # current than a settlement price, and a settlement price is always better than none.
+            segment_prices: dict[int, Decimal] = dict(
+                self._prices_by_segment.get(bot.trading_segment, {})
+            )
+            segment_prices.update(
+                {
+                    token: price
+                    for token, price in prices.items()
+                    if token in {i.instrument_token for i in segment_universe}
+                }
+            )
+            priced_segment = tuple(
+                instrument
+                for instrument in segment_universe
+                if instrument.instrument_token in segment_prices
+            )
+            carried: dict[str, object] = {"last_price_paise_by_token": segment_prices}
+            underlying = self._underlying_prices_by_segment.get(bot.trading_segment)
+            if underlying:
+                carried["underlying_price_paise_by_symbol"] = underlying
+            segment_context = SegmentBotContext(
+                decision_instant=local,
+                tradeable_universe=priced_segment or segment_universe,
+                regime=context.regime,
+                carried_memory=carried,
+            )
+            try:
+                count = len(bot.propose(segment_context))
+            except Exception as failure:  # noqa: BLE001 — one bot must not stop the other five
+                proposals_by_segment[bot.trading_segment.value] = 0
+                self._segment_failures[bot.trading_segment.value] = (
+                    f"{type(failure).__name__}: {failure}"
+                )
+                continue
+            proposals += count
+            proposals_by_segment[bot.trading_segment.value] = count
+        self._last_proposals_by_segment = proposals_by_segment
 
         note = (
             f"{len(priced_universe):,} of {len(self._universe):,} priced; "
@@ -499,6 +594,53 @@ class ContinuousPaperTradingScheduler:
             proposals=proposals,
             tape_lag_seconds=lag,
             note=note,
+        )
+
+    def _walk_the_archive(
+        self, local: datetime, phase: SessionPhase, session_date: date
+    ) -> SchedulerIteration:
+        """What the loop does while the exchange is shut (`A.146`).
+
+        One archived session per tick, never the same one twice. One per tick rather than the whole
+        archive in one call because the loop must stay responsive to the open — a driver that walked
+        the entire archive in a single step would hold the tick for as long as the archive is long
+        and miss the bell.
+        """
+        if self._archive_replay is None:
+            return SchedulerIteration(
+                observed_at=local,
+                phase=phase,
+                session_date=session_date,
+                instruments_observed=0,
+                proposals=0,
+                tape_lag_seconds=None,
+                note=(
+                    "market closed and no archive was given — the loop is alive and deciding "
+                    "nothing"
+                ),
+            )
+
+        outcome = self._archive_replay.replay_next(as_of=local.date())
+        progress = self._archive_replay.progress(as_of=local.date())
+        if outcome is None:
+            return SchedulerIteration(
+                observed_at=local,
+                phase=phase,
+                session_date=session_date,
+                instruments_observed=0,
+                proposals=0,
+                tape_lag_seconds=None,
+                note=f"market closed · {progress.describe()}",
+            )
+        return SchedulerIteration(
+            observed_at=local,
+            phase=phase,
+            session_date=session_date,
+            instruments_observed=0,
+            proposals=outcome.trades_accrued,
+            tape_lag_seconds=None,
+            note=f"walked the archive · {outcome.describe()} · {progress.describe()}",
+            failure=outcome.failure,
         )
 
     def _fold_new_ticks_into_bars(self, session_date: date) -> None:
