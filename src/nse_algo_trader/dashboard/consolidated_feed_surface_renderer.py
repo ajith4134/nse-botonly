@@ -115,16 +115,12 @@ def _broker_row(
         1
         for ranking in own
         if ranking.score
-        == min(
-            other.score
-            for other in rankings
-            if other.trading_symbol == ranking.trading_symbol
-        )
+        == min(other.score for other in rankings if other.trading_symbol == ranking.trading_symbol)
     )
     noise = (
         f"{noise_variance:.3f}"
         if noise_variance is not None
-        else '<span class=muted>unidentifiable</span>'
+        else "<span class=muted>unidentifiable</span>"
     )
     return (
         f"<tr><td>{escape(reliability.broker)}</td>"
@@ -220,8 +216,10 @@ independent feeds — with two, the engine weights by liquidity alone and says s
 <div class="panel">
 <table><thead><tr><th>Instrument</th><th>Broker</th><th>Mean abs deviation (paise)</th>
 <th>Divergence rate</th><th>Frozen rate</th><th>Comparisons</th></tr></thead>
-<tbody>{_worst_instrument_rows(state.rankings)
-    or '<tr><td colspan="6" class="muted">no rankings yet</td></tr>'}</tbody></table>
+<tbody>{
+        _worst_instrument_rows(state.rankings)
+        or '<tr><td colspan="6" class="muted">no rankings yet</td></tr>'
+    }</tbody></table>
 </div>
 
 <h2>Sessions</h2>

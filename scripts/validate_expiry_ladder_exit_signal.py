@@ -100,7 +100,8 @@ def main() -> int:
     # sessions of subsequent data exist so end-of-archive is not mistaken for exit.
     horizon = 60
     exits = {
-        symbol: stamp for symbol, stamp in last_seen.items()
+        symbol: stamp
+        for symbol, stamp in last_seen.items()
         if position[stamp] + horizon < len(dates)
     }
     print(f"{len(exits)} genuine exits with a {horizon}-session horizon", flush=True)
@@ -115,8 +116,7 @@ def main() -> int:
             depth, furthest = entry
             if depth < norms[stamp]:
                 previous = [
-                    ladder[s][symbol][1] for s in dates[: position[stamp]]
-                    if symbol in ladder[s]
+                    ladder[s][symbol][1] for s in dates[: position[stamp]] if symbol in ladder[s]
                 ]
                 if not previous or furthest <= max(previous):
                     warned_from = warned_from or stamp

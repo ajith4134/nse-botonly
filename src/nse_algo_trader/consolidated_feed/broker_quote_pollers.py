@@ -56,9 +56,7 @@ class BrokerQuotePoller(Protocol):
     @property
     def instruments_per_request(self) -> int: ...
 
-    def poll(
-        self, instruments: Sequence[PolledInstrument]
-    ) -> list[BrokerQuoteObservation]: ...
+    def poll(self, instruments: Sequence[PolledInstrument]) -> list[BrokerQuoteObservation]: ...
 
 
 def _observation_with_failure(
@@ -86,9 +84,7 @@ class KiteQuotePoller:
     def __init__(self, kite_client: Any) -> None:
         self._kite = kite_client
 
-    def poll(
-        self, instruments: Sequence[PolledInstrument]
-    ) -> list[BrokerQuoteObservation]:
+    def poll(self, instruments: Sequence[PolledInstrument]) -> list[BrokerQuoteObservation]:
         requested_at = now_utc()
         keys = [instrument.kite_symbol for instrument in instruments]
         try:
@@ -161,13 +157,9 @@ class AngelOneQuotePoller:
     def __init__(self, smart_api_client: Any) -> None:
         self._client = smart_api_client
 
-    def poll(
-        self, instruments: Sequence[PolledInstrument]
-    ) -> list[BrokerQuoteObservation]:
+    def poll(self, instruments: Sequence[PolledInstrument]) -> list[BrokerQuoteObservation]:
         requested_at = now_utc()
-        addressable = [
-            instrument for instrument in instruments if instrument.angel_symbol_token
-        ]
+        addressable = [instrument for instrument in instruments if instrument.angel_symbol_token]
         unaddressable = [
             _observation_with_failure(
                 self.broker, instrument, requested_at, "no Angel One symbol token"
@@ -266,13 +258,9 @@ class UpstoxQuotePoller:
         self._access_token = access_token
         self._session = session
 
-    def poll(
-        self, instruments: Sequence[PolledInstrument]
-    ) -> list[BrokerQuoteObservation]:
+    def poll(self, instruments: Sequence[PolledInstrument]) -> list[BrokerQuoteObservation]:
         requested_at = now_utc()
-        addressable = [
-            instrument for instrument in instruments if instrument.upstox_instrument_key
-        ]
+        addressable = [instrument for instrument in instruments if instrument.upstox_instrument_key]
         observations = [
             _observation_with_failure(
                 self.broker, instrument, requested_at, "no Upstox instrument key"
@@ -309,9 +297,7 @@ class UpstoxQuotePoller:
         # Upstox keys its RESPONSE by `EXCHANGE:SYMBOL` while the REQUEST is by
         # `EXCHANGE_SEGMENT|ISIN`, so the reply is matched back through the echoed
         # `instrument_token` rather than by reconstructing a key from the symbol.
-        by_key = {
-            str(row.get("instrument_token")): row for row in payload.values() if row
-        }
+        by_key = {str(row.get("instrument_token")): row for row in payload.values() if row}
         for instrument in addressable:
             row = by_key.get(str(instrument.upstox_instrument_key))
             if row is None:

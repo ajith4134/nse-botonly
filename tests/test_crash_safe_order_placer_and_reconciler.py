@@ -162,15 +162,11 @@ def journal(tmp_path: Path) -> Iterator[OrderIntentJournal]:
 
 def _reconciler(journal: OrderIntentJournal, venue: FakeVenue) -> BrokerTruthReconciler:
     """Reconciling the SIMULATED namespace, because that is the namespace these orders carry."""
-    return BrokerTruthReconciler(
-        journal=journal, venue=venue, namespace=OrderNamespace.SIMULATED
-    )
+    return BrokerTruthReconciler(journal=journal, venue=venue, namespace=OrderNamespace.SIMULATED)
 
 
 def _placer(journal: OrderIntentJournal, venue: FakeVenue) -> CrashSafeOrderPlacer:
-    return CrashSafeOrderPlacer(
-        journal=journal, venue=venue, namespace=OrderNamespace.SIMULATED
-    )
+    return CrashSafeOrderPlacer(journal=journal, venue=venue, namespace=OrderNamespace.SIMULATED)
 
 
 class TestOneIntentBecomesOneOrder:
@@ -185,9 +181,7 @@ class TestOneIntentBecomesOneOrder:
         assert second.verdict is PlacementVerdict.ALREADY_PLACED
         assert len(venue.placed) == 1
 
-    def test_a_restart_does_not_resend_what_is_already_at_the_broker(
-        self, tmp_path: Path
-    ) -> None:
+    def test_a_restart_does_not_resend_what_is_already_at_the_broker(self, tmp_path: Path) -> None:
         """The journal is on disk and the intent names itself, so a process with no memory still
         recognises its own decision."""
         venue = FakeVenue()
@@ -399,9 +393,7 @@ class TestTheBrokerIsBelieved:
         self, journal: OrderIntentJournal
     ) -> None:
         venue = FakeVenue(orders=[_report("manualtag", status="COMPLETE", filled=50)])
-        report = _reconciler(journal, venue).reconcile(
-            session_date=_SESSION, now=_NOW
-        )
+        report = _reconciler(journal, venue).reconcile(session_date=_SESSION, now=_NOW)
         assert report.reconciliations[0].verdict is ReconciliationVerdict.BROKER_ONLY
         assert report.reconciliations[0].intent_id is None
 
@@ -413,9 +405,7 @@ class TestTheBrokerIsBelieved:
         order = journal.load_order(outcome.intent_id)
         assert order is not None
         venue.orders = [_report(order.broker_tag, status="SUPER PENDING")]
-        report = _reconciler(journal, venue).reconcile(
-            session_date=_SESSION, now=_NOW
-        )
+        report = _reconciler(journal, venue).reconcile(session_date=_SESSION, now=_NOW)
         assert report.reconciliations[0].verdict is ReconciliationVerdict.UNMAPPABLE
 
     def test_a_broker_that_cannot_be_read_stops_reconciliation_entirely(
@@ -425,9 +415,7 @@ class TestTheBrokerIsBelieved:
         that doubles positions."""
         venue = FakeVenue(fetch_fails=True)
         with pytest.raises(ReconciliationRefusedError, match="could not be read"):
-            _reconciler(journal, venue).reconcile(
-                session_date=_SESSION, now=_NOW
-            )
+            _reconciler(journal, venue).reconcile(session_date=_SESSION, now=_NOW)
 
     def test_reconciling_twice_does_not_apply_the_same_inference_twice(
         self, journal: OrderIntentJournal

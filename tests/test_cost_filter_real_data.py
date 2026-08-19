@@ -52,6 +52,7 @@ from nse_algo_trader.strategy.intraday_mean_reversion_engine import (
     DEVIATION_BAND_QUANTILE,
     MINIMUM_OBSERVATIONS_FOR_BANDS,
 )
+from tests.deep_history_archive_reader_for_tests import deep_history_archive_or_skip
 
 pytestmark = [
     pytest.mark.real_data,
@@ -72,7 +73,7 @@ _MINIMUM_HISTORY = 400
 
 @pytest.fixture(scope="module")
 def archive() -> Iterator[DeepHistoryArchiveLoader]:
-    with DeepHistoryArchiveLoader(database_path=DEFAULT_DEEP_HISTORY_PATH) as loader:
+    with deep_history_archive_or_skip(DEFAULT_DEEP_HISTORY_PATH) as loader:
         yield loader
 
 
@@ -321,9 +322,7 @@ def test_an_uncalibrated_deviation_depth_is_refused_rather_than_extrapolated(
     """
     store = ReversionCalibrationStore(tmp_path / "calibration.sqlite3")
     with pytest.raises(CalibrationCoverageError, match="no reversion calibration covers"):
-        store.capture_for(
-            deviation_sigma=Decimal("2.5"), horizon_bars=5, as_of=date(2026, 8, 12)
-        )
+        store.capture_for(deviation_sigma=Decimal("2.5"), horizon_bars=5, as_of=date(2026, 8, 12))
 
 
 @pytest.mark.real_data
@@ -348,11 +347,14 @@ def test_a_calibration_from_the_future_is_never_used_to_price_the_past(
     )
     store.record([calibration])
 
-    assert store.capture_for(
-        deviation_sigma=calibration.deviation_bucket,
-        horizon_bars=5,
-        as_of=date(2026, 8, 12),
-    ).mean_captured_bps == calibration.mean_captured_bps
+    assert (
+        store.capture_for(
+            deviation_sigma=calibration.deviation_bucket,
+            horizon_bars=5,
+            as_of=date(2026, 8, 12),
+        ).mean_captured_bps
+        == calibration.mean_captured_bps
+    )
 
     with pytest.raises(CalibrationCoverageError):
         store.capture_for(
@@ -385,9 +387,7 @@ def test_the_skew_of_the_real_distribution_is_published_not_smoothed_away(
         if len(events) >= MINIMUM_EVENTS_FOR_A_CALIBRATION
     ]
     ratios = [
-        calibration.skew_ratio
-        for calibration in calibrations
-        if calibration.skew_ratio is not None
+        calibration.skew_ratio for calibration in calibrations if calibration.skew_ratio is not None
     ]
     assert ratios, "no skew ratio could be formed on real data"
     assert max(ratios) > Decimal(2), (

@@ -124,9 +124,7 @@ def _row(coverage: FamilyCoverage) -> str:
         coverage.observed_by
         if coverage.observed_window is not None
         else (
-            ", ".join(
-                f"{start.isoformat()}→{end.isoformat()}" for start, end in coverage.holes
-            )
+            ", ".join(f"{start.isoformat()}→{end.isoformat()}" for start, end in coverage.holes)
             or "—"
         )
     )
@@ -134,9 +132,7 @@ def _row(coverage: FamilyCoverage) -> str:
     # legitimately zero — but a blank observed cell next to an "observed only" badge reads
     # as a contradiction. The cell says on what terms the facts exist instead of counting
     # objects that deliberately do not.
-    grade_cells = "".join(
-        f"<td>{_grade_cell(coverage, grade)}</td>" for grade, _ in _GRADE_COLUMNS
-    )
+    grade_cells = "".join(f"<td>{_grade_cell(coverage, grade)}</td>" for grade, _ in _GRADE_COLUMNS)
     return (
         f"<tr><td>{escape(coverage.family.value)}</td>"
         f'<td><span class="badge {badge_class}">{word}</span></td>'

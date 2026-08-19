@@ -28,8 +28,19 @@ from nse_algo_trader.cost_gate.mean_reversion_edge_calibrator import (
     ReversionCalibrationStore,
     ReversionCapture,
 )
+from nse_algo_trader.decision_trace.decision_trace_record import (
+    CandidateAction,
+    ConsultedInput,
+    DecisionKind,
+    DecisionTrace,
+    DecisionTraceError,
+    DecisionTraceStore,
+    GateEvaluation,
+    GateOutcome,
+)
 from nse_algo_trader.market_depth.depth_tape_schema import DepthLevel, IntegrityFlag
 from nse_algo_trader.market_depth.order_book_snapshot_replay_engine import BookSnapshot
+from nse_algo_trader.market_rules.nse_market_rule_history import seeded_nse_market_rule_store
 from nse_algo_trader.order_path.order_intent_journal import OrderIntentJournal
 from nse_algo_trader.order_path.simulated_order_execution_venue import (
     SimulatedOrderExecutionVenue,
@@ -53,6 +64,7 @@ from nse_algo_trader.regime.soft_regime_weighting_brain import RegimeBelief
 from nse_algo_trader.regime.trend_strength_regime_classifier import TrendStrengthRegimeClassifier
 from nse_algo_trader.regime.volatility_regime_classifier import VolatilityRegimeClassifier
 from nse_algo_trader.replay_session_clock import ReplaySessionClock, session_for
+from nse_algo_trader.segment_bots.segment_trading_taxonomy import TradingSegment
 from nse_algo_trader.sizing.session_risk_state_store import RiskLatch, SessionRiskStateStore
 from nse_algo_trader.sizing.sizing_inputs_from_real_stores import RealStorePaths
 from nse_algo_trader.strategy.intraday_mean_reversion_engine import (
@@ -60,12 +72,28 @@ from nse_algo_trader.strategy.intraday_mean_reversion_engine import (
     MeanReversionAction,
     MeanReversionDecision,
 )
+from nse_algo_trader.trade_quality.realized_payoff_distribution_estimator import (
+    RealisedPayoffDistributionEstimator,
+    RealisedTradeOutcome,
+)
+from nse_algo_trader.trade_quality.stated_probability_calibrator import (
+    ForecastOutcome,
+    StatedProbabilityCalibrator,
+)
+from nse_algo_trader.trade_quality.trade_quality_evidence_card import QualityVerdict
+from nse_algo_trader.trade_quality.trade_quality_evidence_store import TradeQualityEvidenceStore
+from nse_algo_trader.trade_quality.trade_quality_floor_engine import (
+    QualityFloorPolicy,
+    TradeQualityFloorEngine,
+)
 from nse_algo_trader.transaction_cost.chargeable_market_segments import (
     ChargeableSegment,
     TradeLeg,
 )
+from nse_algo_trader.transaction_cost.nse_transaction_cost_engine import NseTransactionCostEngine
 
 IST = session_for(date(2026, 8, 5)).opens_at.tzinfo
+QUALITY_BOT = "cash_intraday_mean_reversion_bot"
 SESSION_DATE = date(2026, 8, 5)
 TOKEN = 738561
 SYMBOL = "TESTSCRIP"
@@ -151,9 +179,10 @@ def stores(tmp_path: Path) -> RealStorePaths:
     # A tape that actually moves, because a scrip that never moves sets no price collar and the
     # gate refuses it — correctly, and it would make every test below assert on a refusal instead
     # of on the loop. A deterministic sawtooth plus one dip: real movement, no randomness.
-    closes = [
-        CLOSE_RUPEES + Decimal(index % 7) * Decimal("0.5") for index in range(118)
-    ] + [CLOSE_RUPEES * Decimal("0.98"), CLOSE_RUPEES]
+    closes = [CLOSE_RUPEES + Decimal(index % 7) * Decimal("0.5") for index in range(118)] + [
+        CLOSE_RUPEES * Decimal("0.98"),
+        CLOSE_RUPEES,
+    ]
     _write_bars(
         market_data,
         closes=closes,
@@ -219,7 +248,14 @@ class ScriptedSignalSource:
     entries_at: list[datetime] = field(default_factory=list)
     reversal_at: datetime | None = None
     calls: list[datetime] = field(default_factory=list)
-    _entered: set[datetime] = field(default_factory=set)
+    expected_move_fraction: Decimal | None = Decimal("0.01")
+    _entered: set[tuple[datetime, int]] = field(default_factory=set)
+    """Keyed by (moment, instrument) so a scripted entry fires ONCE PER INSTRUMENT, not once.
+
+    Keyed by the moment alone, a scripted cross-section collapsed to a single actionable name and
+    the loop could never be shown assembling a scan wider than one — which is the exact property
+    `B23` exists to establish. Single-instrument tests are unaffected.
+    """
 
     def strategy_identity_for(self, instrument_token: int) -> str:
         del instrument_token
@@ -230,9 +266,13 @@ class ScriptedSignalSource:
     ) -> PaperSignal:
         self.calls.append(at)
         action = MeanReversionAction.ABSTAIN
-        due = [moment for moment in self.entries_at if moment <= at and moment not in self._entered]
+        due = [
+            moment
+            for moment in self.entries_at
+            if moment <= at and (moment, instrument_token) not in self._entered
+        ]
         if due:
-            self._entered.add(due[0])
+            self._entered.add((due[0], instrument_token))
             action = MeanReversionAction.ENTER_LONG
         elif self.reversal_at is not None and at >= self.reversal_at:
             action = MeanReversionAction.ENTER_SHORT
@@ -259,6 +299,7 @@ class ScriptedSignalSource:
             bars_observed=120,
             bars_consumed_this_step=1,
             latest_close_rupees=CLOSE_RUPEES,
+            expected_move_fraction=self.expected_move_fraction,
         )
 
 
@@ -289,6 +330,10 @@ def _runner(
     book_source: RecordedBookHarness,
     step: timedelta = timedelta(minutes=5),
     capital_rupees: Decimal = Decimal("1000000"),
+    decision_trace_store: DecisionTraceStore | None = None,
+    trade_quality_gate: TradeQualityFloorEngine | None = None,
+    trade_quality_store: TradeQualityEvidenceStore | None = None,
+    cost_pricer: object | None = None,
 ) -> tuple[
     PaperTradingSessionRunner, PaperCapitalLedger, SessionRiskStateStore, OrderIntentJournal
 ]:
@@ -319,6 +364,10 @@ def _runner(
         risk_store=risk_store,
         capital=capital,
         store_paths=stores,
+        decision_trace_store=decision_trace_store,
+        trade_quality_gate=trade_quality_gate,
+        trade_quality_store=trade_quality_store,
+        cost_pricer=cost_pricer,  # type: ignore[arg-type]
     )
     return runner, ledger, risk_store, journal
 
@@ -338,9 +387,7 @@ def test_a_bar_stamped_before_the_decision_but_published_after_it_is_invisible(
         first_bar_at=decision_at - timedelta(minutes=5),
         publication_lag=timedelta(minutes=30),
     )
-    visible = bars_available_at(
-        instrument_token=TOKEN, at=decision_at, market_data=market_data
-    )
+    visible = bars_available_at(instrument_token=TOKEN, at=decision_at, market_data=market_data)
     assert visible == ()
 
     later = bars_available_at(
@@ -450,9 +497,7 @@ def test_the_closing_balance_equals_the_fold_of_the_ledgers_own_events(
     assert fold.balance_rupees - fold.committed_rupees == report.closing_balance_rupees
 
 
-def test_a_fill_never_prices_better_than_the_touch(
-    tmp_path: Path, stores: RealStorePaths
-) -> None:
+def test_a_fill_never_prices_better_than_the_touch(tmp_path: Path, stores: RealStorePaths) -> None:
     """A buy pays at or above the best ask — the optimism `A.108` names as the failure mode."""
     entry_at = session_for(SESSION_DATE).opens_at + timedelta(minutes=5)
     runner, _ledger, _risk, _journal = _runner(
@@ -538,9 +583,7 @@ def test_a_book_that_vanishes_mid_session_does_not_fill_the_square_off_from_thin
     )
 
 
-def test_a_latch_tripped_mid_session_halts_the_loop(
-    tmp_path: Path, stores: RealStorePaths
-) -> None:
+def test_a_latch_tripped_mid_session_halts_the_loop(tmp_path: Path, stores: RealStorePaths) -> None:
     """The system can halt itself and can never un-halt itself (`R.22`)."""
     opens_at = session_for(SESSION_DATE).opens_at
     signals = ScriptedSignalSource(entries_at=[opens_at + timedelta(minutes=60)])
@@ -670,7 +713,10 @@ def test_a_position_is_open_while_quantity_is_open_not_while_a_flag_says_so(
     position.exit_ordered_quantity = 377
     position.exit_filled_quantity = 377
     position.closed_at = session_for(SESSION_DATE).opens_at + timedelta(minutes=30)
-    assert not position.is_open
+    # Asserted on the QUANTITY rather than on `is_open`: the whole point below is that the same
+    # property answers differently once more of the entry fills, and asserting the property here
+    # first would pin it for the rest of the function.
+    assert position.open_quantity == 0
 
     # The entry keeps filling after the exit was sent — the exact real-session case.
     position.filled_quantity = 5232
@@ -757,9 +803,7 @@ def test_a_breakeven_round_trip_debits_its_costs_and_realises_nothing(
         reason="entry",
     )
     runner._positions["FLAT-1"] = position
-    gross, costs = runner._account_for_closed_positions(
-        opens_at + timedelta(hours=6)
-    )
+    gross, costs = runner._account_for_closed_positions(opens_at + timedelta(hours=6))
     assert gross == Decimal(0)
     assert costs == Decimal(0), "no cost pricer is attached in this harness"
     assert ledger.fold_from_events().open_commitments == (), "the capital must still be released"
@@ -780,9 +824,7 @@ def test_no_entry_is_considered_outside_the_window_the_tape_covers(
     journal = OrderIntentJournal(tmp_path / "journal.sqlite3")
     ledger = PaperCapitalLedger(tmp_path / "ledger.sqlite3")
     capital = TradingCapital.of_rupees(Decimal("1000000"))
-    ledger.seed_from_ceiling(
-        capital, occurred_at=opens_at - timedelta(minutes=1), reason="seed"
-    )
+    ledger.seed_from_ceiling(capital, occurred_at=opens_at - timedelta(minutes=1), reason="seed")
     policy = _policy(timedelta(minutes=30))
     runner = PaperTradingSessionRunner(
         policy=replace(policy, tradeable_window=window),
@@ -801,7 +843,371 @@ def test_no_entry_is_considered_outside_the_window_the_tape_covers(
     )
     report = runner.run()
     assert report.tradeable_steps < report.steps_taken, "the window must exclude some steps"
-    assert all(
-        window[0] <= record.at <= window[1] for record in report.decisions
-    ), "no decision may be recorded outside the covered window"
+    assert all(window[0] <= record.at <= window[1] for record in report.decisions), (
+        "no decision may be recorded outside the covered window"
+    )
     assert report.steps_taken > 0
+
+
+# --- exits explain themselves (`M25`, spec `docs/research/259`) --------------------------------
+
+
+def test_a_square_off_records_why_it_got_out(
+    tmp_path: Path, stores: RealStorePaths
+) -> None:
+    """Every exit was unexplained by its own record: the emitter only ever ran on entries.
+
+    The store could answer "why did it get in?" and "why did it stay out?" and not "why did it get
+    out THERE?" — the question a reader asks about a position that lost money.
+    """
+    traces = DecisionTraceStore(tmp_path / "traces.sqlite3")
+    entry_at = session_for(SESSION_DATE).opens_at + timedelta(minutes=5)
+    runner, _ledger, _risk, _journal = _runner(
+        tmp_path,
+        stores,
+        signal_source=ScriptedSignalSource(entries_at=[entry_at]),
+        book_source=RecordedBookHarness(),
+        step=timedelta(minutes=30),
+        decision_trace_store=traces,
+    )
+    runner.run()
+
+    recorded = traces.traces_for_session(SESSION_DATE)
+    exits = [trace for trace in recorded if trace.kind is DecisionKind.EXIT]
+    assert exits, "the session squared off and recorded nothing about why"
+    for trace in exits:
+        assert trace.chosen_action in {"exit_long", "exit_short"}
+        assert trace.null_action == "hold"
+        # The exit cause is a GATE, not prose, so the counterfactual machinery works on the way out
+        # exactly as it does on the way in.
+        assert {gate.gate for gate in trace.gates} >= {"holding_horizon", "halt_latch"}
+        # An exit must not land in "nothing bound". A close square-off happens while the position's
+        # own horizon still has time left, so without the session-clock gate every one of these
+        # would record no refusing gate at all and the panel would show them as unexplained — the
+        # honest-but-useless answer, on the decisions this feature exists to explain.
+        binding = trace.binding_constraint()
+        assert binding.gate is not None, binding.explanation
+        assert binding.gate in {
+            "session_clock",
+            "holding_horizon",
+            "signal_alignment",
+            "halt_latch",
+        }
+
+
+def test_an_exit_trace_cannot_claim_an_entry_action(tmp_path: Path) -> None:
+    """The two vocabularies genuinely differ, and one field for both would let them blur."""
+    with pytest.raises(DecisionTraceError, match="not an action"):
+        DecisionTrace(
+            decided_at=datetime(2026, 8, 17, 15, 10, tzinfo=IST),
+            kind=DecisionKind.EXIT,
+            bot_identity="cash_intraday_mean_reversion_bot",
+            instrument_token=TOKEN,
+            trading_symbol=SYMBOL,
+            inputs=(
+                ConsultedInput(
+                    name="average_entry_paise",
+                    value="10000",
+                    source="paper_loop.open_paper_position",
+                    as_of=datetime(2026, 8, 17, 10, 0, tzinfo=IST),
+                ),
+            ),
+            candidates=(
+                CandidateAction(action="hold", why_considered="keep holding"),
+                CandidateAction(action="enter_long", why_considered="not a thing an exit can do"),
+            ),
+            permitted_actions=frozenset({"hold", "exit_long", "exit_short"}),
+            null_action="hold",
+            gates=(
+                GateEvaluation(
+                    gate="holding_horizon",
+                    outcome=GateOutcome.REFUSED,
+                    margin=Decimal("-60"),
+                    threshold=Decimal("1800"),
+                    detail="held past its measured horizon",
+                ),
+            ),
+            chosen_action="hold",
+            confidence=None,
+            mechanism="square_off:horizon expired (SELL)",
+        )
+
+
+def test_a_halted_square_off_does_not_claim_the_deadline_arrived(
+    tmp_path: Path, stores: RealStorePaths
+) -> None:
+    """A halt exit recorded `session_clock` REFUSED — "the intraday deadline arrived" — at 10:15.
+
+    The deadline was five hours away and the position's own horizon still had time on it. A
+    REFUSING gate stating a false fact is worse than a missing gate: it is the evidence a reader
+    trusts, and `binding_constraint()` ranks it against gates that are telling the truth.
+    """
+    traces = DecisionTraceStore(tmp_path / "traces.sqlite3")
+    opens_at = session_for(SESSION_DATE).opens_at
+    runner, _ledger, risk_store, _journal = _runner(
+        tmp_path,
+        stores,
+        signal_source=ScriptedSignalSource(entries_at=[opens_at + timedelta(minutes=5)]),
+        book_source=RecordedBookHarness(),
+        step=timedelta(minutes=30),
+        decision_trace_store=traces,
+    )
+    risk_store.open_session(
+        session_date=SESSION_DATE,
+        opening_equity_rupees=Decimal("1000000"),
+        occurred_at=opens_at,
+    )
+    report = runner.run()
+    if not report.positions:
+        pytest.skip("the recorded book did not fill an entry, so there is nothing to square off")
+    risk_store.trip_latch(
+        RiskLatch.DAILY_LOSS,
+        session_date=SESSION_DATE,
+        occurred_at=opens_at,
+        reason="tripped for the halted-exit trace test",
+    )
+
+    for trace in traces.traces_for_session(SESSION_DATE):
+        if trace.kind is not DecisionKind.EXIT:
+            continue
+        clock_gates = [gate for gate in trace.gates if gate.gate == "session_clock"]
+        for gate in clock_gates:
+            # The gate may be present ONLY when the close genuinely arrived.
+            assert "session close" in trace.mechanism, (
+                f"a {trace.mechanism!r} exit recorded a session_clock gate: {gate.detail}"
+            )
+
+
+def test_a_refused_square_off_is_not_recorded_as_an_exit_that_happened(
+    tmp_path: Path,
+) -> None:
+    """The trace was written BEFORE the placement verdict, so refused exits read as taken ones.
+
+    A position that shed nothing asserted that it chose `exit_long` — the `A.29` fiction the record
+    exists to prevent, and worst at the close, where a synchronised exit wave is exactly when the
+    rate gate refuses.
+    """
+    trace = DecisionTrace(
+        decided_at=datetime(2026, 8, 17, 15, 20, tzinfo=IST),
+        kind=DecisionKind.EXIT,
+        bot_identity="cash_intraday_mean_reversion_bot",
+        instrument_token=TOKEN,
+        trading_symbol=SYMBOL,
+        inputs=(
+            ConsultedInput(
+                name="unexited_quantity",
+                value="120",
+                source="paper_loop.open_paper_position",
+                as_of=datetime(2026, 8, 17, 15, 20, tzinfo=IST),
+            ),
+        ),
+        candidates=(
+            CandidateAction(action="hold", why_considered="keep holding"),
+            CandidateAction(action="exit_long", why_considered="session close"),
+        ),
+        permitted_actions=frozenset({"hold", "exit_long", "exit_short"}),
+        null_action="hold",
+        gates=(
+            GateEvaluation(
+                gate="exit_order_accepted",
+                outcome=GateOutcome.REFUSED,
+                margin=None,
+                threshold=None,
+                detail="the exit order was NOT sent: REFUSED_BY_RATE_GATE",
+            ),
+        ),
+        # Nothing left the book, so the action taken was to keep holding. The WANT to exit is in
+        # the gates; the action must describe what happened.
+        chosen_action="hold",
+        confidence=None,
+        mechanism="square_off:session close (`R.01`, intraday) (sell)",
+    )
+    assert trace.binding_constraint().gate == "exit_order_accepted"
+
+
+# --- L5.31: the quality floor actually stops an order (B23) -----------------------------------
+
+
+def _quality_gate(*, admits: bool) -> TradeQualityFloorEngine:
+    """A gate fitted on a record that makes it admit, or one that makes it refuse.
+
+    Both are REAL engines over real records — not stubs. The refusing one is fitted on the shape
+    that lost Rs 3,56,631 (a losing win rate against a payoff ratio below one); the admitting one on
+    a record whose gross expectancy clears its floors decisively. Substituting a fake gate here
+    would test that the runner calls something, which is not the property in question.
+    """
+    session = SESSION_DATE
+    if admits:
+        outcomes = ["9000"] * 7 + ["-300"] * 3
+        forecasts = [(0.7, index < 7) for index in range(10)]
+    else:
+        outcomes = ["293"] * 35 + ["-338"] * 65
+        forecasts = [(0.42, index < 35) for index in range(100)]
+    payoffs = RealisedPayoffDistributionEstimator(
+        [
+            RealisedTradeOutcome(
+                bot_identity=QUALITY_BOT,
+                trading_segment=TradingSegment.CASH_INTRADAY,
+                session_date=session - timedelta(days=index % 4),
+                gross_rupees=Decimal(value),
+                costs_rupees=Decimal("5"),
+            )
+            for index, value in enumerate(outcomes)
+        ]
+    )
+    calibrator = StatedProbabilityCalibrator(
+        [
+            ForecastOutcome(
+                bot_identity=QUALITY_BOT,
+                trading_segment=TradingSegment.CASH_INTRADAY,
+                occurred_at=session_for(session).opens_at - timedelta(days=index + 1),
+                session_date=session - timedelta(days=index % 4 + 1),
+                stated_probability=stated,
+                was_win=won,
+            )
+            for index, (stated, won) in enumerate(forecasts)
+        ]
+    )
+    return TradeQualityFloorEngine(
+        calibrator, payoffs, QualityFloorPolicy(admission_confidence=0.9)
+    )
+
+
+@pytest.mark.unit
+def test_a_refusing_quality_floor_stops_the_order_the_risk_gate_would_have_allowed(
+    tmp_path: Path, stores: RealStorePaths
+) -> None:
+    """`L5.31`/`B23`. The same session that places an order without a gate places none with one."""
+    entry_at = session_for(SESSION_DATE).opens_at + timedelta(minutes=5)
+    evidence = TradeQualityEvidenceStore(tmp_path / "evidence.sqlite3")
+    runner, _ledger, _risk, journal = _runner(
+        tmp_path,
+        stores,
+        signal_source=ScriptedSignalSource(entries_at=[entry_at]),
+        book_source=RecordedBookHarness(),
+        step=timedelta(minutes=30),
+        trade_quality_gate=_quality_gate(admits=False),
+        trade_quality_store=evidence,
+        cost_pricer=NseTransactionCostEngine(seeded_nse_market_rule_store()),
+    )
+    report = runner.run()
+
+    assert report.orders_placed == 0, report.describe()
+    assert not journal.orders_for_session(SESSION_DATE)
+    refusals = [
+        record for record in report.decisions if record.outcome == "refused_by_quality_floor"
+    ]
+    assert refusals, "the refusal must be recorded, not silently dropped"
+    assert "REFUSE" in refusals[0].detail
+    stored = evidence.cards_for_session(SESSION_DATE)
+    assert stored, "a refusal is the control group and must be persisted"
+    assert stored[0].verdict is QualityVerdict.REFUSE
+
+
+@pytest.mark.unit
+def test_an_admitting_quality_floor_leaves_the_order_path_untouched(
+    tmp_path: Path, stores: RealStorePaths
+) -> None:
+    """The gate may only refuse more. An ADMIT places exactly what the loop placed before."""
+    entry_at = session_for(SESSION_DATE).opens_at + timedelta(minutes=5)
+    evidence = TradeQualityEvidenceStore(tmp_path / "evidence.sqlite3")
+    runner, _ledger, _risk, _journal = _runner(
+        tmp_path,
+        stores,
+        signal_source=ScriptedSignalSource(entries_at=[entry_at]),
+        book_source=RecordedBookHarness(),
+        step=timedelta(minutes=30),
+        trade_quality_gate=_quality_gate(admits=True),
+        trade_quality_store=evidence,
+        cost_pricer=NseTransactionCostEngine(seeded_nse_market_rule_store()),
+    )
+    report = runner.run()
+
+    assert report.orders_placed >= 1, report.describe()
+    assert evidence.cards_for_session(SESSION_DATE)[0].verdict is QualityVerdict.ADMIT
+
+
+@pytest.mark.unit
+def test_no_gate_attached_is_not_a_permissive_gate(
+    tmp_path: Path, stores: RealStorePaths
+) -> None:
+    """An absent gate leaves behaviour exactly as it was, and records no verdict at all.
+
+    The distinction the `UNASSESSABLE` verdict exists for, at the runner level: a loop that never
+    asked has not been told these trades are fine.
+    """
+    entry_at = session_for(SESSION_DATE).opens_at + timedelta(minutes=5)
+    evidence = TradeQualityEvidenceStore(tmp_path / "evidence.sqlite3")
+    runner, _ledger, _risk, _journal = _runner(
+        tmp_path,
+        stores,
+        signal_source=ScriptedSignalSource(entries_at=[entry_at]),
+        book_source=RecordedBookHarness(),
+        step=timedelta(minutes=30),
+        trade_quality_store=evidence,
+    )
+    report = runner.run()
+
+    assert report.orders_placed >= 1
+    assert evidence.cards_for_session(SESSION_DATE) == ()
+    assert not [r for r in report.decisions if r.outcome == "refused_by_quality_floor"]
+
+
+@pytest.mark.adversarial
+def test_a_gate_with_no_cost_pricer_cannot_refuse_on_a_zero_cost_floor(
+    tmp_path: Path, stores: RealStorePaths
+) -> None:
+    """No pricer means no priced floor, and a zero one would be a lie in the permissive direction.
+
+    `_price_entry_round_trip` answers `None` rather than `Decimal(0)`, so the assessment is skipped
+    entirely rather than run against a floor of nothing.
+    """
+    entry_at = session_for(SESSION_DATE).opens_at + timedelta(minutes=5)
+    evidence = TradeQualityEvidenceStore(tmp_path / "evidence.sqlite3")
+    runner, _ledger, _risk, _journal = _runner(
+        tmp_path,
+        stores,
+        signal_source=ScriptedSignalSource(entries_at=[entry_at]),
+        book_source=RecordedBookHarness(),
+        step=timedelta(minutes=30),
+        trade_quality_gate=_quality_gate(admits=False),
+        trade_quality_store=evidence,
+    )
+    report = runner.run()
+
+    assert report.orders_placed >= 1, "without a priced cost there is no floor to refuse against"
+    assert evidence.cards_for_session(SESSION_DATE) == ()
+
+
+@pytest.mark.unit
+def test_the_scan_breadth_the_gate_sees_is_the_whole_actionable_cross_section(
+    tmp_path: Path, stores: RealStorePaths
+) -> None:
+    """`B23`'s reason for existing: a one-pass loop could only ever report a breadth of one.
+
+    Three instruments all actionable at the same instant must reach the gate as a scan of three,
+    because the selection correction is the expected maximum of that many draws.
+    """
+    entry_at = session_for(SESSION_DATE).opens_at + timedelta(minutes=5)
+    evidence = TradeQualityEvidenceStore(tmp_path / "evidence.sqlite3")
+    runner, _ledger, _risk, _journal = _runner(
+        tmp_path,
+        stores,
+        signal_source=ScriptedSignalSource(entries_at=[entry_at]),
+        book_source=RecordedBookHarness(),
+        step=timedelta(minutes=30),
+        trade_quality_gate=_quality_gate(admits=False),
+        trade_quality_store=evidence,
+        cost_pricer=NseTransactionCostEngine(seeded_nse_market_rule_store()),
+    )
+    runner.instruments = [
+        PaperInstrument(instrument_token=TOKEN, trading_symbol=SYMBOL, lot_size=LOT_SIZE),
+        PaperInstrument(instrument_token=TOKEN + 1, trading_symbol="SECOND", lot_size=LOT_SIZE),
+        PaperInstrument(instrument_token=TOKEN + 2, trading_symbol="THIRD", lot_size=LOT_SIZE),
+    ]
+    runner.run()
+
+    breadths = {card.scan_breadth for card in evidence.cards_for_session(SESSION_DATE)}
+    assert breadths, "the gate must have been consulted"
+    assert max(breadths) > 1, f"a one-pass loop reports a breadth of one; got {breadths}"
+

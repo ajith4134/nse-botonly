@@ -102,8 +102,7 @@ class RealisedVolatility:
             f"from {self.observation_count} returns (half-life {self.half_life_bars} bars); "
             f"largest single move {self.largest_absolute_return_bps.quantize(Decimal('0.01'))} bps "
             f"= {(self.largest_move_share_of_variation * 100).quantize(Decimal('0.1'))}% of the "
-            "variation"
-            + (" — DOMINATED BY ONE MOVE" if self.is_dominated_by_one_move else "")
+            "variation" + (" — DOMINATED BY ONE MOVE" if self.is_dominated_by_one_move else "")
         )
 
 

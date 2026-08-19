@@ -92,9 +92,7 @@ def test_a_perfectly_mean_reverting_series_shows_positive_capture() -> None:
     # An oscillation around a flat mean with a slow drift, so the rolling window has something
     # to measure. Every excursion is followed by a return, so the entry rule fires at the
     # extremes and the next bar moves back toward the mean.
-    closes = [
-        100.0 + 8.0 * math.sin(index / 2.0) + 0.01 * index for index in range(400)
-    ]
+    closes = [100.0 + 8.0 * math.sin(index / 2.0) + 0.01 * index for index in range(400)]
     events = measure_reversion_events(
         closes,
         trading_symbol="SAWTOOTH",
@@ -307,11 +305,7 @@ def test_shrinkage_pulls_a_thin_estimate_toward_the_pooled_one() -> None:
     )
     # The blended estimate always lies between the two it came from; leaving that interval would
     # mean shrinkage had invented a value neither source supports.
-    assert (
-        pooled.mean_captured_bps
-        <= shrunk_noisy.mean_captured_bps
-        <= noisy.mean_captured_bps
-    )
+    assert pooled.mean_captured_bps <= shrunk_noisy.mean_captured_bps <= noisy.mean_captured_bps
 
 
 @pytest.mark.adversarial
@@ -410,9 +404,7 @@ def test_a_calibration_round_trips_without_losing_precision(tmp_path: Path) -> N
     store = ReversionCalibrationStore(tmp_path / "calibration.sqlite3")
     original = capture("40.4321", standard_error="7.1098")
     store.record([original])
-    reloaded = store.capture_for(
-        deviation_sigma=Decimal(3), horizon_bars=5, as_of=FIT_BOUNDARY
-    )
+    reloaded = store.capture_for(deviation_sigma=Decimal(3), horizon_bars=5, as_of=FIT_BOUNDARY)
     assert reloaded.mean_captured_bps == original.mean_captured_bps
     assert reloaded.standard_error_bps == original.standard_error_bps
     assert reloaded.maturity is original.maturity

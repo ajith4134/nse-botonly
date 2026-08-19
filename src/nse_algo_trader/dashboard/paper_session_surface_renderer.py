@@ -330,9 +330,7 @@ def _ledger_realisations(path: Path) -> tuple[Decimal, Decimal, Decimal]:
         return Decimal(0), Decimal(0), Decimal(0)
     totals = {"REALISED_PROFIT": Decimal(0), "REALISED_LOSS": Decimal(0), "COST_DEBIT": Decimal(0)}
     with _read_only(path) as connection:
-        for row in connection.execute(
-            "SELECT kind, amount_rupees FROM paper_capital_event"
-        ):
+        for row in connection.execute("SELECT kind, amount_rupees FROM paper_capital_event"):
             kind = str(row["kind"])
             if kind in totals:
                 totals[kind] += Decimal(str(row["amount_rupees"]))
@@ -380,7 +378,7 @@ def _tiles(state: PaperSessionSurfaceState) -> str:
     ]
     rendered = "".join(
         f'<div class="tile"><div class="label">{escape(label)}</div>'
-        f'<div class="value"{f" style=\'color:{colour}\'" if colour else ""}>{value}</div></div>'
+        f'<div class="value"{f" style='color:{colour}'" if colour else ""}>{value}</div></div>'
         for label, value, colour in tiles
     )
     return f'<div class="tiles">{rendered}</div>'

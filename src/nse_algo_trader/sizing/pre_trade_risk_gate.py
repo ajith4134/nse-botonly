@@ -303,9 +303,7 @@ def realised_move_quantile_from_closes(
         start = closes[index][1]
         end = closes[index + horizon_bars][1]
         if start <= 0:
-            raise PriceCollarUnavailableError(
-                f"a close of {start} cannot anchor a fractional move"
-            )
+            raise PriceCollarUnavailableError(f"a close of {start} cannot anchor a fractional move")
         moves.append(abs(end - start) / start)
     moves.sort()
     # Nearest-rank on the sorted sample: no interpolation between two observations, because an

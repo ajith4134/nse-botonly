@@ -177,9 +177,7 @@ class ConsolidatedFeedSessionRunner:
         all_dispersions = sorted(
             value for values in dispersion_by_instrument.values() for value in values
         )
-        median_dispersion = (
-            all_dispersions[len(all_dispersions) // 2] if all_dispersions else 0.0
-        )
+        median_dispersion = all_dispersions[len(all_dispersions) // 2] if all_dispersions else 0.0
         worst = max(
             dispersion_by_instrument.items(),
             key=lambda item: sum(item[1]) / len(item[1]),
@@ -197,9 +195,7 @@ class ConsolidatedFeedSessionRunner:
             brokers=tuple(sorted(brokers)),
             median_dispersion_paise=float(median_dispersion),
             worst_instrument=worst[0] if worst else None,
-            worst_instrument_dispersion_paise=(
-                sum(worst[1]) / len(worst[1]) if worst else None
-            ),
+            worst_instrument_dispersion_paise=(sum(worst[1]) / len(worst[1]) if worst else None),
             inadmissible_instrument_sessions=sum(
                 1 for admissible in admissibility.values() if not admissible
             ),

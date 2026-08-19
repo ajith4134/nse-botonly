@@ -44,9 +44,7 @@ def _at(second: int) -> datetime:
 def _state_path(tmp_path: Path) -> Path:
     path = tmp_path / "session_risk_state.sqlite3"
     with SessionRiskStateStore(path) as store:
-        store.open_session(
-            session_date=SESSION, opening_equity_rupees=TEN_LAKH, occurred_at=_at(0)
-        )
+        store.open_session(session_date=SESSION, opening_equity_rupees=TEN_LAKH, occurred_at=_at(0))
     return path
 
 
@@ -290,13 +288,13 @@ def test_the_daily_loss_limit_activates_and_is_derived_from_the_books_own_volati
     # Pinned to an INDEPENDENTLY computed sigma, not to the implementation's own output.
     # `limit == z * sigma` alone is a tautology over two of its own fields, and `A.105` proved it:
     # a mutant using n instead of n-1 in the variance passed the whole suite.
-    results = [Decimal(5_000 if index % 2 else -4_000) for index in range(
-        MINIMUM_SESSIONS_FOR_A_DAILY_LIMIT
-    )]
+    results = [
+        Decimal(5_000 if index % 2 else -4_000)
+        for index in range(MINIMUM_SESSIONS_FOR_A_DAILY_LIMIT)
+    ]
     mean = sum(results, Decimal(0)) / Decimal(len(results))
     expected_sigma = (
-        sum(((value - mean) ** 2 for value in results), Decimal(0))
-        / Decimal(len(results) - 1)
+        sum(((value - mean) ** 2 for value in results), Decimal(0)) / Decimal(len(results) - 1)
     ).sqrt()
     assert abs(limit.sigma_daily_rupees - expected_sigma) < Decimal("0.01")
     assert limit.limit_rupees == limit.z_quantile * limit.sigma_daily_rupees

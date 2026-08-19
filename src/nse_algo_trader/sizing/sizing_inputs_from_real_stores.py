@@ -200,8 +200,7 @@ def _recent_closes(
             (instrument_token, BAR_INTERVAL, as_of.isoformat(), closes_wanted),
         ).fetchall()
     closes = [
-        (datetime.fromisoformat(str(stamp)), Decimal(str(close)))
-        for stamp, close in reversed(rows)
+        (datetime.fromisoformat(str(stamp)), Decimal(str(close))) for stamp, close in reversed(rows)
     ]
     # The estimator refuses duplicates and mis-ordering rather than repairing them, so a duplicate
     # bar_timestamp in the store must be surfaced there rather than smoothed away here.

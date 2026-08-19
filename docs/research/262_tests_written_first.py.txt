@@ -1,0 +1,456 @@
+# PARKED SPEC ARTEFACT — NOT A TEST YET, AND DELIBERATELY OUTSIDE tests/.
+#
+# These tests were written FIRST for docs/research/262 (the corroborated-evidence join and the
+# like-with-like conditional coherence check that close docs/research/261 MAJOR-6 and MAJOR-7).
+# The operator redirected to the six segment bots on 2026-08-18 (A.141) before the implementation
+# landed, so every symbol they import still does not exist.
+#
+# They are held HERE rather than under tests/ because a file in the collected tree that references
+# code which does not exist is not a parked test — it is a permanently red gate, and a gate nobody
+# can read is worse than no gate. Skipping it would have been the suppression the R.23 execution
+# gate explicitly forbids; deleting it would have thrown away the design work.
+#
+# TO RESUME: copy this back to tests/test_conditional_expectancy_coherence.py, then work the
+# ordered plan in docs/BACKLOG.md under "RESUME POINT". The tests should be RED on the first run —
+# that is how a regression test is supposed to start.
+
+"""Tests for the corroborated-evidence join and the conditional coherence check — spec `262`.
+
+These close `docs/research/261` MAJOR-6 and MAJOR-7, and the whole point of the file is that the
+criteria are **two-sided**. Both earlier sign-offs of `L5.31` were one-sided in opposite directions:
+the first measured only false admissions and shipped a gate that admitted a third of money-losing
+bots; the second measured only that repair and shipped a gate that admitted nothing at all, which
+passed 38 of 39 tests with `clears = False` patched in.
+
+So the sweeps here always assert a floor on sensitivity in the same test file as the ceiling on false
+admissions, and the resolution sweep asserts that the new check does **not** get more eager as a
+forecaster gets better at discriminating — the exact failure that killed the deleted version.
+"""
+
+from __future__ import annotations
+
+import math
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
+
+import numpy
+import pytest
+
+
+from nse_algo_trader.cost_gate.priced_signal import EdgeBasis, PricedSignal
+from nse_algo_trader.segment_bots.segment_trading_taxonomy import TradingSegment
+from nse_algo_trader.trade_quality.conditional_expectancy_coherence import (
+    CoherenceOutcome,
+    CorpusJoin,
+    assess_conditional_coherence,
+    corroborated_support,
+)
+from nse_algo_trader.trade_quality.realized_payoff_distribution_estimator import (
+    RealisedPayoffDistributionEstimator,
+    RealisedTradeOutcome,
+)
+from nse_algo_trader.trade_quality.stated_probability_calibrator import (
+    ForecastOutcome,
+    StatedProbabilityCalibrator,
+)
+from nse_algo_trader.trade_quality.trade_quality_evidence_card import QualityVerdict
+from nse_algo_trader.trade_quality.trade_quality_floor_engine import (
+    QualityAssessmentRequest,
+    QualityFloorPolicy,
+    TradeQualityFloorEngine,
+)
+from nse_algo_trader.transaction_cost.chargeable_market_segments import (
+    ChargeableSegment,
+    TradeLeg,
+)
+
+SESSION = date(2026, 8, 18)
+INSTANT = datetime(2026, 8, 18, 10, 15, tzinfo=UTC)
+POLICY = QualityFloorPolicy(admission_confidence=0.9)
+SEGMENT = TradingSegment.CASH_INTRADAY
+
+RE_REVIEWER_SENSITIVITY = 0.879
+"""The re-review's own measurement of the round-2 engine (`docs/research/261`). A floor, not a goal.
+
+Stated as the acceptance bar because the join can only WIDEN posteriors, so the risk this change
+carries is exactly a sensitivity regression, and an unstated bar is how CRITICAL-A shipped.
+"""
+
+RE_REVIEWER_SPECIFICITY = 0.983
+"""The same measurement on the other side. Both are asserted, always together."""
+
+
+# --------------------------------------------------------------------------------------------
+# builders
+# --------------------------------------------------------------------------------------------
+
+
+def a_signal(*, quantity: int = 100, conviction: Decimal | None = Decimal("0.6")) -> PricedSignal:
+    return PricedSignal(
+        instrument_token=738561,
+        trading_symbol="RELIANCE",
+        segment=ChargeableSegment.EQUITY_INTRADAY,
+        side=TradeLeg.BUY,
+        decided_at=INSTANT,
+        reference_price_paise=Decimal("250000"),
+        expected_edge_bps=Decimal("25"),
+        proposed_quantity=quantity,
+        edge_basis=EdgeBasis.MEASURED_TRACK_RECORD,
+        source="test",
+        conviction=conviction,
+    )
+
+
+def a_request(
+    *,
+    bot: str = "bot",
+    cost: str = "50",
+    conviction: Decimal | None = Decimal("0.6"),
+    quantity: int = 100,
+    candidates: list[str] | None = None,
+) -> QualityAssessmentRequest:
+    return QualityAssessmentRequest(
+        signal=a_signal(quantity=quantity, conviction=conviction),
+        bot_identity=bot,
+        trading_segment=SEGMENT,
+        assessed_at=INSTANT,
+        round_trip_cost_rupees=Decimal(cost),
+        candidate_expectancy_fractions=tuple(Decimal(value) for value in (candidates or ["0"])),
+        stated_win_probability=None if conviction is None else float(conviction),
+    )
+
+
+def a_corpus(
+    rows: list[tuple[float, Decimal]],
+    *,
+    bot: str = "bot",
+    reference: bool = True,
+    notional: str | None = "250000",
+    costs: str = "0",
+) -> tuple[list[ForecastOutcome], list[RealisedTradeOutcome]]:
+    """One record, two views of it — the join this whole slice exists to make possible.
+
+    Each row is *(what the bot stated, what the trade grossed)*, so the forecast corpus and the
+    payoff corpus are two projections of the SAME trades and their references agree by construction.
+    Turning `reference` off reproduces the legacy corpora, which carry no key at all.
+    """
+    forecasts: list[ForecastOutcome] = []
+    outcomes: list[RealisedTradeOutcome] = []
+    for index, (stated, gross) in enumerate(rows):
+        key = f"{SESSION}:{bot}:{index}" if reference else None
+        session = SESSION - timedelta(days=index % 5)
+        forecasts.append(
+            ForecastOutcome(
+                bot_identity=bot,
+                trading_segment=SEGMENT,
+                occurred_at=INSTANT - timedelta(minutes=index),
+                session_date=session,
+                stated_probability=stated,
+                was_win=gross > 0,
+                trade_reference=key,
+            )
+        )
+        outcomes.append(
+            RealisedTradeOutcome(
+                bot_identity=bot,
+                trading_segment=SEGMENT,
+                session_date=session,
+                gross_rupees=gross,
+                costs_rupees=Decimal(costs),
+                notional_rupees=None if notional is None else Decimal(notional),
+                trade_reference=key,
+            )
+        )
+    return forecasts, outcomes
+
+
+def an_engine(
+    forecasts: list[ForecastOutcome], outcomes: list[RealisedTradeOutcome]
+) -> TradeQualityFloorEngine:
+    return TradeQualityFloorEngine(
+        StatedProbabilityCalibrator(forecasts),
+        RealisedPayoffDistributionEstimator(outcomes),
+        POLICY,
+    )
+
+
+def synthetic_record(
+    generator: numpy.random.Generator,
+    *,
+    trades: int,
+    true_win_rate: float,
+    win_rupees: float,
+    loss_rupees: float,
+    discrimination: float,
+    bot: str = "bot",
+) -> tuple[list[ForecastOutcome], list[RealisedTradeOutcome]]:
+    """A bot whose forecasts carry a controlled amount of real information about its outcomes.
+
+    `discrimination` is how far the stated probability separates the winners from the losers, in
+    units of the stated spread. At 0.0 the bot states a probability independent of the outcome — no
+    resolution at all — and at 1.6 it is a genuinely informative forecaster. TRUE expectancy is held
+    fixed by `true_win_rate` and the two magnitudes regardless of discrimination, which is what makes
+    the resolution sweep a controlled experiment rather than a correlation.
+    """
+    won = generator.random(trades) < true_win_rate
+    noise = generator.normal(0.0, 0.08, size=trades)
+    stated = numpy.clip(0.5 + discrimination * 0.1 * (won.astype(float) - 0.5) + noise, 0.02, 0.98)
+    grosses = numpy.where(won, win_rupees, -loss_rupees)
+    return a_corpus(
+        [(float(value), Decimal(str(round(float(gross), 2)))) for value, gross in zip(stated, grosses, strict=True)],
+        bot=bot,
+    )
+
+
+# --------------------------------------------------------------------------------------------
+# the join
+# --------------------------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_the_level_set_references_are_the_whole_pooled_block() -> None:
+    """The evidence behind a prediction is every trade PAVA pooled into it, and it must be nameable.
+
+    `support_at` already returns the SIZE of that block (MAJOR-B's repair). This asserts the
+    references agree with it — a count that cannot be enumerated cannot be joined against anything.
+    """
+    forecasts, _ = a_corpus(
+        [(0.1 + 0.02 * index, Decimal("100") if index % 3 == 0 else Decimal("-100")) for index in range(40)]
+    )
+    calibrator = StatedProbabilityCalibrator(forecasts)
+    references = calibrator.level_set_references_at(0.5, bot_identity="bot", trading_segment=SEGMENT)
+    support = calibrator.calibrate(0.5, bot_identity="bot", trading_segment=SEGMENT).fitted_on_trades
+    assert references
+    assert len(references) == support
+    assert len(set(references)) == len(references)
+
+
+@pytest.mark.unit
+def test_two_corpora_that_share_a_name_and_no_trade_are_unassessable() -> None:
+    """`DISJOINT` — a fact about the records, not a threshold, so it refuses absolutely."""
+    forecasts, _ = a_corpus(
+        [(0.6, Decimal("200")), (0.4, Decimal("-150"))] * 12, bot="bot"
+    )
+    _, outcomes = a_corpus(
+        [(0.6, Decimal("200")), (0.4, Decimal("-150"))] * 12, bot="bot"
+    )
+    renamed = [
+        RealisedTradeOutcome(
+            bot_identity=row.bot_identity,
+            trading_segment=row.trading_segment,
+            session_date=row.session_date,
+            gross_rupees=row.gross_rupees,
+            costs_rupees=row.costs_rupees,
+            notional_rupees=row.notional_rupees,
+            trade_reference=f"someone-else:{row.trade_reference}",
+        )
+        for row in outcomes
+    ]
+    card = an_engine(forecasts, renamed).assess(a_request())
+    assert card.verdict is QualityVerdict.UNASSESSABLE
+    assert card.coherence is not None
+    assert card.coherence.join is CorpusJoin.DISJOINT
+
+
+@pytest.mark.unit
+def test_a_thick_forecast_record_cannot_certify_four_magnitudes() -> None:
+    """MAJOR-6's exact reproduction: 2,000 forecasts, 4 payoff trades, `P = 1.0000`.
+
+    The corpora carry no references — the legacy shape — so this also pins the `UNJOINABLE`
+    fallback, where the corroborated evidence is the smaller of the two records.
+    """
+    generator = numpy.random.default_rng(20260818)
+    many, _ = a_corpus(
+        [
+            (float(numpy.clip(generator.normal(0.6, 0.1), 0.02, 0.98)), Decimal("100") if generator.random() < 0.6 else Decimal("-100"))
+            for _ in range(2000)
+        ],
+        reference=False,
+    )
+    _, few = a_corpus(
+        [(0.6, Decimal("400")), (0.6, Decimal("380")), (0.6, Decimal("-20")), (0.6, Decimal("-25"))],
+        reference=False,
+    )
+    engine = an_engine(many, few)
+    card = engine.assess(a_request())
+    assert card.coherence is not None
+    assert card.coherence.join is CorpusJoin.UNJOINABLE
+    assert card.gross_expectancy is not None
+    assert card.gross_expectancy.probability_exceeding_floor < 1.0
+    assert card.calibrated_probability.corroborated_trades == len(few)
+    assert card.verdict is QualityVerdict.REFUSE
+
+
+@pytest.mark.unit
+def test_corroborated_support_never_exceeds_either_record() -> None:
+    assert corroborated_support(level_set_size=900, payoff_trades=4, joined=None) == 4
+    assert corroborated_support(level_set_size=3, payoff_trades=900, joined=None) == 3
+    assert corroborated_support(level_set_size=900, payoff_trades=900, joined=7) == 7
+
+
+# --------------------------------------------------------------------------------------------
+# the coherence check
+# --------------------------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_the_check_fires_when_the_model_claims_more_than_the_record_at_that_value() -> None:
+    """Like with like: the modelled conditional mean against the realised conditional mean."""
+    realised = tuple(Decimal("10") for _ in range(30))
+    coherence = assess_conditional_coherence(
+        modelled_rupees=Decimal("5000"),
+        realised_gross=realised,
+        join=CorpusJoin.JOINED,
+        scale=None,
+    )
+    assert coherence.outcome is CoherenceOutcome.MODEL_EXCEEDS_RECORD
+    assert coherence.realised_upper_rupees is not None
+    assert coherence.modelled_rupees is not None
+    assert coherence.modelled_rupees > coherence.realised_upper_rupees
+
+
+@pytest.mark.unit
+def test_the_check_is_silent_when_the_model_under_claims() -> None:
+    """One-sided on purpose: under-claiming is not the danger this gate exists to stop."""
+    realised = tuple(Decimal("500") for _ in range(30))
+    coherence = assess_conditional_coherence(
+        modelled_rupees=Decimal("10"),
+        realised_gross=realised,
+        join=CorpusJoin.JOINED,
+        scale=None,
+    )
+    assert coherence.outcome is CoherenceOutcome.CONSISTENT
+
+
+@pytest.mark.unit
+def test_the_check_reports_unavailable_rather_than_guessing_on_a_thin_level_set() -> None:
+    coherence = assess_conditional_coherence(
+        modelled_rupees=Decimal("5000"),
+        realised_gross=(Decimal("10"),),
+        join=CorpusJoin.JOINED,
+        scale=None,
+    )
+    assert coherence.outcome is CoherenceOutcome.UNAVAILABLE
+    coherence = assess_conditional_coherence(
+        modelled_rupees=Decimal("5000"),
+        realised_gross=(),
+        join=CorpusJoin.UNJOINABLE,
+        scale=None,
+    )
+    assert coherence.outcome is CoherenceOutcome.UNAVAILABLE
+
+
+@pytest.mark.unit
+def test_the_check_scales_the_record_by_the_same_factor_as_the_model() -> None:
+    """MAJOR-C's shape: the deleted version was scale-invariant and structurally could not catch it.
+
+    A tenfold proposal multiplies the modelled expectancy by ten; the realised side must move with
+    it, or size alone would buy silence.
+    """
+    realised = tuple(Decimal("100") for _ in range(30))
+    unscaled = assess_conditional_coherence(
+        modelled_rupees=Decimal("150"),
+        realised_gross=realised,
+        join=CorpusJoin.JOINED,
+        scale=None,
+    )
+    scaled = assess_conditional_coherence(
+        modelled_rupees=Decimal("1500"),
+        realised_gross=realised,
+        join=CorpusJoin.JOINED,
+        scale=Decimal("10"),
+    )
+    assert unscaled.outcome is scaled.outcome
+    assert scaled.realised_mean_rupees == Decimal("1000")
+
+
+@pytest.mark.slow
+def test_the_check_does_not_get_more_eager_as_a_forecaster_discriminates_better() -> None:
+    """The sweep that killed the deleted version — 5% refusals at zero discrimination, 82% at high.
+
+    TRUTH is held constant across every cell: the same win rate and the same two magnitudes, so the
+    bot's real edge does not change. Only the informativeness of its stated probability does. A check
+    that reads resolution as a contradiction is anti-correlated with skill and worse than none.
+    """
+    rates: list[float] = []
+    for discrimination in (0.0, 0.6, 1.6):
+        generator = numpy.random.default_rng(int(discrimination * 100) + 7)
+        fired = 0
+        trials = 40
+        for _ in range(trials):
+            forecasts, outcomes = synthetic_record(
+                generator,
+                trades=120,
+                true_win_rate=0.55,
+                win_rupees=900.0,
+                loss_rupees=500.0,
+                discrimination=discrimination,
+            )
+            card = an_engine(forecasts, outcomes).assess(a_request())
+            if (
+                card.coherence is not None
+                and card.coherence.outcome is CoherenceOutcome.MODEL_EXCEEDS_RECORD
+            ):
+                fired += 1
+        rates.append(fired / trials)
+    assert rates[-1] <= rates[0] + 0.1, (
+        f"the coherence check fires more often on better forecasters: {rates}"
+    )
+
+
+# --------------------------------------------------------------------------------------------
+# two-sided ground truth — the criterion both earlier sign-offs failed to state
+# --------------------------------------------------------------------------------------------
+
+
+@pytest.mark.slow
+def test_the_gate_still_admits_a_real_edge_and_still_refuses_a_zero_skill_loser() -> None:
+    """Sensitivity AND specificity, in one test, against the re-reviewer's own measured numbers.
+
+    They are asserted together deliberately. Separately, each is satisfied by a degenerate gate: a
+    gate that admits everything passes the first and a gate that admits nothing passes the second,
+    and this project has now shipped one of each.
+    """
+    generator = numpy.random.default_rng(4242)
+    admitted_good = 0
+    admitted_bad = 0
+    cells = 60
+    for _ in range(cells):
+        good_forecasts, good_outcomes = synthetic_record(
+            generator,
+            trades=140,
+            true_win_rate=0.62,
+            win_rupees=1200.0,
+            loss_rupees=400.0,
+            discrimination=1.2,
+        )
+        if an_engine(good_forecasts, good_outcomes).assess(a_request()).verdict is QualityVerdict.ADMIT:
+            admitted_good += 1
+        bad_forecasts, bad_outcomes = synthetic_record(
+            generator,
+            trades=140,
+            true_win_rate=0.40,
+            win_rupees=300.0,
+            loss_rupees=300.0,
+            discrimination=0.0,
+        )
+        if an_engine(bad_forecasts, bad_outcomes).assess(a_request()).verdict is QualityVerdict.ADMIT:
+            admitted_bad += 1
+    sensitivity = admitted_good / cells
+    specificity = 1.0 - admitted_bad / cells
+    assert sensitivity >= RE_REVIEWER_SENSITIVITY, f"sensitivity regressed to {sensitivity}"
+    assert specificity >= RE_REVIEWER_SPECIFICITY, f"specificity regressed to {specificity}"
+
+
+@pytest.mark.unit
+def test_the_card_carries_the_join_and_the_check_so_a_refusal_is_legible() -> None:
+    """`R.08`: a verdict whose ground cannot be read afterwards is not evidence of anything."""
+    forecasts, outcomes = a_corpus(
+        [(0.6, Decimal("400")), (0.55, Decimal("-200"))] * 20
+    )
+    card = an_engine(forecasts, outcomes).assess(a_request())
+    assert card.coherence is not None
+    assert card.coherence.join is CorpusJoin.JOINED
+    assert card.coherence.level_set_outcomes > 0
+    assert card.calibrated_probability.corroborated_trades > 0
+    assert math.isfinite(float(card.coherence.realised_mean_rupees or 0))

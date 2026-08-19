@@ -269,9 +269,14 @@ class DeepHistoryArchiveLoader:
     @staticmethod
     def _paise(column: str, *, scale: int = 1) -> pl.Expr:
         return (
-            pl.col(column).str.strip_chars().cast(pl.Float64, strict=False) * scale
-            * PAISE_PER_RUPEE
-        ).round(0).cast(pl.Int64, strict=False)
+            (
+                pl.col(column).str.strip_chars().cast(pl.Float64, strict=False)
+                * scale
+                * PAISE_PER_RUPEE
+            )
+            .round(0)
+            .cast(pl.Int64, strict=False)
+        )
 
     @classmethod
     def _traded_price(cls, column: str, quantity_column: str) -> pl.Expr:
@@ -308,9 +313,7 @@ class DeepHistoryArchiveLoader:
             variant=pl.lit(variant.value),
         )
 
-    def _legacy_derivative_frame(
-        self, raw: pl.DataFrame, header: Sequence[str]
-    ) -> pl.DataFrame:
+    def _legacy_derivative_frame(self, raw: pl.DataFrame, header: Sequence[str]) -> pl.DataFrame:
         option_column = option_type_column(header)
         strike = self._paise("STRIKE_PR")
         option_text = pl.col(option_column).str.strip_chars().str.to_uppercase()
@@ -473,8 +476,14 @@ def _without_repeated_instruments(frame: pl.DataFrame) -> tuple[pl.DataFrame, in
     groups disagreed on the close.** A duplicate is not extra evidence; a duplicate that
     disagrees is ambiguous history, and both are counted rather than silently kept.
     """
-    identity = ["trading_symbol", "series", "instrument_type", "expiry", "strike_paise",
-                "option_type"]
+    identity = [
+        "trading_symbol",
+        "series",
+        "instrument_type",
+        "expiry",
+        "strike_paise",
+        "option_type",
+    ]
     kept = frame.unique(subset=identity, keep="first", maintain_order=True)
     return kept, frame.height - kept.height
 
@@ -513,12 +522,7 @@ def _legacy_date_expr(column: str) -> pl.Expr:
     not, so the text is title-cased first. Day padding is inconsistent before ~2015 and
     `%-d` is not portable, so the day is zero-padded by regex rather than by format.
     """
-    normalised = (
-        pl.col(column)
-        .str.strip_chars()
-        .str.replace(r"^(\d)-", r"0$1-")
-        .str.to_lowercase()
-    )
+    normalised = pl.col(column).str.strip_chars().str.replace(r"^(\d)-", r"0$1-").str.to_lowercase()
     # **Four-digit years are matched EXPLICITLY, and two-digit ones parsed separately.**
     # chrono's `%Y` happily accepts a two-digit year, so `14-May-12` became `0012-05-14`
     # here while the reference reader — whose format list gained `%d-%b-%y` — read it as
@@ -536,6 +540,5 @@ def _integer_expr(column: str) -> pl.Expr:
     # is fractional in 39 real F&O files (`1.5`, `6.66`, `0.66`), so rounding here stored a
     # different quantity than the reference read — 79 row-instances measured.
     return (
-        pl.col(column).str.strip_chars().cast(pl.Float64, strict=False).cast(pl.Int64,
-        strict=False)
+        pl.col(column).str.strip_chars().cast(pl.Float64, strict=False).cast(pl.Int64, strict=False)
     )

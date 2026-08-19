@@ -242,9 +242,7 @@ def render_clock_integrity_page(state: ClockIntegritySurfaceState) -> str:
         if assessment is not None
         else _BADGE_BY_VERDICT[TrustVerdict.IMMATURE]
     )
-    reason = (
-        escape(assessment.reason) if assessment is not None else "no session has been assessed"
-    )
+    reason = escape(assessment.reason) if assessment is not None else "no session has been assessed"
     worst_case = _milliseconds(assessment.worst_case_error_seconds if assessment else None)
     host_error = _milliseconds(assessment.host_error_seconds if assessment else None)
     feed_floor = _milliseconds(assessment.feed_floor_seconds if assessment else None)
@@ -252,9 +250,7 @@ def render_clock_integrity_page(state: ClockIntegritySurfaceState) -> str:
     latest_skew = f"{by_session[-1][0].fit.skew_ppm:+.2f} ppm" if by_session else "—"
     ordered_fits = [stored for stored, _ in by_session][-14:]
 
-    fit_rows = "".join(
-        _fit_row(stored, earlier) for stored, earlier in reversed(by_session)
-    )
+    fit_rows = "".join(_fit_row(stored, earlier) for stored, earlier in reversed(by_session))
     alert_rows = "".join(
         _alert_row(alert) for alert in reversed(_deduplicated_alerts(state.alerts))
     )

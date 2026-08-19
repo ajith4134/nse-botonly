@@ -77,9 +77,7 @@ def test_agreement_is_claimed_once_the_interval_is_narrower_than_the_rounding(
     any rounding floor, so agreement becomes claimable on the evidence rather than on a count
     somebody chose.
     """
-    ledger.record(
-        [observation(f"order-{index}", "1700", "1700") for index in range(20)]
-    )
+    ledger.record([observation(f"order-{index}", "1700", "1700") for index in range(20)])
     (reconciliation,) = ledger.reconcile()
     assert reconciliation.verdict is ReconciliationVerdict.AGREES
     assert reconciliation.mean_residual_paise == Decimal(0)
@@ -122,9 +120,7 @@ def test_a_rupee_rounding_broker_is_allowed_a_wider_residual(
     ledger: ChargeReconciliationLedger,
 ) -> None:
     """Half a rupee of residual is rounding when a broker rounds to the rupee, drift when not."""
-    ledger.record(
-        [observation(f"order-{index}", "1700", "1660") for index in range(12)]
-    )
+    ledger.record([observation(f"order-{index}", "1700", "1660") for index in range(12)])
     coarse = ledger.reconcile(
         rounding_by_component={
             ChargeComponent.SECURITIES_TRANSACTION_TAX: RoundingRule.NEAREST_RUPEE

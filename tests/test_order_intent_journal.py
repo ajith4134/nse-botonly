@@ -128,9 +128,7 @@ class TestACrashIsRecoverable:
         journal.record_submission_outcome(
             submission_id, SubmissionOutcome.UNKNOWN, at=_AT, detail="read timeout after 7s"
         )
-        journal.record_event(
-            intent.intent_id, LifecycleEvent.SUBMITTED, EventSource.LOCAL, at=_AT
-        )
+        journal.record_event(intent.intent_id, LifecycleEvent.SUBMITTED, EventSource.LOCAL, at=_AT)
         journal.record_event(
             intent.intent_id, LifecycleEvent.OUTCOME_UNKNOWN, EventSource.LOCAL, at=_AT
         )

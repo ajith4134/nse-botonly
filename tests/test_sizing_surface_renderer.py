@@ -182,7 +182,7 @@ def test_a_refused_order_lists_every_tier_that_refused_it() -> None:
 
 @pytest.mark.adversarial
 def test_the_absent_state_never_renders_a_size_of_zero() -> None:
-    """"The sizer answered zero" and "the sizer could not be run" are different facts."""
+    """ "The sizer answered zero" and "the sizer could not be run" are different facts."""
     page = render_sizing_page(
         absent_sizing_surface_state(
             measured_at=datetime(2026, 8, 13, 15, 20, tzinfo=IST),

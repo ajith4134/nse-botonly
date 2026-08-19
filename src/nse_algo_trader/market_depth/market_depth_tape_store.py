@@ -267,10 +267,33 @@ class MarketDepthTapeReader:
             root = root / f"session_date={session_date.isoformat()}"
         if not root.exists():
             raise DepthTapeStoreError(f"no tape at {root}")
-        # pyarrow ignores names beginning with '.' or '_' by default, which is exactly
-        # why in-flight parts are named with a leading dot: a read concurrent with a
-        # capture sees only completed files.
-        return arrow_dataset.dataset(root, format="parquet", partitioning="hive")
+        # The parts are enumerated explicitly rather than handing pyarrow the directory.
+        # Pointing it at the directory makes it treat EVERY file underneath as parquet,
+        # and the live recorder writes a `<hhmmss>_capture_liveness.json` sidecar into
+        # the session partition — a name that begins with a digit, so pyarrow's default
+        # '.'/'_' ignore-prefixes do not exclude it. On 2026-08-17 that killed the whole
+        # microstructure surface with `Parquet magic bytes not found in footer` for as
+        # long as a capture was running, i.e. exactly during the session the surface is
+        # for. Filtering by suffix is the fix; filtering by prefix would only work until
+        # the next sidecar is named something else.
+        #
+        # The concurrency guarantee is unchanged: in-flight parts are named with a
+        # leading dot, and `.parquet` glob results starting with '.' are dropped below,
+        # so a read concurrent with a capture still sees a consistent completed prefix
+        # rather than a torn row group.
+        parts = sorted(
+            part
+            for part in root.rglob("*.parquet")
+            if not part.name.startswith((".", "_")) and part.is_file()
+        )
+        if not parts:
+            raise DepthTapeStoreError(f"no completed parquet parts under {root}")
+        return arrow_dataset.dataset(
+            parts,
+            format="parquet",
+            partitioning="hive",
+            partition_base_dir=str(root),
+        )
 
     def session_dates(self) -> list[date]:
         return sorted(

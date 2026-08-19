@@ -136,8 +136,14 @@ def test_resizing_keeps_the_claim_and_changes_only_the_size() -> None:
     assert smaller.edge_basis is original.edge_basis
 
 
-def capture(mean_bps: str, *, bucket: str = "3", horizon: int = 5, events: int = 5_000,
-            standard_error: str = "5") -> ReversionCapture:
+def capture(
+    mean_bps: str,
+    *,
+    bucket: str = "3",
+    horizon: int = 5,
+    events: int = 5_000,
+    standard_error: str = "5",
+) -> ReversionCapture:
     """A calibration row shaped like the ones the archive actually produced."""
     return ReversionCapture(
         deviation_bucket=Decimal(bucket),
@@ -155,9 +161,7 @@ def capture(mean_bps: str, *, bucket: str = "3", horizon: int = 5, events: int =
 @pytest.mark.unit
 def test_the_mean_reversion_adapter_claims_the_measured_reversion_scaled_by_conviction() -> None:
     """The edge is now a fitted coefficient, not a restatement of how far price travelled."""
-    edge = edge_from_calibrated_reversion(
-        capture("24.68"), deviation=3.0, conviction=0.5
-    )
+    edge = edge_from_calibrated_reversion(capture("24.68"), deviation=3.0, conviction=0.5)
     assert edge == Decimal("12.34")
 
 
@@ -509,9 +513,7 @@ def test_a_wide_enough_range_does_not_block_the_trade(gate: PreTradeCostGate) ->
         range_width_bps=Decimal(400),
     )
     assert decision.preconditions is not None
-    assert PreconditionName.RANGE_WIDTH not in {
-        f.name for f in decision.preconditions.failures
-    }
+    assert PreconditionName.RANGE_WIDTH not in {f.name for f in decision.preconditions.failures}
 
 
 @pytest.mark.property
@@ -555,7 +557,8 @@ def test_each_leg_is_priced_against_its_own_ladder(gate: PreTradeCostGate) -> No
         asks=((140_100, 100_000),),
     )
     buying = gate.evaluate(
-        signal(expected_edge_bps=Decimal(100_000), proposed_quantity=5_000), lopsided,
+        signal(expected_edge_bps=Decimal(100_000), proposed_quantity=5_000),
+        lopsided,
         trade_date=TODAY,
     )
     selling = gate.evaluate(
@@ -569,7 +572,4 @@ def test_each_leg_is_priced_against_its_own_ladder(gate: PreTradeCostGate) -> No
     assert buying.hurdle.execution_point_bps == selling.hurdle.execution_point_bps
     # And it must not be twice either single side, which is what the old code computed.
     assert buying.expected_fill is not None
-    assert (
-        buying.hurdle.execution_point_bps
-        != buying.expected_fill.point_cost_bps * Decimal(2)
-    )
+    assert buying.hurdle.execution_point_bps != buying.expected_fill.point_cost_bps * Decimal(2)

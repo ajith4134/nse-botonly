@@ -474,7 +474,7 @@ def test_an_upside_down_cover_stop_is_refused_rather_than_sent() -> None:
 
 @pytest.mark.unit
 def test_a_closed_session_yields_an_after_market_order_and_says_it_was_the_only_one() -> None:
-    """"The only one" is a weaker claim than "the best one" and must not print the same way."""
+    """ "The only one" is a weaker claim than "the best one" and must not print the same way."""
     from nse_algo_trader.order_path.order_expression_selector import SelectionBasis
 
     choice = selector(session_open=False).select(

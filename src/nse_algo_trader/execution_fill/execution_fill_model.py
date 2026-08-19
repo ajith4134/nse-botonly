@@ -159,9 +159,7 @@ class ExecutionFillModel:
         self._maturity = maturity
         self._observation_count = observation_count
 
-    def price_fill(
-        self, snapshot: BookSnapshot, side: TradeLeg, quantity: int
-    ) -> ExpectedFill:
+    def price_fill(self, snapshot: BookSnapshot, side: TradeLeg, quantity: int) -> ExpectedFill:
         """The expected execution of `quantity` on `side`, against this book.
 
         Raises:

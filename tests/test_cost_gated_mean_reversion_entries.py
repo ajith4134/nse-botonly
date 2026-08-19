@@ -295,9 +295,7 @@ def test_an_immature_engine_is_skipped_with_a_reason_not_an_error(
 ) -> None:
     """A quiet day must be distinguishable from a broken one."""
     entry = evaluate_mean_reversion_entry(
-        IntradayMeanReversionEngine(
-            minimum_regime_concentration=0.2, minimum_regime_agreement=0.5
-        ),
+        IntradayMeanReversionEngine(minimum_regime_concentration=0.2, minimum_regime_agreement=0.5),
         gate,
         belief=ranging_belief(),
         snapshot=book(),

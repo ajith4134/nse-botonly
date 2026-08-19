@@ -101,9 +101,9 @@ def _intent(*, symbol: str = "RELIANCE", quantity: int = 100) -> TradingIntent:
     )
 
 
-def _expression(*, chosen_because: str = "spread is one tick, so a limit at the touch") -> (
-    OrderExpression
-):
+def _expression(
+    *, chosen_because: str = "spread is one tick, so a limit at the touch"
+) -> OrderExpression:
     return OrderExpression(
         variety=OrderVariety.REGULAR,
         product=OrderProduct.INTRADAY,
@@ -266,9 +266,7 @@ def test_an_inferred_fill_renders_with_the_weaker_badge_and_the_word_inferred(
     assert "badge-absent" in row
     assert 'class="inferred"' in row
 
-    observed_journal, _observed_path = _journal_with_one_unfilled_intent(
-        tmp_path / "observed"
-    )
+    observed_journal, _observed_path = _journal_with_one_unfilled_intent(tmp_path / "observed")
     try:
         (observed_order,) = observed_journal.orders_for_session(_SESSION)
     finally:
@@ -298,9 +296,7 @@ def test_the_evidence_an_inference_rests_on_is_printed_in_full(tmp_path: Path) -
         )
     )
     assert "no trade accounts for the difference" in page
-    assert "at the broker&#x27;s own average of 142400" in page or (
-        "own average of 142400" in page
-    )
+    assert "at the broker&#x27;s own average of 142400" in page or ("own average of 142400" in page)
 
 
 def test_an_unestablished_horizon_explains_itself_rather_than_rendering_blank(
@@ -334,9 +330,7 @@ def test_an_established_horizon_shows_its_value_and_what_it_rests_on(tmp_path: P
     try:
         for index in range(_MINIMUM_OBSERVATIONS_FOR_A_HORIZON):
             observed = _intent(symbol=f"HORIZON{index:02d}")
-            journal.record_intent(
-                observed, _expression(), OrderNamespace.SIMULATED, at=_DECIDED_AT
-            )
+            journal.record_intent(observed, _expression(), OrderNamespace.SIMULATED, at=_DECIDED_AT)
             journal.record_visibility_delay(
                 observed.intent_id,
                 submitted_at=_DECIDED_AT,
@@ -407,7 +401,7 @@ def test_the_verdict_counts_are_the_report_s_own_counts(tmp_path: Path) -> None:
 
 
 def test_no_reconciliation_reads_as_unchecked_rather_than_as_zero_disagreements() -> None:
-    """"I could not ask" and "there is nothing there" must not render alike."""
+    """ "I could not ask" and "there is nothing there" must not render alike."""
     section = _reconciliation_section(None)
     assert "No reconciliation report was supplied" in section
     assert "doubles positions" in section
@@ -499,9 +493,7 @@ def _journal_with_one_readable_and_one_unreadable_intent(tmp_path: Path) -> tupl
     readable = _intent(symbol="RELIANCE")
     unreadable = _intent(symbol="INFY")
     for intent in (readable, unreadable):
-        journal.record_intent(
-            intent, _expression(), OrderNamespace.SIMULATED, at=_DECIDED_AT
-        )
+        journal.record_intent(intent, _expression(), OrderNamespace.SIMULATED, at=_DECIDED_AT)
         journal.record_event(
             intent.intent_id, LifecycleEvent.SUBMITTED, EventSource.LOCAL, at=_DECIDED_AT
         )

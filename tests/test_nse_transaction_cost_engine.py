@@ -147,9 +147,7 @@ def test_option_round_trip_matches_the_hand_computed_contract_note(
     # Stamp duty: 0.003% of the BUY premium turnover only (29.25 paise exact), billed to
     # the whole paisa — 29, NOT the 0 that nearest-rupee rounding would have made of it.
     assert by_component[ChargeComponent.STAMP_DUTY] == Decimal(29)
-    stamp = next(
-        line for line in priced.lines if line.component is ChargeComponent.STAMP_DUTY
-    )
+    stamp = next(line for line in priced.lines if line.component is ChargeComponent.STAMP_DUTY)
     assert stamp.exact_paise == Decimal("29.25")
 
 
@@ -206,9 +204,7 @@ def test_stamp_duty_falls_on_the_buy_leg_and_stt_on_the_sell_leg(
     zerodha_engine: NseTransactionCostEngine,
 ) -> None:
     priced = zerodha_engine.price_round_trip(option_trade())
-    stamp_legs = {
-        line.leg for line in priced.lines if line.component is ChargeComponent.STAMP_DUTY
-    }
+    stamp_legs = {line.leg for line in priced.lines if line.component is ChargeComponent.STAMP_DUTY}
     tax_legs = {
         line.leg
         for line in priced.lines
@@ -414,6 +410,7 @@ def test_a_commodity_exercise_is_taxed_under_its_own_statute(
     zerodha_engine: NseTransactionCostEngine,
 ) -> None:
     """CTT, not STT — a different Act, a different rate, and two settlement modes."""
+
     def commodity_exercise(*, physical: bool) -> TradeSpecification:
         return TradeSpecification(
             segment=ChargeableSegment.COMMODITY_OPTIONS,
@@ -506,8 +503,7 @@ def test_currency_derivatives_carry_no_transaction_tax() -> None:
 )
 def test_solved_breakeven_nets_exactly_zero(
     exact_engine: NseTransactionCostEngine,
-    trade_builder: Callable[[],
-    TradeSpecification],
+    trade_builder: Callable[[], TradeSpecification],
 ) -> None:
     """Solve for the exit, then price that exit: the round trip must net exactly zero.
 
@@ -630,9 +626,7 @@ def test_the_minimum_viable_quantity_is_the_smallest_that_clears(
     )
     assert found is not None
     assert (
-        zerodha_engine.price_round_trip(
-            replace(template, quantity=found)
-        ).total_bps_of_turnover
+        zerodha_engine.price_round_trip(replace(template, quantity=found)).total_bps_of_turnover
         <= ceiling
     )
     if found > 100:

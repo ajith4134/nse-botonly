@@ -164,9 +164,7 @@ def test_an_instrument_with_no_gap_distribution_does_not_get_an_eternal_book() -
     order would fill against a snapshot hours old at a price with no counterparty behind it.
     """
     grid = _grid(6)
-    engine = ReplayEngineDouble(
-        snapshots=[_snapshot(grid[0])], threshold_millis=float("inf")
-    )
+    engine = ReplayEngineDouble(snapshots=[_snapshot(grid[0])], threshold_millis=float("inf"))
     source = SteppedRecordedBookSource(engine, grid)  # type: ignore[arg-type]
     assert source.book_at(TOKEN, grid[0]) is not None
     assert source.book_at(TOKEN, grid[1]) is None, "one step later the tape says nothing"

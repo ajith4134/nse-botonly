@@ -36,9 +36,7 @@ def main() -> int:
     output_directory = arguments.output_root / f"{stamp}{suffix}"
 
     try:
-        results = capture_dashboard(
-            arguments.base_url, output_directory, read_access_token()
-        )
+        results = capture_dashboard(arguments.base_url, output_directory, read_access_token())
     except (PlaywrightError, DashboardCaptureError) as failure:
         print(f"CAPTURE FAILED: {failure}", file=sys.stderr)
         return 1
@@ -49,8 +47,7 @@ def main() -> int:
     for result in results:
         mark = "ok " if result.is_credible else "BLANK"
         print(
-            f"{mark} {result.theme:5s} {result.route:10s} "
-            f"{result.byte_count:>8,}B  {result.path}"
+            f"{mark} {result.theme:5s} {result.route:10s} {result.byte_count:>8,}B  {result.path}"
         )
     for result in noisy:
         for message in result.console_errors:

@@ -36,6 +36,7 @@ from nse_algo_trader.sizing.session_risk_state_store import (
     SessionRiskState,
 )
 from nse_algo_trader.sizing.volatility_targeted_position_sizer import (
+    SizedPosition,
     SizingInputs,
     VolatilityTargetedPositionSizer,
 )
@@ -45,7 +46,9 @@ SESSION = date(2026, 8, 13)
 TEN_LAKH = Decimal("1000000")
 
 
-def _sized(*, deployable: Decimal = TEN_LAKH, price: str = "1000", lot_size: int = 1):
+def _sized(
+    *, deployable: Decimal = TEN_LAKH, price: str = "1000", lot_size: int = 1
+) -> SizedPosition:
     start = datetime(2026, 8, 3, 9, 15, tzinfo=IST)
     value = Decimal("1000")
     closes = []
@@ -96,7 +99,7 @@ def _state(
     )
 
 
-def _limits(**overrides) -> DerivedLimits:
+def _limits(**overrides: object) -> DerivedLimits:
     base = {
         "maximum_notional_rupees": TEN_LAKH,
         "maximum_leverage": Decimal(5),
@@ -264,7 +267,7 @@ def test_a_tripped_latch_refuses_before_any_per_order_opinion_is_formed() -> Non
 
 @pytest.mark.adversarial
 def test_every_breached_rule_is_reported_not_only_the_first() -> None:
-    """"Why was this refused" must not depend on evaluation order.
+    """ "Why was this refused" must not depend on evaluation order.
 
     Fixing only the rule that happened to be checked first leaves the operator surprised the second
     time, which is how a gate teaches people to distrust it.
@@ -506,8 +509,7 @@ def test_the_segment_margin_table_is_empty_on_purpose() -> None:
 def _closes(prices: list[str]) -> list[tuple[datetime, Decimal]]:
     start = datetime(2026, 8, 11, 9, 15, tzinfo=ZoneInfo("Asia/Kolkata"))
     return [
-        (start + timedelta(minutes=5 * index), Decimal(price))
-        for index, price in enumerate(prices)
+        (start + timedelta(minutes=5 * index), Decimal(price)) for index, price in enumerate(prices)
     ]
 
 
@@ -518,9 +520,7 @@ def test_the_collar_is_a_quantile_of_the_instruments_own_move() -> None:
     # Two-bar moves off this tape: 1/100, 2/100, 2/101, 2/102 — the largest is 0.02, and the
     # collar is that observation rather than anything interpolated between two of them.
     closes = _closes(["100", "100", "101", "102", "103", "104"])
-    collar = realised_move_quantile_from_closes(
-        closes, horizon_bars=2, quantile=Decimal("0.95")
-    )
+    collar = realised_move_quantile_from_closes(closes, horizon_bars=2, quantile=Decimal("0.95"))
     assert collar == Decimal("0.02")
     median = realised_move_quantile_from_closes(closes, horizon_bars=2, quantile=Decimal("0.5"))
     assert median < collar
@@ -556,7 +556,5 @@ def test_a_negative_mean_capture_can_never_reach_the_collar_again() -> None:
     from nse_algo_trader.sizing.pre_trade_risk_gate import realised_move_quantile_from_closes
 
     falling = _closes(["100", "99", "98", "97", "96", "95"])
-    collar = realised_move_quantile_from_closes(
-        falling, horizon_bars=2, quantile=Decimal("0.95")
-    )
+    collar = realised_move_quantile_from_closes(falling, horizon_bars=2, quantile=Decimal("0.95"))
     assert collar > 0, "a collar is a DISTANCE; a falling instrument still has one"

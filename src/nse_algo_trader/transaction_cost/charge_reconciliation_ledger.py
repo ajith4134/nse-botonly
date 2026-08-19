@@ -264,9 +264,7 @@ class ChargeReconciliationLedger:
         grouped: dict[tuple[str, str, str], list[tuple[str, Decimal]]] = {}
         for broker, segment, component, order_reference, modelled, actual in rows:
             residual = Decimal(modelled) - Decimal(actual)
-            grouped.setdefault((broker, segment, component), []).append(
-                (order_reference, residual)
-            )
+            grouped.setdefault((broker, segment, component), []).append((order_reference, residual))
         results = [
             self._reconciliation_for(key, entries, rounding)
             for key, entries in sorted(grouped.items())
@@ -295,9 +293,7 @@ class ChargeReconciliationLedger:
         return self.critical_value * max(dispersion, floor) / Decimal(count).sqrt()
 
     def _rounding_for(self, key: tuple[str, str, str]) -> RoundingRule:
-        return self._rounding_by_component.get(
-            ChargeComponent(key[2]), RoundingRule.NEAREST_PAISA
-        )
+        return self._rounding_by_component.get(ChargeComponent(key[2]), RoundingRule.NEAREST_PAISA)
 
     def _reconciliation_for(
         self,

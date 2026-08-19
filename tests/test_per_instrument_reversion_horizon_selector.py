@@ -124,9 +124,7 @@ def test_different_deviations_select_different_horizons(tmp_path: Path) -> None:
     shallow = selector.horizon_for(
         deviation_sigma=Decimal("1.2"), trading_symbol="SHALLOW", as_of=AS_OF
     )
-    deep = selector.horizon_for(
-        deviation_sigma=Decimal("3.1"), trading_symbol="DEEP", as_of=AS_OF
-    )
+    deep = selector.horizon_for(deviation_sigma=Decimal("3.1"), trading_symbol="DEEP", as_of=AS_OF)
     assert shallow.horizon_bars == 10
     assert deep.horizon_bars == 3
     assert shallow.horizon_bars != deep.horizon_bars

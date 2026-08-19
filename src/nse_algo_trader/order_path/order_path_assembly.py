@@ -53,9 +53,7 @@ class LatchBackedControlGate:
     latch_store: TradingControlLatchStore
 
     def permits_submission(self, namespace: OrderNamespace) -> tuple[bool, str]:
-        intended_mode = (
-            TradingMode.LIVE if namespace is OrderNamespace.LIVE else TradingMode.PAPER
-        )
+        intended_mode = TradingMode.LIVE if namespace is OrderNamespace.LIVE else TradingMode.PAPER
         refusal = self.latch_store.refusal_for_submission(intended_mode=intended_mode)
         if refusal is None:
             return True, f"trading control permits {intended_mode.value} submission"

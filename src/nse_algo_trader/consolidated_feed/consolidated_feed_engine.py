@@ -268,9 +268,7 @@ class ConsolidatedFeedEngine:
 
     # -- alignment -----------------------------------------------------------------------
 
-    def align(
-        self, observations: Sequence[BrokerQuoteObservation]
-    ) -> list[AlignedQuoteGroup]:
+    def align(self, observations: Sequence[BrokerQuoteObservation]) -> list[AlignedQuoteGroup]:
         """Group quotes by instrument and by the window they can share.
 
         A failed poll never joins a group's usable observations, but its broker is named in
@@ -523,9 +521,9 @@ class ConsolidatedFeedEngine:
                 "(three-cornered hat needs three independent feeds)"
             )
         total = sum(weights) or 1.0
-        consensus = sum(
-            weight * price for weight, price in zip(weights, prices, strict=True)
-        ) / total
+        consensus = (
+            sum(weight * price for weight, price in zip(weights, prices, strict=True)) / total
+        )
         return consensus, note
 
     def broker_noise_variances(self) -> dict[str, float | None]:
@@ -607,9 +605,7 @@ class ConsolidatedFeedEngine:
         crossed = best_bid is not None and best_ask is not None and best_bid > best_ask
         return best_bid, best_ask, crossed
 
-    def _dispersion_tolerance(
-        self, observations: Sequence[BrokerQuoteObservation]
-    ) -> float | None:
+    def _dispersion_tolerance(self, observations: Sequence[BrokerQuoteObservation]) -> float | None:
         """How far apart quotes may be before it stops being explicable, or `None`.
 
         Two sources of scale, in order of preference:
@@ -741,9 +737,7 @@ class ConsolidatedFeedEngine:
                 )
 
         for observation in usable:
-            others = [
-                price for broker, price in prices.items() if broker != observation.broker
-            ]
+            others = [price for broker, price in prices.items() if broker != observation.broker]
             deviation = (
                 prices[observation.broker] - float(statistics.fmean(others)) if others else None
             )

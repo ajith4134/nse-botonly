@@ -657,9 +657,7 @@ def test_the_seeded_store_refuses_the_eras_it_has_no_source_for() -> None:
     with pytest.raises(RuleCoverageError):
         store.resolve(RuleFamily.EXCHANGE_TRANSACTION_CHARGE, date(2019, 6, 1), scope=segment_scope)
     with pytest.raises(RuleCoverageError):
-        store.resolve(
-            RuleFamily.STAMP_DUTY, date(2018, 6, 1), scope=RuleScope(segment="NSE-CNC")
-        )
+        store.resolve(RuleFamily.STAMP_DUTY, date(2018, 6, 1), scope=RuleScope(segment="NSE-CNC"))
     with pytest.raises(RuleCoverageError):
         store.resolve(RuleFamily.PER_STOCK_PRICE_BAND, date(2024, 6, 1))
 

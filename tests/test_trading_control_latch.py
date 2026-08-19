@@ -230,9 +230,11 @@ class TestTheLatchIsDurable:
         self, latch_path: Path, arming_key_path: Path
     ) -> None:
         _arm_live_and_release(TradingControlLatchStore(database_path=latch_path), arming_key_path)
-        assert TradingControlLatchStore(
-            database_path=latch_path
-        ).read_disposition().is_submission_permitted
+        assert (
+            TradingControlLatchStore(database_path=latch_path)
+            .read_disposition()
+            .is_submission_permitted
+        )
 
     def test_relatching_with_the_same_reason_does_not_grow_the_log(self, latch_path: Path) -> None:
         store = TradingControlLatchStore(database_path=latch_path)
@@ -283,9 +285,7 @@ class TestTheLatchIsDurable:
 
 @pytest.mark.adversarial
 class TestADamagedStoreReadsSafeRatherThanRaising:
-    def test_a_deleted_database_reads_safe(
-        self, latch_path: Path, arming_key_path: Path
-    ) -> None:
+    def test_a_deleted_database_reads_safe(self, latch_path: Path, arming_key_path: Path) -> None:
         store = TradingControlLatchStore(database_path=latch_path)
         _arm_live_and_release(store, arming_key_path)
         latch_path.unlink()
@@ -301,9 +301,7 @@ class TestADamagedStoreReadsSafeRatherThanRaising:
         assert disposition.trading_mode is TradingMode.PAPER
         assert disposition.evidence is LatchEvidence.UNREADABLE_STORE_SAFE_DEFAULT
 
-    def test_a_truncated_database_reads_safe(
-        self, latch_path: Path, arming_key_path: Path
-    ) -> None:
+    def test_a_truncated_database_reads_safe(self, latch_path: Path, arming_key_path: Path) -> None:
         store = TradingControlLatchStore(database_path=latch_path)
         _arm_live_and_release(store, arming_key_path)
         with latch_path.open("r+b") as handle:

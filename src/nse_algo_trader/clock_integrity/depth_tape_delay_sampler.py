@@ -75,17 +75,19 @@ def sample_session_delays(
     part_paths: Sequence[Path] | None = None,
 ) -> SessionDelaySample:
     """Every packet of one session, reduced to one observation per exchange-second."""
-    paths = list(part_paths) if part_paths is not None else session_part_paths(
-        session_date, tape_root=tape_root
+    paths = (
+        list(part_paths)
+        if part_paths is not None
+        else session_part_paths(session_date, tape_root=tape_root)
     )
     if not paths:
         raise DepthTapeUnavailableError(
             f"no depth-tape parts for {session_date.isoformat()} under {tape_root} — the "
             f"recorder not running is a different finding from a clock that did not drift"
         )
-    table = pyarrow_dataset.dataset(
-        [str(path) for path in paths], format="parquet"
-    ).to_table(columns=["instrument_token", "exchange_time", "receipt_time"])
+    table = pyarrow_dataset.dataset([str(path) for path in paths], format="parquet").to_table(
+        columns=["instrument_token", "exchange_time", "receipt_time"]
+    )
     exchange_micros = (
         table.column("exchange_time").to_numpy(zero_copy_only=False).astype("datetime64[us]")
     ).astype(np.int64)
@@ -142,9 +144,7 @@ def _minimum_lag_per_exchange_second(
     return tuple(
         ExchangeFeedDelayObservation(
             instrument_token=int(tokens[index]),
-            exchange_second=datetime.fromtimestamp(
-                int(exchange_micros[index]) / 1_000_000, tz=UTC
-            ),
+            exchange_second=datetime.fromtimestamp(int(exchange_micros[index]) / 1_000_000, tz=UTC),
             received_at=datetime.fromtimestamp(
                 int(exchange_micros[index] + lag_micros[index]) / 1_000_000, tz=UTC
             ),

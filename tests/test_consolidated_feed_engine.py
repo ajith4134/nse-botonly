@@ -101,9 +101,7 @@ def test_a_failed_poll_is_carried_as_a_named_exclusion_not_dropped() -> None:
 
 
 def test_alignment_keeps_instruments_apart() -> None:
-    groups = _engine().align(
-        [_observation("kite"), _observation("angel_one", symbol="TCS")]
-    )
+    groups = _engine().align([_observation("kite"), _observation("angel_one", symbol="TCS")])
     assert {group.trading_symbol for group in groups} == {"RELIANCE", "TCS"}
 
 
@@ -121,9 +119,7 @@ def test_two_agreeing_brokers_resolve_to_their_shared_price() -> None:
 
 def test_one_usable_broker_is_single_source_never_a_consensus_of_one() -> None:
     engine = _engine()
-    group = engine.align(
-        [_observation("kite"), _observation("angel_one", failure="down")]
-    )[0]
+    group = engine.align([_observation("kite"), _observation("angel_one", failure="down")])[0]
     consolidated = engine.consolidate(group)
     assert consolidated.resolution is FeedResolution.SINGLE_SOURCE
     assert consolidated.contributing_brokers == ("kite",)
@@ -217,10 +213,22 @@ def test_liquidity_moves_the_consensus_towards_the_deeper_quote() -> None:
     engine = _engine()
     group = engine.align(
         [
-            _observation("kite", bid_paise=131_380, ask_paise=131_400, bid_quantity=10_000,
-                         ask_quantity=10_000, last_paise=131_390),
-            _observation("angel_one", bid_paise=131_400, ask_paise=131_420, bid_quantity=10,
-                         ask_quantity=10, last_paise=131_410),
+            _observation(
+                "kite",
+                bid_paise=131_380,
+                ask_paise=131_400,
+                bid_quantity=10_000,
+                ask_quantity=10_000,
+                last_paise=131_390,
+            ),
+            _observation(
+                "angel_one",
+                bid_paise=131_400,
+                ask_paise=131_420,
+                bid_quantity=10,
+                ask_quantity=10,
+                last_paise=131_410,
+            ),
         ]
     )[0]
     consolidated = engine.consolidate(group)
@@ -317,9 +325,7 @@ def test_two_brokers_cannot_identify_which_is_noisy_and_the_engine_says_so() -> 
         )[0]
         engine.learn(group, session_date=SESSION_DAY)
     assert all(value is None for value in engine.broker_noise_variances().values())
-    final = engine.consolidate(
-        engine.align([_observation("kite"), _observation("angel_one")])[0]
-    )
+    final = engine.consolidate(engine.align([_observation("kite"), _observation("angel_one")])[0])
     assert "not identifiable" in final.reason
 
 
@@ -327,9 +333,9 @@ def test_availability_counts_failures_because_a_missing_quote_is_information() -
     store = BrokerReliabilityStore(_temporary_database())
     engine = ConsolidatedFeedEngine(store)
     for _ in range(10):
-        group = engine.align(
-            [_observation("kite"), _observation("angel_one", failure="timeout")]
-        )[0]
+        group = engine.align([_observation("kite"), _observation("angel_one", failure="timeout")])[
+            0
+        ]
         engine.learn(group, session_date=SESSION_DAY)
     assert store.reliability("angel_one").failure_rate == pytest.approx(1.0)
     assert store.reliability("kite").failure_rate == pytest.approx(0.0)
@@ -450,11 +456,7 @@ def test_property_the_consensus_beats_the_brokers_it_is_built_from(
 
 
 @settings(max_examples=20, deadline=None, suppress_health_check=[HealthCheck.too_slow])
-@given(
-    prices=st.lists(
-        st.integers(min_value=100_000, max_value=100_100), min_size=2, max_size=5
-    )
-)
+@given(prices=st.lists(st.integers(min_value=100_000, max_value=100_100), min_size=2, max_size=5))
 def test_property_the_consensus_never_sits_outside_the_quotes_it_fused(
     prices: list[int],
 ) -> None:
@@ -792,9 +794,7 @@ def test_a_self_crossed_quote_is_a_price_band_artefact_not_a_book() -> None:
     dynamic price band, surfacing as top-of-book when the real touch thins out near the
     close. No threshold is needed to reject them: a bid above its own ask is impossible.
     """
-    band_artefact = _observation(
-        "kite", bid_paise=136_030, ask_paise=131_410, last_paise=132_050
-    )
+    band_artefact = _observation("kite", bid_paise=136_030, ask_paise=131_410, last_paise=132_050)
     assert not band_artefact.has_valid_book
     assert band_artefact.midpoint_paise is None
     assert band_artefact.is_usable  # its LAST PRICE is still a real trade

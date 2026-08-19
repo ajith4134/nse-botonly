@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from decimal import Decimal
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -101,8 +102,7 @@ def test_recent_moves_weigh_more_than_old_ones() -> None:
     wild_then_calm = _closes(["1000", "1100"] * 3 + ["1000"] * 40)
     estimator = RealisedVolatilityEstimator()
     assert (
-        estimator.estimate(calm_then_wild).sigma_bps
-        > estimator.estimate(wild_then_calm).sigma_bps
+        estimator.estimate(calm_then_wild).sigma_bps > estimator.estimate(wild_then_calm).sigma_bps
     )
 
 
@@ -188,7 +188,13 @@ def test_a_single_enormous_move_does_not_dominate_the_estimate_without_warning()
 @pytest.mark.adversarial
 def test_a_float_close_is_refused_because_prices_are_decimal_here() -> None:
     series = _steady_series(40)
-    with_float = [*series[:10], (series[10][0], 1000.5), *series[11:]]  # type: ignore[list-item]
+    # A float where a Decimal belongs is exactly what this test injects, so the sequence is typed
+    # as what a careless caller would actually hand over rather than as what the signature wants.
+    with_float: list[tuple[datetime, Any]] = [
+        *series[:10],
+        (series[10][0], 1000.5),
+        *series[11:],
+    ]
     with pytest.raises(VolatilityEstimationError):
         RealisedVolatilityEstimator().estimate(with_float)
 

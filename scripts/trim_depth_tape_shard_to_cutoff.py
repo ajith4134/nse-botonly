@@ -69,9 +69,7 @@ def main() -> int:
     parser.add_argument("--quarantine-root", type=Path, required=True)
     arguments = parser.parse_args()
 
-    cutoff = datetime.fromisoformat(arguments.cutoff_ist).replace(
-        tzinfo=INDIA_MARKET_TIMEZONE
-    )
+    cutoff = datetime.fromisoformat(arguments.cutoff_ist).replace(tzinfo=INDIA_MARKET_TIMEZONE)
     print(f"trimming {arguments.shard_directory} to rows before {cutoff:%Y-%m-%d %H:%M:%S %Z}")
     dropped = trim_shard(arguments.shard_directory, cutoff, arguments.quarantine_root)
     print(f"dropped {dropped:,} rows; originals quarantined in {arguments.quarantine_root}")

@@ -429,8 +429,9 @@ def derive_heartbeat_staleness_threshold(
     # a zero MAD (a perfectly regular beat) would otherwise derive a zero-width tolerance and halt
     # on the first microsecond of scheduling noise.
     dispersion_floor = centre / (sample_size + 1)
-    dispersion = max(median_absolute_deviation * _MEDIAN_ABSOLUTE_DEVIATION_TO_SIGMA,
-                     dispersion_floor)
+    dispersion = max(
+        median_absolute_deviation * _MEDIAN_ABSOLUTE_DEVIATION_TO_SIGMA, dispersion_floor
+    )
     false_halt_probability_bound = 1.0 / (sample_size + 1)
     cantelli_multiplier = math.sqrt(
         (1.0 - false_halt_probability_bound) / false_halt_probability_bound
@@ -540,7 +541,8 @@ class TradingHaltWatchdog:
                 ),
             )
         verdict = (
-            HeartbeatVerdict.FRESH if age <= tolerance.staleness_tolerance
+            HeartbeatVerdict.FRESH
+            if age <= tolerance.staleness_tolerance
             else HeartbeatVerdict.STALE
         )
         return HeartbeatFreshnessAssessment(

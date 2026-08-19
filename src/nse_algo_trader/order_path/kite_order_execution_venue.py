@@ -96,9 +96,7 @@ EXCHANGE_ALGO_IDENTIFIER_ENV_VAR = "NSE_EXCHANGE_ALGO_IDENTIFIER"
 # `docs/research/222` §6: `market_protection` must be non-zero for MARKET and SL-M; `-1` asks for
 # the broker's own default rather than asserting a percentage this system has no basis to choose.
 BROKER_DEFAULT_MARKET_PROTECTION = -1
-_ORDER_TYPES_REQUIRING_MARKET_PROTECTION = frozenset(
-    {OrderType.MARKET, OrderType.STOP_LOSS_MARKET}
-)
+_ORDER_TYPES_REQUIRING_MARKET_PROTECTION = frozenset({OrderType.MARKET, OrderType.STOP_LOSS_MARKET})
 
 # `docs/research/222` §4. Counted locally as well as by the broker: a modification refused by Kite
 # for crossing the cap comes back as an opaque rejection on an order that is still live, whereas a
@@ -689,9 +687,7 @@ class KiteOrderExecutionVenue:
 
     # --- the one place the SDK's exceptions are caught -----------------------------------------
 
-    def _call_kite(
-        self, attempted: str, call: Callable[[], _ReturnValue]
-    ) -> _ReturnValue:
+    def _call_kite(self, attempted: str, call: Callable[[], _ReturnValue]) -> _ReturnValue:
         try:
             return call()
         # Deliberately broad: EVERY failure of an SDK call has to end up as exactly one of the

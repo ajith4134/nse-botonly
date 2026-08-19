@@ -284,6 +284,54 @@ def test_in_flight_parts_are_invisible_to_a_concurrent_reader(tmp_path: Path) ->
 
 
 @pytest.mark.adversarial
+def test_a_non_parquet_sidecar_in_the_session_partition_does_not_break_the_reader(
+    tmp_path: Path,
+) -> None:
+    """The live recorder writes JSON next to the parts, and the reader must ignore it.
+
+    Regression for 2026-08-17: `record_live_depth_session.py` drops a
+    `<hhmmss>_capture_liveness.json` into `session_date=.../`. The reader handed pyarrow
+    the directory, pyarrow treated every file under it as parquet, and the whole
+    `/microstructure` surface returned HTTP 500 with `Parquet magic bytes not found in
+    footer` for as long as a capture was running — that is, for the entire session the
+    surface exists to show. The sidecar begins with a digit, so pyarrow's default
+    '.'/'_' ignore-prefixes did not exclude it.
+    """
+    with _store(tmp_path) as store:
+        store.append(_packet(sequence=1), IntegrityFlag.NONE)
+    session_directory = tmp_path / f"session_date={SESSION_DATE.isoformat()}"
+    (session_directory / "093515_capture_liveness.json").write_text(
+        '{"capture_run": "093515", "instruments": 200}'
+    )
+    (session_directory / "session_report_2026-08-17_093515.json").write_text("{}")
+
+    table = MarketDepthTapeReader(tmp_path).read_instrument_window(
+        738561, BASE_TIME, BASE_TIME + timedelta(hours=1), SESSION_DATE
+    )
+
+    assert table.num_rows == 1
+
+
+def test_a_session_holding_only_sidecars_is_named_as_empty_not_as_corrupt(
+    tmp_path: Path,
+) -> None:
+    """A capture that wrote its liveness file but no part yet is empty, not broken.
+
+    This is the first seconds of every session. The error must say so, because
+    "no completed parquet parts" sends the reader to the capture and "magic bytes not
+    found in footer" sends them to the disk.
+    """
+    session_directory = tmp_path / f"session_date={SESSION_DATE.isoformat()}"
+    session_directory.mkdir(parents=True)
+    (session_directory / "093515_capture_liveness.json").write_text("{}")
+
+    with pytest.raises(DepthTapeStoreError, match="no completed parquet parts"):
+        MarketDepthTapeReader(tmp_path).read_instrument_window(
+            738561, BASE_TIME, BASE_TIME + timedelta(hours=1), SESSION_DATE
+        )
+
+
+@pytest.mark.adversarial
 def test_a_failed_flush_leaves_no_partial_part_behind(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

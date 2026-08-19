@@ -315,7 +315,7 @@ def _session_state(state: SizingSurfaceState) -> str:
 <td class="figure">{escape(_rupees(session.realised_pnl_rupees))}</td></tr>
 <tr><td>drawdown from peak</td><td class="figure">
 {escape(_rupees(session.drawdown_rupees))}
-({(session.drawdown_fraction * 100).quantize(Decimal('0.01'))}%)</td></tr>
+({(session.drawdown_fraction * 100).quantize(Decimal("0.01"))}%)</td></tr>
 <tr><td>open exposure</td>
 <td class="figure">{escape(_rupees(session.open_exposure_rupees))}</td></tr>
 <tr><td>orders in rate window</td>

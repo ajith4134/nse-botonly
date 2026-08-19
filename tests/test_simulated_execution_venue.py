@@ -211,9 +211,7 @@ def test_a_buy_never_fills_better_than_the_touch() -> None:
     """The property that makes the record admissible: no order may beat the best visible price."""
     venue = SimulatedExecutionVenue()
     for quantity in (1, 50, 100, 101, 500, 1_500, 9_999):
-        fill = venue.fill_market_order(
-            book=_FIVE_DEEP, side=PaperOrderSide.BUY, quantity=quantity
-        )
+        fill = venue.fill_market_order(book=_FIVE_DEEP, side=PaperOrderSide.BUY, quantity=quantity)
         assert fill.average_price_paise is not None
         assert fill.average_price_paise >= Decimal(100_100), quantity
 
@@ -222,9 +220,7 @@ def test_a_buy_never_fills_better_than_the_touch() -> None:
 def test_a_sell_never_fills_better_than_its_touch_either() -> None:
     venue = SimulatedExecutionVenue()
     for quantity in (1, 50, 100, 101, 500, 1_500, 9_999):
-        fill = venue.fill_market_order(
-            book=_FIVE_DEEP, side=PaperOrderSide.SELL, quantity=quantity
-        )
+        fill = venue.fill_market_order(book=_FIVE_DEEP, side=PaperOrderSide.SELL, quantity=quantity)
         assert fill.average_price_paise is not None
         assert fill.average_price_paise <= Decimal(99_900), quantity
 
@@ -236,11 +232,7 @@ def test_filled_quantity_never_exceeds_the_visible_depth() -> None:
     venue = SimulatedExecutionVenue()
     visible = sum(level.quantity for level in _FIVE_DEEP.asks)
     for quantity in (1, 250, 1_500, 100_000):
-        fill = venue.fill_market_order(
-            book=_FIVE_DEEP, side=PaperOrderSide.BUY, quantity=quantity
-        )
+        fill = venue.fill_market_order(book=_FIVE_DEEP, side=PaperOrderSide.BUY, quantity=quantity)
         assert fill.filled_quantity <= visible
         assert fill.filled_quantity <= quantity
-        assert (
-            sum(level.quantity for level in fill.levels_consumed) == fill.filled_quantity
-        )
+        assert sum(level.quantity for level in fill.levels_consumed) == fill.filled_quantity

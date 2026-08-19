@@ -312,7 +312,7 @@ def test_a_cell_that_continues_rather_than_reverts_is_shown_not_suppressed() -> 
 
 @pytest.mark.unit
 def test_a_cell_whose_lower_bound_spans_zero_never_reads_as_a_confirmed_edge() -> None:
-    """"Cannot tell" and "can tell" must not render alike.
+    """ "Cannot tell" and "can tell" must not render alike.
 
     Asserted on the HEADLINE as well as the row, because the headline is what a reader acts on:
     the largest mean in the real fit belongs to a cell whose interval spans zero, and promoting

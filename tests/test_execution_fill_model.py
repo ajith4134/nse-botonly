@@ -109,9 +109,7 @@ def test_a_walk_inside_the_touch_costs_exactly_the_half_spread() -> None:
 def test_a_walk_across_levels_is_the_quantity_weighted_average_nse_defines() -> None:
     """NSE's own formula: sum(quantity x price) / total quantity, against the mid."""
     walk = walk_order_book(book(), TradeLeg.BUY, 300)
-    expected = (
-        Decimal(100 * 10_100) + Decimal(200 * 10_200)
-    ) / Decimal(300)
+    expected = (Decimal(100 * 10_100) + Decimal(200 * 10_200)) / Decimal(300)
     assert walk.average_fill_price_paise == expected
     assert walk.filled_quantity == 300
 
@@ -243,9 +241,7 @@ def test_a_size_imbalanced_book_skews_the_micro_price_away_from_the_mid() -> Non
     balanced = observe_quoted_spread(book())
     assert balanced.micro_price_skew_bps == 0
 
-    bid_heavy = observe_quoted_spread(
-        book(bids=((9_900, 1_000),), asks=((10_100, 10),))
-    )
+    bid_heavy = observe_quoted_spread(book(bids=((9_900, 1_000),), asks=((10_100, 10),)))
     assert bid_heavy.micro_price_skew_bps is not None
     assert bid_heavy.micro_price_skew_bps > 0
 
@@ -309,8 +305,7 @@ def test_deciles_are_derived_from_the_distribution_not_from_rupee_thresholds() -
 @pytest.mark.property
 def test_every_instrument_lands_in_exactly_one_bucket() -> None:
     universe = [
-        liquidity_observation(token, turnover_paise=token * 7 % 997 + 1)
-        for token in range(1, 61)
+        liquidity_observation(token, turnover_paise=token * 7 % 997 + 1) for token in range(1, 61)
     ]
     bucketing = bucket_universe_by_liquidity(universe, observed_on=A_SESSION)
     assigned = [bucketing.bucket_for(observation.instrument_token) for observation in universe]
@@ -418,9 +413,7 @@ def test_a_smaller_order_than_the_anchor_costs_less_than_the_anchor() -> None:
 @pytest.mark.adversarial
 def test_a_book_with_no_whole_book_quantity_refuses_to_state_participation() -> None:
     """Participation against the visible ladder alone overstates it by ~300x."""
-    anchor = walk_order_book(
-        book(total_sell_quantity=0), TradeLeg.BUY, 700
-    )
+    anchor = walk_order_book(book(total_sell_quantity=0), TradeLeg.BUY, 700)
     with pytest.raises(MarketImpactError, match="whole-book"):
         estimate_impact_from_walk(anchor, 7_000)
 
@@ -437,9 +430,7 @@ def test_impact_of_a_non_positive_quantity_is_refused(quantity: int) -> None:
 def test_an_inverted_exponent_range_is_refused() -> None:
     anchor = walk_order_book(book(), TradeLeg.BUY, 700)
     with pytest.raises(MarketImpactError, match="exponent range"):
-        estimate_impact_from_walk(
-            anchor, 7_000, exponent_range=(Decimal("0.7"), Decimal("0.4"))
-        )
+        estimate_impact_from_walk(anchor, 7_000, exponent_range=(Decimal("0.7"), Decimal("0.4")))
 
 
 @pytest.mark.unit
@@ -601,9 +592,7 @@ def test_a_spread_profile_round_trips_and_is_point_in_time(tmp_path: Path) -> No
     """A replay of an old session must not pick up a spread measured later."""
     store = ExecutionFillParameterStore(tmp_path / "fill.sqlite3")
     early = build_instrument_spread_profile(7, [book()])
-    late = build_instrument_spread_profile(
-        7, [book(bids=((9_000, 100),), asks=((11_000, 100),))]
-    )
+    late = build_instrument_spread_profile(7, [book(bids=((9_000, 100),), asks=((11_000, 100),))])
     store.record_spread_profiles([early], session_date=date(2026, 8, 11))
     store.record_spread_profiles([late], session_date=date(2026, 8, 12))
 

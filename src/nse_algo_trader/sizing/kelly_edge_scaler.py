@@ -142,9 +142,7 @@ def shrinkage_weight(*, edge_bps: Decimal, standard_error_bps: Decimal) -> Decim
 def _finite_decimal(value: Decimal, description: str) -> Decimal:
     """A real, finite `Decimal`. A float here would put binary rounding into a position size."""
     if not isinstance(value, Decimal):
-        raise KellyScalingError(
-            f"{description} must be a Decimal, got {type(value).__name__}"
-        )
+        raise KellyScalingError(f"{description} must be a Decimal, got {type(value).__name__}")
     if not value.is_finite():
         raise KellyScalingError(f"{description} must be finite, and {value} is not")
     return value

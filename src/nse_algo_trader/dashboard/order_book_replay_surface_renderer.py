@@ -42,6 +42,10 @@ from __future__ import annotations
 
 from html import escape
 
+from nse_algo_trader.historical_bars.bar_price_basis_provenance import (
+    SessionPriceBasisCoverage,
+)
+from nse_algo_trader.market_depth.bar_tape_join_verdict_store import SessionVerificationCoverage
 from nse_algo_trader.market_depth.order_book_snapshot_replay_engine import (
     InstrumentCoverageReport,
     TradeSideRule,
@@ -229,7 +233,205 @@ footer{color:var(--text-muted);font-size:12px;margin-top:24px;max-width:70ch;}
 """
 
 
-def render_order_book_replay_page(report: InstrumentCoverageReport) -> str:
+def _join_verification_panel(coverage: SessionVerificationCoverage | None) -> str:
+    """`M14`'s verdicts (`R.08`) — whether the bars and the tape describe the same market.
+
+    An unrun verification renders as UNRUN, never as clean. The two are different facts and a
+    panel that showed a reassuring zero for both would be a hand-authored status in everything
+    but name.
+    """
+    if coverage is None:
+        return (
+            '<div class="panel"><h2>Bar / depth-tape join</h2>'
+            '<p class="empty">NOT VERIFIED for this session. The signal comes from the bar '
+            "store and the fill comes from the depth tape, and nothing has yet measured that "
+            "they describe the same market. Run "
+            "<code>scripts/verify_bar_tape_join_on_real_data.py</code>. This is not a pass.</p>"
+            "</div>"
+        )
+    verifiable = coverage.verifiable_bar_fraction
+    tiles = "".join(
+        (
+            _stat_tile(
+                f"{coverage.instruments_verified:,}",
+                "verified",
+                "bars and tape agree, tested against the session",
+            ),
+            _stat_tile(
+                f"{coverage.instruments_refuted:,}",
+                "refuted",
+                "refused a replayed book — no paper fill",
+            ),
+            _stat_tile(
+                f"{coverage.instruments_with_price_basis_divergence:,}",
+                "wrong price basis",
+                "bar series off by a constant factor (M26)",
+            ),
+            _stat_tile(
+                f"{coverage.instruments_unverifiable:,}",
+                "unverifiable",
+                "too little overlap to have decided either way",
+            ),
+            _stat_tile(
+                "—" if verifiable is None else f"{verifiable:.1%}",
+                "bars comparable",
+                f"{coverage.comparisons_verifiable:,} of {coverage.bars_total:,}",
+            ),
+            _stat_tile(
+                "—"
+                if coverage.mean_null_intra_instrument_correlation is None
+                else f"{coverage.mean_null_intra_instrument_correlation:.3f}",
+                "intra-instrument rho",
+                "0 = the old binomial null was adequate; near 1 falsifies the model",
+            ),
+        )
+    )
+    # `B6`'s lesson has to reach the SURFACE, not only the store. A session whose rows were written
+    # under two staleness quantiles or two nulls holds two incomparable measurements, and rendering
+    # their sum as one verification is how the mixed store went unnoticed for a day.
+    # `:.0%` rendered a claim of 0.004 as "0%" (`L1`). `:g` on the percentage keeps small claims
+    # legible without inventing precision on ordinary ones.
+    claims = ", ".join(
+        f"{value * 100:g}%" for value in coverage.minimum_detectable_disagreement_rates
+    )
+    inconsistency = (
+        ""
+        if coverage.is_internally_consistent
+        else (
+            '<p class="empty">NOT ONE VERIFICATION. This session\'s rows were written under '
+            f"{len(coverage.staleness_quantiles) or 'no recorded'} staleness quantile(s) "
+            f"({', '.join(f'{value:g}' for value in coverage.staleness_quantiles) or 'unrecorded'}"
+            f"; {coverage.rows_without_a_staleness_quantile:,} rows unrecorded) and "
+            f"{', '.join(coverage.null_models) or 'no recorded'} null model(s) "
+            f"({coverage.rows_without_a_null_model:,} rows unrecorded) at "
+            f"{', '.join(f'{value:g}' for value in coverage.significances) or 'no recorded'} "
+            f"significance(s) and "
+            f"{claims or 'no recorded'} detectable-rate claim(s) "
+            f"({coverage.rows_without_a_minimum_detectable_rate:,} rows unrecorded). "
+            f"The counts below add two "
+            "incomparable measurements together. Re-run the verification for this session before "
+            "reading them.</p>"
+        )
+    )
+    nulls_named = ", ".join(coverage.null_models) or "unrecorded"
+    # `A.124`: a verified verdict is only meaningful alongside the CLAIM it rests on, so the panel
+    # states it rather than leaving a reader to assume "verified" means the same thing every run.
+    # `M5`: when SOME rows predate the claim, saying "verified means 50%" over all of them is a
+    # statement about rows that never recorded one. The sentence has to qualify itself.
+    demand = coverage.minimum_comparisons_to_verify
+    if not claims:
+        claim_sentence = (
+            "These rows predate A.124 and do not record what their verified verdicts claimed."
+        )
+    else:
+        cost = f", which took {demand} comparisons" if demand is not None else ""
+        unrecorded = (
+            f" {coverage.rows_without_a_minimum_detectable_rate:,} rows predate A.124 and are NOT "
+            "covered by that claim."
+            if coverage.rows_without_a_minimum_detectable_rate
+            else ""
+        )
+        claim_sentence = (
+            "Verified means this session held enough evidence to have CAUGHT an instrument "
+            f"disagreeing on {claims} of its comparable bars{cost}; below that the verdict is "
+            f"unverifiable.{unrecorded}"
+        )
+    return (
+        '<div class="panel"><h2>Bar / depth-tape join</h2>'
+        f'<p class="sub">Tested at significance {coverage.significance:g} against a '
+        f"{nulls_named} null built from every other instrument in the session. "
+        f"{escape(claim_sentence)}</p>"
+        f"{inconsistency}"
+        f'<div class="tiles">{tiles}</div>'
+        "<table><thead><tr><th>Verdict</th><th>Instruments</th></tr></thead><tbody>"
+        f"<tr><td>Join verified</td><td>{coverage.instruments_verified:,}</td></tr>"
+        f"<tr><td>Join refuted</td><td>{coverage.instruments_refuted:,}</td></tr>"
+        f"<tr><td>&nbsp;&nbsp;of which wrong price basis</td>"
+        f"<td>{coverage.instruments_with_price_basis_divergence:,}</td></tr>"
+        f"<tr><td>Join unverifiable</td><td>{coverage.instruments_unverifiable:,}</td></tr>"
+        f"<tr><td>Total instruments</td><td>{coverage.instruments_total:,}</td></tr>"
+        "</tbody></table></div>"
+    )
+
+
+def _price_basis_panel(coverage: SessionPriceBasisCoverage | None) -> str:
+    """`L0.37` (`R.08`) — what the SIGNAL prices are denominated in.
+
+    The panel above says the bars and the tape agree. This one says whether the bars are even the
+    series that traded: Kite adjusts its historical data as of the moment it is asked, so a session
+    backfilled after an ex-date is quoted on a basis that did not exist on the day. `HINDPETRO` sat
+    at 0.95099 of the traded price on 150 of 150 comparable bars.
+
+    Three counts rather than one score, because the two shortfalls need different actions — bars
+    fetched late can be fetched on the right day going forward, bars with no basis at all never
+    can.
+    """
+    if coverage is None:
+        return (
+            '<div class="panel"><h2>Signal price basis</h2>'
+            '<p class="empty">No five-minute bars stored for this session, so there is nothing to '
+            "say about what they are denominated in. Not a pass.</p></div>"
+        )
+    unknown_note = (
+        '<p class="empty">Every bar in this session has an UNRECORDED basis. These rows predate '
+        "<code>L0.37</code> and are permanently unrecoverable — the backfill dates were never "
+        "stored and the source will not serve those sessions unadjusted again. The traded-basis "
+        "rule cannot distinguish anything here and is not applied; that is not a clean bill of "
+        "health.</p>"
+        if coverage.bars_on_the_traded_basis == 0
+        else ""
+    )
+    tiles = "".join(
+        (
+            _stat_tile(
+                f"{coverage.traded_fraction:.1%}",
+                "on the traded basis",
+                f"{coverage.bars_on_the_traded_basis:,} of {coverage.bars_total:,} bars",
+            ),
+            _stat_tile(
+                f"{coverage.bars_adjusted_after_the_session:,}",
+                "adjusted after the session",
+                "fetched later; a corporate action in the gap may have rescaled them",
+            ),
+            _stat_tile(
+                f"{coverage.bars_on_an_unknown_basis:,}",
+                "basis unrecorded",
+                "written before L0.37 — permanently unrecoverable",
+            ),
+            _stat_tile(
+                f"{coverage.bars_on_an_impossible_basis:,}",
+                "impossible basis",
+                "adjusted as of BEFORE the session they describe — a store defect",
+            ),
+            _stat_tile(
+                f"{len(coverage.instruments_at_risk):,}",
+                "instruments at risk",
+                "hold a bar adjusted after, or before, their own session",
+            ),
+            _stat_tile(
+                "—"
+                if coverage.latest_adjustment_basis is None
+                else coverage.latest_adjustment_basis.isoformat(),
+                "furthest basis date",
+                "the size of the gap is the size of the exposure",
+            ),
+        )
+    )
+    return (
+        '<div class="panel"><h2>Signal price basis</h2>'
+        '<p class="sub">A bar is on the traded basis only if it was fetched on its own session. '
+        "Anything later may have been rescaled by a corporate action in between, while the depth "
+        "tape holds what actually traded.</p>"
+        f"{unknown_note}"
+        f'<div class="tiles">{tiles}</div></div>'
+    )
+
+
+def render_order_book_replay_page(
+    report: InstrumentCoverageReport,
+    join_coverage: SessionVerificationCoverage | None = None,
+    price_basis: SessionPriceBasisCoverage | None = None,
+) -> str:
     """The whole surface as one self-contained HTML page.
 
     A table view accompanies both charts, which is what the light-mode contrast WARN
@@ -286,6 +488,10 @@ every number below is computed from the rows the engine actually emitted</p>
 <h2>Inter-snapshot gap, by decile</h2>
 {_gap_ladder(report)}
 </div>
+
+{_join_verification_panel(join_coverage)}
+
+{_price_basis_panel(price_basis)}
 
 <footer>Rule shares are over ALL emitted rows, not only rows carrying a trade: most
 transitions in this tape are quote updates with no trade, and a metric that hid them would

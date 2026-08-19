@@ -65,9 +65,7 @@ def _write_a_session(root: Path) -> None:
         validity=OrderValidity.DAY,
         chosen_because="test",
     )
-    journal.record_intent(
-        intent, expression, OrderNamespace.SIMULATED, at=intent.decided_at
-    )
+    journal.record_intent(intent, expression, OrderNamespace.SIMULATED, at=intent.decided_at)
     journal.record_fill(
         intent.intent_id,
         FillRecord(

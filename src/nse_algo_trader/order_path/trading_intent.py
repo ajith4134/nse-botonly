@@ -209,9 +209,7 @@ def broker_tag_for(intent: TradingIntent, namespace: OrderNamespace) -> str:
         digest_value % (len(_TAG_CHARSET) ** _DIGEST_WIDTH), _DIGEST_WIDTH, len(_TAG_CHARSET)
     )
     tag = (
-        namespace.value
-        + _to_base(session_offset, _SESSION_WIDTH, _SESSION_RADIX)
-        + encoded_digest
+        namespace.value + _to_base(session_offset, _SESSION_WIDTH, _SESSION_RADIX) + encoded_digest
     )
     if len(tag) != BROKER_TAG_LENGTH or not tag.isalnum():
         raise IntentIdentityError(

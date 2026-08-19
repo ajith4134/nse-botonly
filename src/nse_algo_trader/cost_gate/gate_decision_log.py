@@ -123,9 +123,7 @@ class GateDecisionLog:
             signal = decision.signal
             hurdle = decision.hurdle
             failed = (
-                ",".join(
-                    failure.name.value for failure in decision.preconditions.failures
-                )
+                ",".join(failure.name.value for failure in decision.preconditions.failures)
                 if decision.preconditions is not None
                 else ""
             )
@@ -181,9 +179,7 @@ class GateDecisionLog:
 
     def latest_session(self) -> date | None:
         with closing(self._connect()) as connection:
-            row = connection.execute(
-                "SELECT MAX(session_date) FROM gate_decision"
-            ).fetchone()
+            row = connection.execute("SELECT MAX(session_date) FROM gate_decision").fetchone()
         return None if row is None or row[0] is None else date.fromisoformat(row[0])
 
     def verdict_counts(self, session_date: date) -> dict[GateVerdict, int]:

@@ -27,7 +27,9 @@ IST = ZoneInfo("Asia/Kolkata")
 SESSION = date(2026, 8, 13)
 
 
-def _store(tmp_path: Path, rows: list[tuple[str, tuple[str, ...], dict[str, object]]]):
+def _store(
+    tmp_path: Path, rows: list[tuple[str, tuple[str, ...], dict[str, object]]]
+) -> BitemporalIngestStore:
     """A store holding exactly the rows given, written through the store's OWN write path.
 
     Deliberately not raw SQL: writing through `record_fetch` + `ingest_rows` means the fixture
@@ -113,9 +115,7 @@ def test_an_unread_source_is_none_and_never_not_banned(tmp_path: Path) -> None:
 @pytest.mark.adversarial
 def test_a_source_that_was_read_reports_an_absent_symbol_as_not_banned(tmp_path: Path) -> None:
     """The other half. A ban list that exists and does not name this scrip is a real clearance."""
-    with _store(
-        tmp_path, [("fo_ban_list", ("SAIL",), {"symbol": "SAIL"})]
-    ) as store:
+    with _store(tmp_path, [("fo_ban_list", ("SAIL",), {"symbol": "SAIL"})]) as store:
         facts = assemble_regulatory_facts(
             trading_symbol="RELIANCE", ingest_store=store, effective_date=SESSION
         )
@@ -191,9 +191,7 @@ def test_a_malformed_mwpl_figure_is_absent_and_never_zero(tmp_path: Path) -> Non
 
 @pytest.mark.adversarial
 def test_the_symbol_match_is_case_and_whitespace_insensitive(tmp_path: Path) -> None:
-    with _store(
-        tmp_path, [("fo_ban_list", ("SAIL",), {"symbol": " sail "})]
-    ) as store:
+    with _store(tmp_path, [("fo_ban_list", ("SAIL",), {"symbol": " sail "})]) as store:
         facts = assemble_regulatory_facts(
             trading_symbol="  Sail ", ingest_store=store, effective_date=SESSION
         )

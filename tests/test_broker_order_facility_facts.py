@@ -100,9 +100,7 @@ class TestTheRateLimitsBindTogether:
 
     def test_the_daily_ceiling_is_the_one_the_collision_bound_was_computed_against(self) -> None:
         daily = [
-            limit
-            for limit in order_rate_limits(on=_TODAY)
-            if limit.window_seconds == 24 * 60 * 60
+            limit for limit in order_rate_limits(on=_TODAY) if limit.window_seconds == 24 * 60 * 60
         ]
         assert [limit.maximum_orders for limit in daily] == [5_000]
 

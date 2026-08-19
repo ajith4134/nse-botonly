@@ -45,9 +45,7 @@ from zoneinfo import ZoneInfo
 
 IST = ZoneInfo("Asia/Kolkata")
 
-DEFAULT_SESSION_RISK_STATE_PATH = (
-    Path.home() / ".nse_algo_trader" / "session_risk_state.sqlite3"
-)
+DEFAULT_SESSION_RISK_STATE_PATH = Path.home() / ".nse_algo_trader" / "session_risk_state.sqlite3"
 
 WRITE_LOCK_TIMEOUT_SECONDS = 30.0
 """How long one writer waits for another. The same discipline `L1.18` learned the hard way: the
@@ -162,8 +160,9 @@ class SessionRiskState:
 
     def describe(self) -> str:
         latches = (
-            ", ".join(latch.value for latch in self.tripped_latches) if self.tripped_latches else
-            "none"
+            ", ".join(latch.value for latch in self.tripped_latches)
+            if self.tripped_latches
+            else "none"
         )
         return (
             f"{self.session_date.isoformat()}: equity Rs {self.current_equity_rupees} "
@@ -273,8 +272,10 @@ def _normal_inverse_cdf(probability: Decimal) -> Decimal:
         )
     q = probability - Decimal("0.5")
     r = q * q
-    return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (
-        ((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + Decimal(1)
+    return (
+        (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5])
+        * q
+        / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + Decimal(1))
     )
 
 
@@ -514,9 +515,7 @@ class SessionRiskStateStore:
         ):
             symbol = str(row["trading_symbol"])
             exposures[symbol] = exposures.get(symbol, Decimal(0)) + Decimal(row["amount_rupees"])
-        open_exposures = {
-            symbol: amount for symbol, amount in exposures.items() if amount != 0
-        }
+        open_exposures = {symbol: amount for symbol, amount in exposures.items() if amount != 0}
         # Compared in UTC, because the comparison is a LEXICOGRAPHIC one over ISO strings and an
         # offset changes the text without changing the instant. Stamps were written as `+05:30` and
         # the window start was rendered in the caller's zone: from Asia/Tokyo the window reported

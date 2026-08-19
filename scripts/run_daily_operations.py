@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 import sys
 import time
 import traceback
@@ -33,6 +34,8 @@ from datetime import time as dt_time
 from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+from backfill_five_minute_bars import universe_for as backfill_universe_for
 
 from nse_algo_trader.bitemporal_bar_store import BitemporalBarStore
 from nse_algo_trader.broker_credentials import (
@@ -121,6 +124,9 @@ from nse_algo_trader.execution_fill.execution_fill_model import (
 from nse_algo_trader.historical_bars.angel_one_historical_bar_source import (
     AngelOneHistoricalBarSource,
 )
+from nse_algo_trader.historical_bars.bar_price_basis_provenance import (
+    price_basis_coverage_for,
+)
 from nse_algo_trader.historical_bars.cross_source_bar_reconciler import (
     ReconciliationReport,
     fetch_and_reconcile,
@@ -156,6 +162,9 @@ from nse_algo_trader.nse_ingest.circuit_band_surveillance_adapter import (
 from nse_algo_trader.nse_ingest.delisted_securities_adapter import (
     DelistedSecuritiesAdapter,
 )
+from nse_algo_trader.nse_ingest.derivative_contract_record_projection import (
+    DerivativeContractRecordProjection,
+)
 from nse_algo_trader.nse_ingest.discovering_ingest_source_adapter import (
     DiscoveredParameterStore,
 )
@@ -190,6 +199,11 @@ from nse_algo_trader.order_path.order_path_assembly import assemble_order_path
 from nse_algo_trader.order_path.trading_intent import (
     INDIA_MARKET_TIMEZONE,
     OrderNamespace,
+)
+from nse_algo_trader.paper_loop.bot_maturity_ladder import (
+    BotMaturityLadder,
+    LadderPolicy,
+    PaperTrackRecordStore,
 )
 from nse_algo_trader.point_in_time_universe_engine import PointInTimeUniverseEngine
 from nse_algo_trader.replay_session_clock import replay_sessions
@@ -259,9 +273,7 @@ PERSISTENT_FAILURE_ATTEMPTS = 3
 not fix itself and is escalated to a human rather than retried forever in silence."""
 
 
-def most_recent_closed_session(
-    now_ist: datetime, calendar: NseTradingSessionCalendar
-) -> date:
+def most_recent_closed_session(now_ist: datetime, calendar: NseTradingSessionCalendar) -> date:
     """The latest session whose files can actually exist yet.
 
     Today counts only once trading has closed. A nightly job firing at 08:00 IST would
@@ -638,8 +650,7 @@ def _reconcile_daily_bars(target_session: date) -> str:
             written += store.write([bar.bar for bar in report.bars])
 
     detail = (
-        f"{written:,} bars written from {len(instruments)} instruments "
-        f"via {len(sources)} broker(s)"
+        f"{written:,} bars written from {len(instruments)} instruments via {len(sources)} broker(s)"
     )
     if volume_disagreements:
         detail += f" * {volume_disagreements} volume-only disagreements"
@@ -687,8 +698,7 @@ def _bar_instruments_due(budget: int) -> list[BarInstrument]:
     # Far-future as_of: what has been STORED, regardless of when it becomes actionable.
     with BitemporalBarStore(MARKET_DATA_DATABASE) as store:
         already_stored = {
-            bar.tradingsymbol
-            for bar in store.bars_as_of(datetime.now(UTC) + timedelta(days=365))
+            bar.tradingsymbol for bar in store.bars_as_of(datetime.now(UTC) + timedelta(days=365))
         }
     never_stored = [r for r in tradeable if r.tradingsymbol not in already_stored]
     chosen = sorted(never_stored or tradeable, key=lambda r: r.tradingsymbol)[:budget]
@@ -709,6 +719,209 @@ def _bar_instruments_due(budget: int) -> list[BarInstrument]:
                 )
             )
     return instruments
+
+
+
+PAPER_SESSION_BOT_IDENTITY = "cash_intraday_mean_reversion_bot"
+"""Which bot this daily paper session accrues evidence under.
+
+One identity, because `R.22` requires a bot to graduate on ITS OWN record: a session recorded under
+a rotating or shared name would build a track record belonging to nobody, which is the flattery the
+two-key rule exists to prevent. When the six segment bots (`L5.26`-`L5.28` and siblings) arrive,
+each runs its own session under its own identity.
+"""
+
+DAILY_LADDER_POLICY = LadderPolicy(
+    promotion_confidence=0.95,
+    sustained_sessions_required=20,
+    minimum_trades_for_a_posterior=30,
+)
+"""What this operator requires before a bot may be considered for arming.
+
+`R.03` allows these three because they are POLICY rather than facts — how sure is sure enough, and
+for how long. They are set deliberately stricter than the test-suite policy: 95% confidence over 20
+distinct session cutoffs, because the thing on the other side of this ladder is `R.22`'s first key
+and real money. The retained record is the argument for strictness — 3,481 trades, a plausible
+strategy, and Rs 3.3 lakh lost (`docs/research/254`).
+"""
+
+PAPER_SESSION_TIMEOUT_SECONDS = 1800.0
+"""Half an hour. Measured: a 200-instrument session over today's tape took ~3 minutes, and the
+unlimited universe is bounded by the instruments the tape actually recorded (2,119 on 2026-08-17).
+"""
+
+
+def _run_paper_session_for(target_session: date) -> str:
+    """`L5.30`/`B15` — trade the session on paper and ACCRUE the outcome.
+
+    **Why this step exists.** Until 2026-08-17 this script ran twelve steps and none of them traded.
+    The only paper session was a verification harness run by hand, which deleted its ledger at the
+    start of every run, so the production paper ledger held 13 events in total and every segment bot
+    was permanently `COLD_START`: `R.04`'s maturity ladder had nothing to climb and `R.22`'s
+    graduation had nothing to graduate. A system that prepares to trade every day and never trades
+    accumulates no evidence about itself.
+
+    Runs the same script an operator runs, with `--record-as`, so there is exactly one
+    implementation of a paper session and no second one to drift.
+
+    Reported, never raised: a session that could not run is a finding on the report, not a failure
+    that stops the nine steps after it. `R.11` — the outcome is stated either way.
+    """
+    completed = subprocess.run(  # noqa: S603 — fixed argv, no shell, no caller-supplied text
+        [
+            sys.executable,
+            str(Path(__file__).with_name("verify_paper_session_on_real_data.py")),
+            target_session.isoformat(),
+            "--record-as",
+            PAPER_SESSION_BOT_IDENTITY,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=PAPER_SESSION_TIMEOUT_SECONDS,
+    )
+    accrued = next(
+        (line for line in completed.stdout.splitlines() if line.startswith("track record:")),
+        "",
+    )
+    summary = next(
+        (
+            line
+            for line in completed.stdout.splitlines()
+            if line.startswith(target_session.isoformat())
+        ),
+        "",
+    )
+    if completed.returncode != 0:
+        tail = (completed.stderr or completed.stdout).strip().splitlines()[-1:] or ["no output"]
+        return f"paper session did NOT run for {target_session.isoformat()}: {tail[0][:200]}"
+
+    assessment = _assess_paper_bot_maturity()
+    return f"{summary or 'session ran'} · {accrued or 'nothing accrued'} · {assessment}"
+
+
+def _assess_trade_quality_floor() -> str:
+    """`L5.31` — run the pre-trade quality floor on the real record and record its cards.
+
+    **Why this step exists.** The floor is the gate every one of the six segment bots proposes
+    through, and a gate that is only ever exercised by its own tests is a gate nobody finds out is
+    wrong. Running it daily against the real retained record and the real cross-section puts its
+    verdicts, and the size of the selection correction it charges, into the day's report.
+
+    Runs the same script an operator runs, so there is one implementation and no second to drift.
+
+    **Open (`R.11`):** this step RECORDS verdicts; it does not yet BLOCK an order, because
+    `paper_trading_session_runner` does not consume the gate. That integration is `B23`.
+
+    Reported, never raised — `R.11`, the outcome is stated either way.
+    """
+    completed = subprocess.run(  # noqa: S603 — fixed argv, no shell, no caller-supplied text
+        [
+            sys.executable,
+            str(Path(__file__).with_name("verify_trade_quality_floor_on_real_data.py")),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=PAPER_SESSION_TIMEOUT_SECONDS,
+    )
+    verdicts = [
+        line.strip()
+        for line in completed.stdout.splitlines()
+        if line.strip().startswith(("opening_range_breakout_v1 (", "credit_spread_v1 ("))
+    ]
+    recorded = next(
+        (line.strip() for line in completed.stdout.splitlines() if line.startswith("recorded ")),
+        "",
+    )
+    if completed.returncode != 0:
+        tail = (completed.stderr or completed.stdout).strip().splitlines()[-1:] or ["no output"]
+        return f"trade-quality floor did NOT separate the retained pair: {tail[0][:200]}"
+    return f"{' · '.join(verdicts) or 'no verdicts'} · {recorded or 'nothing recorded'}"
+
+
+def _assess_paper_bot_maturity() -> str:
+    """Where the accrued record leaves the bot on `R.04`'s ladder — the reason this step is kept.
+
+    Recording trades nobody reads would be bookkeeping. Reading the ladder here is what makes the
+    accrual load-bearing, and it puts the rung in the daily report where a human sees it.
+    """
+    assessment = BotMaturityLadder(PaperTrackRecordStore()).assess(
+        PAPER_SESSION_BOT_IDENTITY, DAILY_LADDER_POLICY
+    )
+    return (
+        f"ladder: {assessment.rung.label} on {assessment.closed_trades} closed trade(s) over "
+        f"{assessment.sessions} session(s), P(expectancy>0)="
+        f"{assessment.posterior_above_break_even:.3f}"
+    )
+
+
+def _report_five_minute_backfill_coverage_for(target_session: date) -> str:
+    """`L0.37` part 2 — report what the DEDICATED backfill unit achieved. It no longer runs here.
+
+    **Why it moved out, 2026-08-18 (`A.143`).** This step used to run the backfill inline as the
+    first long step of this run. Its own floor is 10,187 instruments at `REQUESTS_PER_SECOND = 1.5`
+    — **113 minutes** — inside a unit whose `TimeoutStartSec` was **90**. systemd SIGKILLed every
+    firing mid-backfill, so `price basis`, `bar store`, `clock integrity`, `consolidated feed`,
+    `deep history`, `transaction costs`, the cost floors, the **paper session**, the trade quality
+    floor, order path reconciliation and the dashboard screenshots had not run for days. Nothing
+    reported red. The log simply stopped mid-step, which is the quietest failure this project has
+    produced.
+
+    The lesson is `O.112`'s, for the third time: the arithmetic of the WORK was checked (the
+    subprocess timeout allows 340 minutes) and the arithmetic of the SCHEDULE was not.
+
+    It now belongs to `nse-five-minute-backfill.service`, fired at 20:30 IST by its own timer with a
+    budget derived from the same pacing. This step reports the coverage that unit produced, so the
+    work is still visible here and cannot go quiet (`R.06` — the backfill is not orphaned, it has an
+    owner and a reader).
+    """
+    instruments = backfill_universe_for(target_session)
+    if not instruments:
+        return (
+            f"no instrument universe for {target_session.isoformat()} — the instrument master has "
+            f"no NSE cash board, which is a far bigger problem than this step"
+        )
+    coverage = price_basis_coverage_for(target_session, MARKET_DATA_DATABASE)
+    owner = (
+        "owned by nse-five-minute-backfill.timer (20:30 IST); this run only reports it"
+    )
+    if coverage is None:
+        return (
+            f"NO five-minute bars stored for {target_session.isoformat()} over "
+            f"{len(instruments):,} instruments — {owner}. Check "
+            f"/home/opc/nse_archive/five_minute_backfill.log"
+        )
+    return f"{coverage.describe()} over {len(instruments):,} instruments — {owner}"
+
+
+def _tape_instruments_for(target_session: date) -> list[int]:
+    """The universe the backfill will fetch — the depth tape's, which is what it uses.
+
+    Returns empty when the tape has no partition for the session, which is a real dependency the
+    spec's "by construction" argument did not name (`M1` of the `A.126` review): the five-minute
+    backfill can only run for a session the capture timer already recorded.
+    """
+    try:
+        return sorted(MarketDepthTapeReader(DEPTH_TAPE_ROOT).instrument_tokens(target_session))
+    except Exception:  # noqa: BLE001 — an unreadable tape is a finding, never a crash of the run
+        return []
+
+
+def _report_price_basis(target_session: date) -> str:
+    """`L0.37` — what the stored prices MEAN, surfaced every run (`R.08`, `R.11`).
+
+    Separate from the backfill step so the answer is reported even on a run where the backfill was
+    skipped or failed. A store whose basis is unknown is not a store that is fine.
+    """
+    coverage = price_basis_coverage_for(target_session, MARKET_DATA_DATABASE)
+    if coverage is None:
+        return f"{target_session.isoformat()} has no five-minute bars to describe"
+    detail = coverage.describe()
+    if coverage.instruments_at_risk:
+        sample = sorted(coverage.instruments_at_risk)[:5]
+        detail += f" * AT RISK, adjusted after their own session: {sample}"
+    return detail
 
 
 def _report_capital() -> str:
@@ -743,6 +956,24 @@ def _refresh_instrument_master() -> str:
     if reassignments:
         detail += f", {len(reassignments)} token reassignment(s)"
     return detail
+
+
+def _project_derivative_contracts() -> str:
+    """Materialise ingested F&O observations into the table the derivative bots query (`L0.23`).
+
+    Runs after `ingest coverage` rather than beside it because it consumes what ingest just wrote.
+    Idempotent: a session whose observations have not changed writes nothing, so a re-run of the
+    whole day is free.
+
+    This step exists because its absence was invisible. Measured 2026-08-19: the ingest store held
+    `nse_bhavcopy_fo` through 2026-08-18 while `fo_bhavcopy_contracts` — every derivative bot's
+    universe — stopped at 2026-08-03, and no step reported anything wrong.
+    """
+    with DerivativeContractRecordProjection() as projection:
+        outcome = projection.project()
+        latest = projection.latest_contract_session()
+    freshness = f"contract table now at {latest}" if latest else "contract table is EMPTY"
+    return f"{outcome.describe()} · {freshness}"
 
 
 def _run_ingest(for_dates: Sequence[date]) -> str:
@@ -811,8 +1042,7 @@ def _backfill_gaps(window_start: date, window_end: date) -> str:
         escalations = dates_needing_human_attention(reports, PERSISTENT_FAILURE_ATTEMPTS)
         if escalations:
             lines.append(
-                f"ESCALATE {len(escalations)} date(s) failing "
-                f">= {PERSISTENT_FAILURE_ATTEMPTS}x"
+                f"ESCALATE {len(escalations)} date(s) failing >= {PERSISTENT_FAILURE_ATTEMPTS}x"
             )
     return " * ".join(lines)
 
@@ -847,9 +1077,10 @@ def _report_corporate_actions() -> str:
     with CorporateActionAdjustmentEngine(MARKET_DATA_DATABASE) as engine:
         counts = engine.coverage_report()
         total = sum(counts.values())
-        breakdown = ", ".join(f"{cls.value}={count:,}" for cls, count in sorted(
-            counts.items(), key=lambda item: -item[1]
-        )[:4])
+        breakdown = ", ".join(
+            f"{cls.value}={count:,}"
+            for cls, count in sorted(counts.items(), key=lambda item: -item[1])[:4]
+        )
         return f"{total:,} actions classified ({breakdown})"
 
 
@@ -934,8 +1165,7 @@ def _load_new_archive_days() -> str:
         report = loader.load()
         if not report.files_loaded:
             spans = ", ".join(
-                f"{c.market} {c.earliest}..{c.latest} ({c.rows:,} rows)"
-                for c in loader.coverage()
+                f"{c.market} {c.earliest}..{c.latest} ({c.rows:,} rows)" for c in loader.coverage()
             )
             return f"up to date · {spans or 'nothing loaded yet'}"
         return (
@@ -976,9 +1206,8 @@ def _price_the_days_transaction_costs(target: date) -> str:
         summary += f" · REFUSED {len(refused)}: {'; '.join(refused)}"
     summary += f" · {ledger.observation_count()} contract-note observations"
     if drifting:
-        summary += (
-            f" · {len(drifting)} DRIFTING: "
-            + "; ".join(f"{item.component.value}@{item.segment.value}" for item in drifting)
+        summary += f" · {len(drifting)} DRIFTING: " + "; ".join(
+            f"{item.component.value}@{item.segment.value}" for item in drifting
         )
     if not priced:
         raise RuntimeError(f"no segment could be priced for {target}: {summary}")
@@ -1077,13 +1306,9 @@ def _reconcile_order_path(target: date) -> str:
     venue = connect_to_live_kite_venue_if_authenticated()
     if venue is None:
         return "skipped: no valid Kite session, so broker truth could not be read"
-    order_path = assemble_order_path(
-        venue, session_date=target, namespace=OrderNamespace.LIVE
-    )
+    order_path = assemble_order_path(venue, session_date=target, namespace=OrderNamespace.LIVE)
     try:
-        report = order_path.reconciler.reconcile(
-            session_date=target, now=datetime.now(UTC)
-        )
+        report = order_path.reconciler.reconcile(session_date=target, now=datetime.now(UTC))
     finally:
         order_path.close()
     counts = report.counts_by_verdict()
@@ -1114,9 +1339,11 @@ def _derive_per_segment_edge_floors(target: date) -> str:
     sessions = reader.session_dates()
     if not sessions:
         return "no depth tape captured yet, so no floor can be derived"
-    session = max(session for session in sessions if session <= target) if any(
-        session <= target for session in sessions
-    ) else sessions[0]
+    session = (
+        max(session for session in sessions if session <= target)
+        if any(session <= target for session in sessions)
+        else sessions[0]
+    )
 
     cost_engine = default_transaction_cost_engine()
     fill_model = ExecutionFillModel()
@@ -1246,9 +1473,7 @@ def main() -> int:
     arguments = parser.parse_args()
 
     calendar = NseTradingSessionCalendar()
-    target = arguments.for_date or most_recent_closed_session(
-        datetime.now(IST), calendar
-    )
+    target = arguments.for_date or most_recent_closed_session(datetime.now(IST), calendar)
     while not calendar.is_trading_session(target):
         target -= timedelta(days=1)
 
@@ -1267,15 +1492,20 @@ def main() -> int:
         lambda: _backfill_gaps(target - timedelta(days=arguments.backfill_days), target),
     )
     _run_step(report, "ingest coverage", _report_ingest_coverage)
+    _run_step(report, "derivative contract projection", _project_derivative_contracts)
     _run_step(report, "security identity", _refresh_security_identity)
     _run_step(report, "publication schedules", _report_publication_schedules)
-    _run_step(
-        report, "replay leakage guard", lambda: _verify_replay_leakage_guard(target)
-    )
+    _run_step(report, "replay leakage guard", lambda: _verify_replay_leakage_guard(target))
     _run_step(report, "universe", _report_universe)
     _run_step(report, "corporate actions", _report_corporate_actions)
     _run_step(report, "broker symbology", _refresh_broker_symbology)
     _run_step(report, "bar reconciliation", lambda: _reconcile_daily_bars(target))
+    _run_step(
+        report,
+        "five-minute backfill coverage",
+        lambda: _report_five_minute_backfill_coverage_for(target),
+    )
+    _run_step(report, "price basis", lambda: _report_price_basis(target))
     _run_step(report, "bar store", _report_bar_store)
     _run_step(report, "clock integrity", _assess_clock_integrity)
     _run_step(report, "consolidated feed", _consolidate_broker_feeds)
@@ -1298,6 +1528,8 @@ def main() -> int:
         "edge floors",
         lambda: _derive_per_segment_edge_floors(target),
     )
+    _run_step(report, "paper session", lambda: _run_paper_session_for(target))
+    _run_step(report, "trade quality floor", _assess_trade_quality_floor)
     _run_step(report, "order path reconciliation", lambda: _reconcile_order_path(target))
     # Last: the surface should be photographed AFTER the run has changed the state
     # it displays, so the capture shows the day that just happened.

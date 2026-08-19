@@ -85,9 +85,7 @@ class ClockDriftChangeDetector:
         stamped_at = detected_at or datetime.now(UTC)
         values = [point.value for point in series]
         alerts: list[ClockDriftAlert] = []
-        alerts.extend(
-            self._adwin_alerts(series, values, series_name, session_date, stamped_at)
-        )
+        alerts.extend(self._adwin_alerts(series, values, series_name, session_date, stamped_at))
         alerts.extend(
             self._page_hinkley_alerts(series, values, series_name, session_date, stamped_at)
         )

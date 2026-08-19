@@ -99,9 +99,7 @@ def liquidity_ranked_symbols(limit: int) -> list[str]:
         except ValueError:
             continue
     log(f"liquidity ranking from {archives[-1].name}: {len(traded_value)} symbols")
-    return [symbol for symbol, _ in sorted(traded_value.items(), key=lambda pair: -pair[1])][
-        :limit
-    ]
+    return [symbol for symbol, _ in sorted(traded_value.items(), key=lambda pair: -pair[1])][:limit]
 
 
 def build_instrument_set(

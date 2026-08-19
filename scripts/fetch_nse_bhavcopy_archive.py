@@ -114,9 +114,15 @@ def record(connection: sqlite3.Connection, **columns: object) -> None:
         "INSERT OR REPLACE INTO acquisition (trade_date, market, url, outcome, http_status,"
         " byte_count, row_count, stored_path, fetched_at) VALUES (?,?,?,?,?,?,?,?,?)",
         (
-            columns["trade_date"], columns["market"], columns["url"], columns["outcome"],
-            columns.get("http_status"), columns.get("byte_count"), columns.get("row_count"),
-            columns.get("stored_path"), columns["fetched_at"],
+            columns["trade_date"],
+            columns["market"],
+            columns["url"],
+            columns["outcome"],
+            columns.get("http_status"),
+            columns.get("byte_count"),
+            columns.get("row_count"),
+            columns.get("stored_path"),
+            columns["fetched_at"],
         ),
     )
     connection.commit()
@@ -170,31 +176,63 @@ def acquire_day(connection: sqlite3.Connection, market: str, day: date) -> str:
                 # HTTP 200 with a zero-byte body: the archive genuinely holds an
                 # empty file for this date. Measured once, on 1995-09-06. Settled
                 # rather than failed, so it is not retried on every future run.
-                record(connection, trade_date=stamp, market=market, url=url,
-                       outcome="absent", http_status=status, byte_count=0,
-                       fetched_at=time.strftime("%Y-%m-%dT%H:%M:%S"))
+                record(
+                    connection,
+                    trade_date=stamp,
+                    market=market,
+                    url=url,
+                    outcome="absent",
+                    http_status=status,
+                    byte_count=0,
+                    fetched_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
+                )
                 return "absent"
 
             rows = rows_in_zip(payload)
             if rows is None:
-                record(connection, trade_date=stamp, market=market, url=url,
-                       outcome="not_a_zip", http_status=status, byte_count=len(payload),
-                       fetched_at=time.strftime("%Y-%m-%dT%H:%M:%S"))
+                record(
+                    connection,
+                    trade_date=stamp,
+                    market=market,
+                    url=url,
+                    outcome="not_a_zip",
+                    http_status=status,
+                    byte_count=len(payload),
+                    fetched_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
+                )
                 break
 
             destination = ARCHIVE_ROOT / market / f"{day:%Y}" / f"{market}_{stamp}.csv.zip"
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(payload)
-            record(connection, trade_date=stamp, market=market, url=url, outcome="stored",
-                   http_status=status, byte_count=len(payload), row_count=rows,
-                   stored_path=str(destination), fetched_at=time.strftime("%Y-%m-%dT%H:%M:%S"))
-            time.sleep(max(MINIMUM_DELAY_SECONDS,
-                           min(MAXIMUM_DELAY_SECONDS, elapsed * POLITENESS_MULTIPLE)))
+            record(
+                connection,
+                trade_date=stamp,
+                market=market,
+                url=url,
+                outcome="stored",
+                http_status=status,
+                byte_count=len(payload),
+                row_count=rows,
+                stored_path=str(destination),
+                fetched_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
+            )
+            time.sleep(
+                max(
+                    MINIMUM_DELAY_SECONDS, min(MAXIMUM_DELAY_SECONDS, elapsed * POLITENESS_MULTIPLE)
+                )
+            )
             return "stored"
 
-    record(connection, trade_date=stamp, market=market, url=urls[-1] if urls else "",
-           outcome="absent" if last_status == 404 else "failed",  # noqa: PLR2004
-           http_status=last_status, fetched_at=time.strftime("%Y-%m-%dT%H:%M:%S"))
+    record(
+        connection,
+        trade_date=stamp,
+        market=market,
+        url=urls[-1] if urls else "",
+        outcome="absent" if last_status == 404 else "failed",  # noqa: PLR2004
+        http_status=last_status,
+        fetched_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
+    )
     time.sleep(MINIMUM_DELAY_SECONDS)
     return "absent" if last_status == 404 else "failed"  # noqa: PLR2004
 

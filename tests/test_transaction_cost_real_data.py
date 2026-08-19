@@ -36,6 +36,7 @@ from nse_algo_trader.transaction_cost.nse_transaction_cost_engine import (
     TradeSpecification,
     default_transaction_cost_engine,
 )
+from tests.deep_history_archive_reader_for_tests import deep_history_archive_or_skip
 
 pytestmark = [
     pytest.mark.real_data,
@@ -54,7 +55,7 @@ _STANDARD_LOT = 65
 
 @pytest.fixture(scope="module")
 def archive() -> Iterator[DeepHistoryArchiveLoader]:
-    with DeepHistoryArchiveLoader(database_path=DEFAULT_DEEP_HISTORY_PATH) as loader:
+    with deep_history_archive_or_skip(DEFAULT_DEEP_HISTORY_PATH) as loader:
         yield loader
 
 
@@ -85,9 +86,7 @@ def test_every_real_price_in_a_real_cross_section_prices(
     priced_count = 0
     zero_priced: list[str] = []
     for symbol in symbols:
-        closes = [
-            (day, close) for day, close in archive.close_series(symbol) if day == trade_date
-        ]
+        closes = [(day, close) for day, close in archive.close_series(symbol) if day == trade_date]
         if not closes or closes[0][1] <= 0:
             continue
         close_paise = Decimal(closes[0][1])
@@ -128,9 +127,7 @@ def test_real_prices_produce_breakevens_in_the_range_the_plan_predicted(
     trade_date, symbols = _first_real_cross_section(archive)
     breakevens: list[Decimal] = []
     for symbol in symbols[:200]:
-        closes = [
-            (day, close) for day, close in archive.close_series(symbol) if day == trade_date
-        ]
+        closes = [(day, close) for day, close in archive.close_series(symbol) if day == trade_date]
         if not closes or closes[0][1] <= 0:
             continue
         close_paise = Decimal(closes[0][1])

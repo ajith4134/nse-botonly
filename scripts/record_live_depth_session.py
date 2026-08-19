@@ -29,6 +29,7 @@ import zipfile
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from types import FrameType
+from typing import Protocol
 from zoneinfo import ZoneInfo
 
 from kiteconnect import KiteConnect
@@ -44,6 +45,12 @@ from nse_algo_trader.broker_sessions.kite_access_token_store import (
 from nse_algo_trader.clock_integrity.timestamp_trust_budget import (
     measured_host_clock_error_seconds,
 )
+from nse_algo_trader.market_depth.capture_candidate_population_merger import (
+    CaptureCandidateEntry,
+    CaptureCandidatePopulation,
+    MergedCaptureCandidates,
+    merge_capture_candidate_populations,
+)
 from nse_algo_trader.market_depth.depth_capture_admission_controller import (
     DepthCaptureAdmissionController,
     InstrumentCaptureCandidate,
@@ -55,6 +62,9 @@ from nse_algo_trader.market_depth.depth_capture_session_report import (
 from nse_algo_trader.market_depth.depth_packet_integrity_classifier import (
     NSE_QUOTING_WINDOW_CLOSES_IST,
     DepthPacketIntegrityClassifier,
+)
+from nse_algo_trader.market_depth.derivative_capture_universe_selector import (
+    select_derivative_capture_universe,
 )
 from nse_algo_trader.market_depth.live_depth_feed_seam import KiteLiveDepthFeed
 from nse_algo_trader.market_depth.live_order_book_depth_recorder import (
@@ -106,10 +116,30 @@ def traded_value_by_symbol(bhavcopy_path: Path) -> dict[str, float]:
     return values
 
 
+DERIVATIVE_POPULATION_BY_CONTRACT_TYPE = {
+    "IDO": "index_options",
+    "STO": "stock_options",
+    "IDF": "index_futures",
+    "STF": "stock_futures",
+}
+"""One capture population per segment bot, so `R.10`'s "the six segments equal by default" is what
+the admission controller actually solves rather than something asserted beside it. `commodity_mcx`
+is named with an empty population on purpose (`B30`): a segment that captures nothing must be
+visible as zero, not absent."""
+
+
 def build_candidates(
     kite: KiteConnect,
-) -> tuple[list[InstrumentCaptureCandidate], dict[int, str]]:
-    """Every NSE equity Kite will quote, valued by yesterday's real traded value."""
+) -> tuple[list[InstrumentCaptureCandidate], dict[int, str], MergedCaptureCandidates]:
+    """Every NSE equity plus the live F&O contracts the five derivative bots need (`A.142`).
+
+    Cash is valued by yesterday's real traded value, as it always has been. The derivative side is
+    valued by each contract's OWN traded value from the projected F&O bhavcopy — and the two are
+    then merged on within-population standing rather than on the raw rupee number, because an
+    option's turnover is notional exposure on the underlying and a cash trade's is money changing
+    hands. Sorting those together evicts cash coverage while looking like a solved knapsack; see
+    `capture_candidate_population_merger`.
+    """
     instruments = kite.instruments("NSE")
     equities = [
         instrument
@@ -124,19 +154,69 @@ def build_candidates(
     log(f"{len(turnover)} symbols carry a traded value")
 
     exchange_by_token: dict[int, str] = {}
-    candidates: list[InstrumentCaptureCandidate] = []
+    cash_entries: list[CaptureCandidateEntry] = []
     for instrument in equities:
         token = int(instrument["instrument_token"])
         exchange_by_token[token] = "NSE"
-        candidates.append(
-            InstrumentCaptureCandidate(
+        cash_entries.append(
+            CaptureCandidateEntry(
                 instrument_token=token,
-                liquidity_value=turnover.get(instrument["tradingsymbol"], 0.0),
+                liquidity_in_its_own_units=turnover.get(instrument["tradingsymbol"], 0.0),
             )
         )
-    ranked = sorted(candidates, key=lambda c: -c.liquidity_value)
-    log(f"{len(ranked)} NSE equities are candidates; top value {ranked[0].liquidity_value:,.0f}")
-    return ranked, exchange_by_token
+
+    derivative_entries: dict[str, list[CaptureCandidateEntry]] = {
+        name: [] for name in DERIVATIVE_POPULATION_BY_CONTRACT_TYPE.values()
+    }
+    try:
+        derivatives = select_derivative_capture_universe(as_of=datetime.now(IST).date())
+    except Exception as failure:  # noqa: BLE001 — a missing projection must not stop cash capture
+        log(f"F&O selection FAILED, capturing cash only: {type(failure).__name__}: {failure}")
+    else:
+        log(f"F&O selection: {derivatives.note}")
+        seen_tokens = set(exchange_by_token)
+        for contract in derivatives.contracts:
+            if contract.instrument_token in seen_tokens:
+                # A token cannot be in two populations; the merger refuses it and the refusal
+                # would take the whole capture down over one duplicated symbol.
+                continue
+            seen_tokens.add(contract.instrument_token)
+            exchange_by_token[contract.instrument_token] = contract.exchange
+            population = DERIVATIVE_POPULATION_BY_CONTRACT_TYPE[contract.contract_type]
+            derivative_entries[population].append(
+                CaptureCandidateEntry(
+                    instrument_token=contract.instrument_token,
+                    liquidity_in_its_own_units=contract.traded_value,
+                )
+            )
+
+    populations = [CaptureCandidatePopulation("cash", cash_entries)]
+    populations += [
+        CaptureCandidatePopulation(name, entries)
+        for name, entries in sorted(derivative_entries.items())
+    ]
+    populations.append(CaptureCandidatePopulation("commodity_mcx", []))
+    merged = merge_capture_candidate_populations(populations)
+    log(f"capture candidates: {merged.describe()}")
+    return list(merged.candidates), exchange_by_token, merged
+
+
+def _log_admission_by_population(
+    decision: object, merged: MergedCaptureCandidates
+) -> None:
+    """Say what each segment actually got.
+
+    `R.11`: a budget that reports one total cannot distinguish "the disk was tight" from "one
+    population evicted every other one", and the second is the failure mode widening the capture
+    introduces. Reported every session, whether or not it looks healthy.
+    """
+    admitted = set(getattr(decision, "admitted_tokens", ()) or ())
+    for population, size in sorted(merged.size_by_population.items()):
+        if size == 0:
+            log(f"  admitted {population}: 0 of 0 — nothing to capture")
+            continue
+        kept = sum(1 for token in merged.tokens_of(population) if token in admitted)
+        log(f"  admitted {population}: {kept:,} of {size:,} ({kept / size:.0%})")
 
 
 def measured_rates_from_tape(tape_root: Path, session_date: datetime) -> dict[int, float]:
@@ -235,9 +315,8 @@ def report(recorder: LiveOrderBookDepthRecorder, label: str) -> None:
     log(f"{label}: {written:,} packets written, {dropped:,} dropped to overflow")
     for shard_index, statistics in recorder.capture_statistics_by_shard().items():
         flags = ", ".join(
-            f"{flag.name}={count:,}" for flag, count in sorted(
-                statistics.flag_counts.items(), key=lambda item: -item[1]
-            )
+            f"{flag.name}={count:,}"
+            for flag, count in sorted(statistics.flag_counts.items(), key=lambda item: -item[1])
         )
         log(
             f"  shard {shard_index:02d}: {statistics.packets_written:,} rows"
@@ -245,9 +324,18 @@ def report(recorder: LiveOrderBookDepthRecorder, label: str) -> None:
         )
 
 
-def is_capture_worth_starting(
-    today: date, calendar: NseTradingSessionCalendar | None = None
-) -> bool:
+class TradingSessionOracle(Protocol):
+    """The single question the guard asks a calendar — declared so a test can answer it.
+
+    Naming the seam rather than the concrete `NseTradingSessionCalendar` is what lets the guard's
+    own behaviour be tested against a known holiday without loading the real calendar, while the
+    real calendar still satisfies it unchanged.
+    """
+
+    def is_trading_session(self, day: date) -> bool: ...
+
+
+def is_capture_worth_starting(today: date, calendar: TradingSessionOracle | None = None) -> bool:
     """Whether the exchange is open today, logged either way (`A.119`).
 
     A timer fires on weekdays and cannot know the holiday calendar; only this can. Exiting quietly
@@ -300,9 +388,7 @@ def main() -> int:
     # Before anything opens a broker session or reads a liquidity file: a timer can fire on
     # weekdays, and only the exchange calendar knows which weekdays are holidays. Exiting 0 keeps
     # a holiday out of the failure log, where it would train an operator to ignore red units.
-    if arguments.only_on_trading_days and not is_capture_worth_starting(
-        datetime.now(IST).date()
-    ):
+    if arguments.only_on_trading_days and not is_capture_worth_starting(datetime.now(IST).date()):
         return 0
     credentials = load_broker_api_credentials(BrokerName.ZERODHA_KITE)
     token_record = KiteAccessTokenFileStore().load_if_still_valid()
@@ -318,16 +404,14 @@ def main() -> int:
     # directory, whatever the operator does — the 2026-08-11 fault made unlikely
     # impossible instead of merely unlikely.
     capture_run_id = now_ist.strftime("%H%M%S")
-    session_close = datetime.combine(
-        now_ist.date(), NSE_QUOTING_WINDOW_CLOSES_IST, IST
-    )
+    session_close = datetime.combine(now_ist.date(), NSE_QUOTING_WINDOW_CLOSES_IST, IST)
     if now_ist >= session_close:
         log(f"session already closed at {session_close:%H:%M} IST — nothing to capture")
         return 1
     log(f"session closes at {session_close:%H:%M} IST, {session_close - now_ist} remaining")
     log(f"capture run id {capture_run_id}")
 
-    candidates, exchange_by_token = build_candidates(kite)
+    candidates, exchange_by_token, merged_populations = build_candidates(kite)
     controller = DepthCaptureAdmissionController(
         tape_root=arguments.tape_root,
         retention_sessions=arguments.retention_sessions,
@@ -347,9 +431,7 @@ def main() -> int:
 
     if bytes_per_row is None:
         log(f"tape is unmeasured — calibrating on {arguments.calibration_cohort_size} instruments")
-        calibration = controller.solve(
-            candidates, (session_close - now_ist).total_seconds(), None
-        )
+        calibration = controller.solve(candidates, (session_close - now_ist).total_seconds(), None)
         calibration_shards = make_shards(
             list(calibration.admitted_tokens),
             credentials.api_key,
@@ -420,6 +502,7 @@ def main() -> int:
     )
     for note in decision.notes:
         log(f"  note: {note}")
+    _log_admission_by_population(decision, merged_populations)
 
     shards = make_shards(
         list(decision.admitted_tokens),

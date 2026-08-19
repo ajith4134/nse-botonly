@@ -598,9 +598,7 @@ class PaperCapitalLedger:
             event = self._insert(
                 PaperCapitalEventKind.CHECKPOINT_REPAIR,
                 occurred_at=self._monotonic_stamp(occurred_at),
-                planned=_PlannedEvent(
-                    amount=divergence, resulting_balance=fold.balance_rupees
-                ),
+                planned=_PlannedEvent(amount=divergence, resulting_balance=fold.balance_rupees),
                 previous_balance=fold.balance_rupees,
                 reason=(
                     f"{stated_reason} — checkpoint claimed balance "

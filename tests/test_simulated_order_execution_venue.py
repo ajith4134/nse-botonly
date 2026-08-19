@@ -151,9 +151,7 @@ def _poll(
     """Advance the venue `times` polls, one simulated second apart, returning every trade."""
     produced: list[VenueTradeReport] = []
     for step in range(times):
-        produced.extend(
-            venue.advance_matching_by_one_poll(at=start + timedelta(seconds=step + 1))
-        )
+        produced.extend(venue.advance_matching_by_one_poll(at=start + timedelta(seconds=step + 1)))
     return produced
 
 
@@ -346,9 +344,7 @@ class TestPartialFillsArriveAcrossPolls:
         assert venue.fetch_orders(session_date=_SESSION)[0].status == STATUS_OPEN
 
         first = _poll(venue)
-        assert [(trade.quantity, trade.price_paise) for trade in first] == [
-            (100, Decimal(10_100))
-        ]
+        assert [(trade.quantity, trade.price_paise) for trade in first] == [(100, Decimal(10_100))]
         partial = venue.fetch_orders(session_date=_SESSION)[0]
         assert partial.filled_quantity == 100
         assert partial.pending_quantity == 200
@@ -357,9 +353,7 @@ class TestPartialFillsArriveAcrossPolls:
         assert partial.status == STATUS_OPEN
 
         second = _poll(venue)
-        assert [(trade.quantity, trade.price_paise) for trade in second] == [
-            (200, Decimal(10_200))
-        ]
+        assert [(trade.quantity, trade.price_paise) for trade in second] == [(200, Decimal(10_200))]
         complete = venue.fetch_orders(session_date=_SESSION)[0]
         assert complete.status == STATUS_COMPLETE
         assert complete.filled_quantity == 300

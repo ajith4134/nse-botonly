@@ -183,10 +183,7 @@ class OrderIntentJournal:
         later would silently be missing on any journal already on disk — and this one is a journal
         of real orders that must survive a deployment.
         """
-        columns = {
-            row["name"]
-            for row in self._connection.execute("PRAGMA table_info(order_fill)")
-        }
+        columns = {row["name"] for row in self._connection.execute("PRAGMA table_info(order_fill)")}
         if "superseded_by" not in columns:
             self._connection.execute(
                 "ALTER TABLE order_fill ADD COLUMN superseded_by TEXT NOT NULL DEFAULT ''"

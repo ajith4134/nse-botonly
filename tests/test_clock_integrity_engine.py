@@ -140,9 +140,7 @@ def test_the_sampler_omits_a_failing_server_rather_than_inventing_a_sample() -> 
 
             return Response()
 
-    sampler = ReferenceClockNtpSampler(
-        ("good-one", "broken", "good-two"), client=OneServerFails()
-    )
+    sampler = ReferenceClockNtpSampler(("good-one", "broken", "good-two"), client=OneServerFails())
     consensus = sampler.consensus(now=SAMPLED_AT)
     assert consensus.unreachable_servers == ("broken",)
     assert set(consensus.agreeing_servers) == {"good-one", "good-two"}
@@ -282,9 +280,7 @@ def test_a_stationary_series_produces_no_alert() -> None:
     random.seed(20260812)
     series = _series([0.25 + random.gauss(0.0, 0.004) for _ in range(300)])
     assert (
-        ClockDriftChangeDetector().detect(
-            series, series_name="floor", session_date=SESSION_DAY
-        )
+        ClockDriftChangeDetector().detect(series, series_name="floor", session_date=SESSION_DAY)
         == ()
     )
 
@@ -324,9 +320,7 @@ def test_a_constant_series_has_no_null_distribution_and_so_no_alert() -> None:
 # -- the decision ----------------------------------------------------------------------
 
 
-def _store_with_history(
-    tmp_path: Path, worst_cases: list[float]
-) -> ClockOffsetObservationStore:
+def _store_with_history(tmp_path: Path, worst_cases: list[float]) -> ClockOffsetObservationStore:
     """A store holding PAST VERDICTS, which is what the thresholds are derived from.
 
     Deliberately not a history of fits: the threshold and the live comparison must be the
@@ -427,9 +421,7 @@ def test_a_page_hinkley_alert_alone_refuses(tmp_path: Path) -> None:
         after_value=0.4,
         session_date=SESSION_DAY,
     )
-    assessment = budget.assess(
-        fit=_fit(), consensus=_consensus(), alerts=(alert,), at=SAMPLED_AT
-    )
+    assessment = budget.assess(fit=_fit(), consensus=_consensus(), alerts=(alert,), at=SAMPLED_AT)
     assert assessment.verdict is TrustVerdict.REFUSE
 
 
@@ -488,9 +480,7 @@ def test_the_calibrated_threshold_measures_the_statistic_that_actually_fires() -
     fired = 0
     for _ in range(40):
         values = (0.263 + generator.normal(0.0, 0.004, 375)).tolist()
-        alerts = detector.detect(
-            _series(values), series_name="floor", session_date=SESSION_DAY
-        )
+        alerts = detector.detect(_series(values), series_name="floor", session_date=SESSION_DAY)
         fired += any(alert.detector == "page_hinkley" for alert in alerts)
     assert fired <= 4  # a 1% design rate; 4/40 is generous headroom, 100% was the defect
 

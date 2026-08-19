@@ -195,7 +195,7 @@ def test_the_whole_history_survives_a_reopen(ledger_path: Path) -> None:
 def test_an_unseeded_ledger_refuses_to_report_a_balance_rather_than_answering_zero(
     ledger_path: Path,
 ) -> None:
-    """"Not seeded" and "seeded at zero" are the same number only to a system that then sizes
+    """ "Not seeded" and "seeded at zero" are the same number only to a system that then sizes
     against the difference — the same distinction the order path draws."""
     with PaperCapitalLedger(ledger_path) as ledger, pytest.raises(PaperCapitalError):
         ledger.snapshot(measured_at=_at(1), live_ceiling=CEILING)

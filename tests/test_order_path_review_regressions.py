@@ -197,9 +197,7 @@ class TestC1TheFoldSurvivesAFillFollowedByATerminalEvent:
         assert order.filled_quantity == 40, "the fill happened, and it is still on the book"
         assert journal.open_orders(_SESSION) == ()
 
-    def test_the_same_holds_for_a_rejection_after_a_fill(
-        self, journal: OrderIntentJournal
-    ) -> None:
+    def test_the_same_holds_for_a_rejection_after_a_fill(self, journal: OrderIntentJournal) -> None:
         intent = _intent()
         journal.record_intent(intent, _expression(), OrderNamespace.SIMULATED, at=_AT)
         journal.record_event(intent.intent_id, LifecycleEvent.SUBMITTED, EventSource.LOCAL, at=_AT)

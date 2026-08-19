@@ -170,7 +170,7 @@ def test_a_worse_measured_edge_is_sized_smaller_through_the_kelly_cap() -> None:
 
 
 @pytest.mark.unit
-def test_the_quantity_is_a_whole_number_of_lots(  ) -> None:
+def test_the_quantity_is_a_whole_number_of_lots() -> None:
     """`L1.09` — an order is lots, not shares, and a part lot is not an order."""
     sized = VolatilityTargetedPositionSizer().size(_inputs(lot_size=65, price="200"))
     assert sized.quantity % 65 == 0

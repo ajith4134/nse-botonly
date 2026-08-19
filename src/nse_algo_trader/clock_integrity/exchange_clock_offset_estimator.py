@@ -43,10 +43,16 @@ from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
-from scipy.optimize import linprog  # type: ignore[import-untyped]
+from scipy.optimize import linprog
+
+LinearProgramSolverMethod = Literal["highs", "highs-ds", "highs-ipm"]
+"""The HiGHS family, which is what `linprog` still supports — the simplex and interior-point
+methods it also accepts are deprecated. Typed rather than left a bare `str` (2026-08-16, when
+`scipy-stubs` was installed for the `A.123` tests and made this call checkable for the first
+time): a misspelt method name used to reach `linprog` and fail at runtime inside the fit."""
 
 MAXIMUM_PHYSICAL_CRYSTAL_SKEW_PPM = 500.0
 """A hardware fact, sourced, and therefore a permitted constant under `R.23(e)`.
@@ -149,9 +155,7 @@ def lower_convex_hull_indices(times: Sequence[float], lags: Sequence[float]) -> 
     return hull
 
 
-def _deskewed_minimum_lag(
-    times: Sequence[float], lags: Sequence[float], alpha: float
-) -> float:
+def _deskewed_minimum_lag(times: Sequence[float], lags: Sequence[float], alpha: float) -> float:
     """The tightest intercept the DATA supports, which is the honest upper bound.
 
     The LP's intercept is not one. Adversarial review built a session whose delay floor
@@ -168,7 +172,7 @@ def _deskewed_minimum_lag(
 class ExchangeClockOffsetEstimator:
     """Fits `(offset, skew)` from delay observations, and projects the line."""
 
-    def __init__(self, *, solver_method: str = "highs") -> None:
+    def __init__(self, *, solver_method: LinearProgramSolverMethod = "highs") -> None:
         self._solver_method = solver_method
 
     def fit(self, observations: Sequence[Any]) -> ClockOffsetFit:
@@ -279,6 +283,15 @@ class ExchangeClockOffsetEstimator:
             raise ClockFitInfeasibleError(
                 f"envelope LP did not solve ({solution.message}); refusing to substitute a "
                 f"mean, which would carry the truncation bias the envelope exists to remove"
+            )
+        if solution.x is None:
+            # `success` and a solution VECTOR are separate promises in scipy's own type, and this
+            # became visible only when `scipy-stubs` landed on 2026-08-16. Without the guard a
+            # success carrying no vector raises `TypeError: 'NoneType' object is not subscriptable`
+            # from inside the fit, which says nothing about clocks; with it, the caller gets the
+            # domain error it already handles.
+            raise ClockFitInfeasibleError(
+                "envelope LP reported success but returned no solution vector"
             )
         alpha, beta = float(solution.x[0]), float(solution.x[1])
         if not (math.isfinite(alpha) and math.isfinite(beta)):

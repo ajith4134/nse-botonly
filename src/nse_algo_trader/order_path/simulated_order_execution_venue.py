@@ -332,9 +332,7 @@ class SimulatedOrderExecutionVenue:
             raise FreezeQuantityExceededError(rejection, raw_message=rejection)
 
         self._orders_placed += 1
-        broker_order_id = self._broker_order_id_for(
-            order, placement_ordinal=self._orders_placed
-        )
+        broker_order_id = self._broker_order_id_for(order, placement_ordinal=self._orders_placed)
         simulated = SimulatedOrder(
             broker_order_id=broker_order_id,
             broker_tag=order.broker_tag,
@@ -562,8 +560,7 @@ class SimulatedOrderExecutionVenue:
             ladder = walk_order_book(snapshot, simulated.side, probe.visible_quantity)
         except OrderBookWalkError as unusable:
             simulated.refusal_to_fill_reason = (
-                f"the book for instrument {simulated.instrument_token} cannot be walked: "
-                f"{unusable}"
+                f"the book for instrument {simulated.instrument_token} cannot be walked: {unusable}"
             )
             return None
         marketable = tuple(
@@ -600,9 +597,7 @@ class SimulatedOrderExecutionVenue:
         )
         simulated.fills = (*simulated.fills, fill)
         simulated.refusal_to_fill_reason = ""
-        simulated.status = (
-            STATUS_COMPLETE if simulated.pending_quantity == 0 else STATUS_OPEN
-        )
+        simulated.status = STATUS_COMPLETE if simulated.pending_quantity == 0 else STATUS_OPEN
         # Kite has no partially-filled status: a part-filled order reads OPEN with a non-zero
         # filled_quantity (`docs/research/222` §2), and the fill ledger derives the partial state
         # from the quantities. Emitting a status Kite does not have would be the one difference

@@ -117,9 +117,7 @@ class SteppedRecordedBookSource:
                 previous = last_seen.get(token)
                 if previous is not None:
                     gaps = gaps_by_token.setdefault(token, array("d"))
-                    gaps.append(
-                        abs((snapshot.receipt_time - previous).total_seconds()) * 1_000
-                    )
+                    gaps.append(abs((snapshot.receipt_time - previous).total_seconds()) * 1_000)
                 last_seen[token] = snapshot.receipt_time
                 index = bisect_left(instants, snapshot.receipt_time)
                 if index >= len(instants):
@@ -222,9 +220,7 @@ class SteppedRecordedBookSource:
             self._untaped.add(instrument_token)
             return None
         ordered = sorted(snapshots, key=lambda snapshot: snapshot.receipt_time)
-        threshold_millis = self._fill_threshold(
-            self.engine.staleness_threshold_millis_for(ordered)
-        )
+        threshold_millis = self._fill_threshold(self.engine.staleness_threshold_millis_for(ordered))
         grid: dict[datetime, BookSnapshot] = {}
         cursor = 0
         latest: BookSnapshot | None = None

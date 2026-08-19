@@ -19,17 +19,42 @@ correctness of allocation** (R.13).
 
 ---
 
-## Build shape (recorded so it is not re-litigated)
+## Build shape
 
-**Hybrid: minimal foundation scoped to ONE holon, then that holon whole, then widen.** Both alternatives
+> **SUPERSEDED 2026-08-17 by `A.130`.** The hybrid one-holon-then-widen shape below is no longer the
+> operative plan. All six segment holons are built in parallel on **one shared spine**, restoring
+> `A.01` ("SIX segment holons, all built from the start") and `R.10` (the six are equal by default).
+> The full design, and the argument that it carries no drawback, is in
+> `docs/SIX_SEGMENT_PARALLEL_BUILD_PLAN.md`. In short: the decision path is segment-blind and built
+> once, serially; each segment BOT is a real engine owning its strategies, relevance model, risk
+> sub-limits, memory and track record, plus the instrument facts that differ — denominator, lot/tick,
+> expiry, settlement, cost row, Greeks, venue calendar and carry rule (`L5.25`); **built is not armed** (`R.04` maturity ladder + `R.22` two
+> keys + `A.01` per-segment switch); each segment is judged against its own null rather than a
+> sibling; and a shared conformance suite parameterised over all six bots is what makes six
+> concurrent authors safe.
+>
+> **Order now:** spine first and serial — `L5.29` protocol + conformance suite (adversarially
+> reviewed before any bot starts) → `L13.29` decision-trace contract → `L5.31` quality floor and
+> evidence card → `L5.30` pod paper lifecycle. Then six BOTS concurrently in separate worktrees:
+> `L5.26` cash-intraday · `L5.27` index-option · `L5.28` stock-option · index-future · stock-future ·
+> MCX.
+>
+> **What survives from below unchanged:** `A.07`'s choice of intraday mean-reversion on cash as the
+> first strategy family; decision traces before panels (`A.29`); and the definition of the Phase 1
+> milestone as one instruction GRADUATING rather than a trade being placed.
+
+*The superseded shape, kept visible so it is not silently rewritten:*
+
+**~~Hybrid: minimal foundation scoped to ONE holon, then that holon whole, then widen.~~** Both alternatives
 are failure modes this project already lived through — pure foundation-first produced 288 modules and no
 proven money; pure vertical-slice produces the "code too thin" diagnosis in REDESIGN_v1.
 
-- **First holon: cash-intraday** (A.07) — lowest cost floor, no Greeks prerequisite, simplest denominator,
-  and it exercises the overnight-carry path.
+- **~~First holon: cash-intraday~~** (A.07) — lowest cost floor, no Greeks prerequisite, simplest denominator,
+  and it exercises the overnight-carry path. *(Now the canary, not the gate — `A.130`.)*
 - **Decision traces before panels** (A.29 / L13.29) — reasoning cannot be reconstructed afterwards.
+  *(Still operative; it is spine work.)*
 - **Phase 1 done = one instruction GRADUATES**, not a trade placed. A placed trade proves plumbing; a
-  graduated instruction proves the pipeline.
+  graduated instruction proves the pipeline. *(Still operative.)*
 
 ---
 
@@ -47,15 +72,33 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       The working tree, all **231 commits** and every git remote are CLEAN — the token is not in
       this repository. It lives only in `~/.config/gh/hosts.yml` at mode 0600. Both project repos
       are PRIVATE and the account has no organisations.
-      **What makes it urgent anyway:** it is a *classic* PAT carrying `repo`, `admin:org`,
-      `admin:enterprise`, `delete_repo`, `workflow`, `admin:public_key`, `write:packages`, `gist`
-      and `user` — reach over **10 private and 4 public repositories**, with the power to delete
-      any of them and to inject CI workflows. The blast radius is the entire account, not this
-      project.
-      **Do this:** (1) revoke at https://github.com/settings/tokens ; (2) replace with a
-      FINE-GRAINED token scoped to `nse-botonly` and `nse-algo-trader-archive-2026-08-10` only,
-      with `Contents: read and write` and nothing else — that is everything this project uses and
-      it removes essentially all of the blast radius permanently; (3) `gh auth login` with it.
+      **RE-VERIFIED 2026-08-15 (`A.121`), and the scope list is corrected in both directions.**
+      Cleanliness re-confirmed by a stronger test than `A.95` ran: the LIVE token value itself,
+      read from `hosts.yml`, was grepped against **all 282 commits, the tracked tree, every
+      untracked file under the repo, and `.env`** — **0 occurrences everywhere**. `.env` is
+      gitignored (`.gitignore:6`). Six `ghp_`-shaped hits DO appear in history and are **synthetic
+      fixtures** in `tests/test_committed_credential_detector.py`, planted to prove the detector
+      fires; recorded here so the next audit does not re-raise the same alarm.
+      **Two scopes `A.95` OVERSTATED:** the account has **0 organisations** (`gh api user/orgs`)
+      and is on the **free** plan, so `admin:org`, `admin:org_hook`, `write:network_configurations`
+      and `admin:enterprise` have nothing to administer. Their blast radius is nil.
+      **One scope `A.95` UNDERSTATED, and it is the worst one:** `admin:public_key` +
+      `admin:ssh_signing_key` let a holder **add an SSH key to the account**, which SURVIVES token
+      revocation. Revoking the token does not by itself end access if a key was added.
+      **What genuinely bites**, measured over 14 repos (10 private, 4 public): `repo` (read+write
+      to all), `delete_repo` (delete any), `workflow` (inject CI), `admin:public_key` (persistent
+      access), `gist`, `user`, `codespace` — 20 scopes in total on a *classic* PAT.
+      **The project needs almost none of it:** `grep` over `src/` and `scripts/` finds **no GitHub
+      API call at all** — only `git push`/`fetch` over https to two remotes. So `Contents: read and
+      write` on exactly those two repos is sufficient.
+      **Do this, in this order** (replacement BEFORE revocation, or pushes break in between):
+      (1) create a FINE-GRAINED token at https://github.com/settings/personal-access-tokens/new —
+      repository access limited to `nse-botonly` and `nse-algo-trader-archive-2026-08-10`,
+      permission `Contents: read and write`, nothing else;
+      (2) `gh auth login --with-token < <(echo NEW_TOKEN)` , then `gh auth status` to confirm;
+      (3) revoke the old classic PAT at https://github.com/settings/tokens ;
+      (4) **check https://github.com/settings/keys for SSH keys you did not add** — this is the
+      step that closes `admin:public_key`, and revocation alone does not do it.
 - [x] **0.6** Committed-credential guard — `L3.30` · a dependency-free detector for every
       credential shape this project holds, wired into the Stop hook over the TRACKED tree and
       available over full history with `--include-history`. Findings name their blast radius. 23
@@ -63,6 +106,17 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       clean — so the `B.10` audit result is pinned and cannot silently stop being true.
       *The half of `B.10` that was actually in my control (`A.95`).*
 - [x] **0.6** Repo skeleton — `src/nse_algo_trader` package, `pyproject.toml` with ruff (security, naming, datetime-awareness, blind-except bans) + strict mypy + pytest markers naming the R.23 test kinds; installed editable
+- [x] **0.6b** Plan-conformance guard — `L3.31` · four checks in the Stop hook, on the same footing
+      as the `R.02` credential guard and the `R.03` money-literal guard: every cited plan id must
+      exist in a governing document · the count of `src` modules citing no plan entry may only fall
+      (baseline 27, a ratchet) · a `[x]` task naming a source path must have that path on disk · and
+      where the plan names a thing, a different word for it is drift. The gate now also fires on
+      `docs/` changes, since plan drift is usually docs-only; `ruff`/`mypy`/`pytest` stay gated on
+      code so a documentation edit does not run a five-minute suite. 34 tests, including the
+      adversarial one that proves a non-conforming input actually FAILS, and a real-tree `R.05` pass.
+      Verified end to end: injecting "segment adapter" into a docs file makes the gate exit 1.
+      *Built 2026-08-17 after the operator had to correct plan drift twice by hand (`A.131`); three
+      findings on its first run, one of which was my own uncorrected wording.*
 - [x] **0.7** Execution gate — the Stop hook now runs **ruff + mypy + pytest** and blocks the turn on any failure (`L2.32`, R.23 step 6)
 - [x] **0.7a** Rupee-literal detector — ***now actually wired*** via `scripts/check_no_hardcoded_money.py` into the Stop gate over `src/` + `scripts/`; firing proven with a planted violation (`A.43`, `O.30`). Was an orphan invoked only by its own test — AST guard failing the build on hardcoded money; enforces `R.03` mechanically — `L2.31a` *(retro-listed 2026-08-10: built earlier but had no plan entry or task, so it was an untracked orphan)*
 - [~] **0.8** Capital as a runtime parameter across ₹1 lakh → ₹1 crore, with **no rupee constant anywhere** — `A.23`, `R.03`
@@ -88,8 +142,27 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       · ⚠️ **NOT R.11-done — consumer queued**: observation tiers (`L5.21c`, task 3.53d) and the option-chain feed (`L6.28`)
 - [~] **1.2** Instrument-token reuse guard — full-history lookup, rename-vs-reuse discrimination, persisted + auditable — `L0.02`
       · adversarial review found the original detected only same-day swaps, the one pattern Kite never produces
-- [~] **1.3** Historical bar store (SQLite) — `L0.03` — *built, gated, mutation-tested 19/19, R.05 pass on all 659,990 retained bars. `[~]` not `[x]` per R.11: the primary consumer (indicator pipeline / backtest reader) is still queued.*
-- [~] **1.4** Bitemporal availability-time on the bar store — `L0.04` — *same slice; availability filtering is a property of the store. Same R.11 caveat.*
+- [~] **1.3** Historical bar store (SQLite) — `L0.03` — *built, gated, mutation-tested 19/19, R.05
+      pass on all 659,990 retained bars. `[~]` not `[x]` per R.11: the primary consumer (indicator
+      pipeline / backtest reader) is still queued.*
+      **2026-08-17 (`A.133`): the store's table is renamed `daily_reconciled_bar` (`R.14`) — it
+      holds DAILY cross-broker bars, and the one-character difference from the unrelated
+      five-minute `price_bars` table cost two wrong findings in a day (`O.115`). Live database
+      migrated in place: 203 rows intact, legacy duplicate indexes dropped, WAL checkpointed.*
+- [~] **1.4** Bitemporal availability-time on the bar store — `L0.04` — *same slice; availability
+      filtering is a property of the store. Same R.11 caveat.*
+      **2026-08-17 (`A.133`): extended to the five-minute bars the decision path actually reads.**
+      `PointInTimeFiveMinuteBarReader` (spec `docs/research/251`, review `docs/research/252`) has
+      **no method callable without an `as_of`**, enforced by a signature-inspecting test, plus a
+      guard test that fails the build when a new consumer reads `price_bars` unfiltered.
+      Adversarial review found a **CRITICAL look-ahead leak in the anti-look-ahead reader** —
+      `availability_time` is TEXT, so `<=` compared strings, and a Tokyo-offset cutoff leaked 39
+      future bars while a UTC one hid the whole session. Fixed by normalising into the store's
+      timezone; re-verified live, five offsets now agree at 2,538 bars / 3,712 instruments.
+      Also fixed: 4 guard bypasses, a migration TOCTOU race (5 of 6 concurrent opens crashed),
+      silent row abandonment, VIEW blindness, live duplicate indexes, and a 13x slow read.
+      `R.05`: reader agrees exactly with SQL on the live 1,246,985-row store (1,121,005 visible,
+      125,980 hidden at 2026-08-14 12:00 IST). Open debt: `B13`, `B14`.
 - [~] **1.5** Point-in-time universe reconstruction — `L0.05` — *built; review found 13 defects, all fixed;
       mutation 16/16; R.05 on real F&O + real cash + real MWPL. `[~]` per R.08 (no dashboard surface yet).*
 - [~] **1.5a** Absence classifier — six evidence-carrying classes, `UNKNOWN` first-class — `L0.05a` — *built
@@ -230,6 +303,160 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       place in the ingest core where remote payload data reaches URL construction, so discovered values
       are validated at construction — URL control characters, control bytes, unbounded length and empty
       values all refused, with 10 hostile inputs tested. `[~]` per `R.08`: no dashboard surface yet.*
+- [~] **1.30c** **BAR / DEPTH-TAPE JOIN VERIFICATION** — `L0.36` — *built 2026-08-15 (`A.120`,
+      backlog `M14`, spec `docs/research/236`). `F04` takes its signal from the bar store and every
+      fill from the depth tape, and until this engine nothing had compared the two. Three comparisons
+      per bar: close vs the tape's last traded price, close vs the aligned book's bid/ask bracket
+      (the only one that catches a token collision — a collided instrument's prices are individually
+      plausible), and the cumulative-volume increment tested ASYMMETRICALLY, since sampling moves both
+      endpoints inward and can only make the tape under-count. Every tolerance DERIVED (`R.03`): the
+      instrument's own median spread for price, the fill path's own staleness quantile for alignment;
+      significance is an operator input with no default. Verdict is an exact one-sided binomial test
+      against a LEAVE-ONE-OUT null — an instrument contributing to its own null masks itself — giving
+      the `A.41` three-way partition: verified / refuted / `JOIN_UNVERIFIABLE`. Refusals union into
+      `L0.33`'s inadmissible set and filter the paper replay, so a refuted join produces no fill
+      (`R.06`). Surfaced on `/microstructure`, where an UNRUN verification renders as unrun, never as
+      clean (`R.08`). 32 tests including the token-collision adversarial case; full suite 2,152 green.
+      **R.05 PASSED on ALL THREE recorded sessions** (`docs/research/237`): 11,072
+      instrument-sessions, agreement exact to the paise (all nine deviation deciles 0.00), 187
+      instrument-sessions refused. `M25`'s streamed preload was built in the same slice because
+      without it there was no pass at all (`R.16`) — 2026-08-13 went from not finishing in 90
+      minutes to 2m46s, with a test diffing the streamed and per-instrument paths bar by bar.
+      **What it found is now the bigger item: `M26` — the bar store holds a RETRO-ADJUSTED price
+      series while the tape holds the traded one** (`HINDPETRO` off by a constant 0.951 on 150 of
+      150 bars, triangulated against NSE bhavcopy, which agrees with the TAPE). Open, and it needs
+      an operator decision.
+      **SIGN-OFF RETRACTED 2026-08-15 the same day** (`A.122`, `docs/research/240`). The `R.23(c)`
+      adversarial review — the step skipped twice and flagged twice as a deviation — found **8
+      confirmed bugs with runnable reproductions, four HIGH**, that ruff, mypy, 36 purpose-written
+      tests and three real-data passes all missed. Fixed and each given a regression test: `B2`
+      streamed staleness derived from ARRIVAL order (real tape jumps back 5.34h between capture
+      runs; token 257 threshold inflated 3.9x — now measured at 0.00% error) · `B3` preload dropped
+      the snapshot at the final wanted instant · `B4` one wide book aborted a true `M26` fit ·
+      `B5` the binomial tail returned 0.0 for a true 2.22e-20, now log-space and exact to 1e-13 ·
+      `B6` the runner verified at quantile 0.99 while the fill path uses 0.95 — **this is what
+      invalidated the `R.05` pass** · `B7` a `--limit` probe was written as a full verification ·
+      `B8` untraded and crossed books counted as disagreements. Plus 5 `R.03` sites and 2 `R.06`
+      orphans.
+      **BOTH DECIDED 2026-08-16 (`A.123`, spec `docs/research/241`), and they were ONE defect.**
+      The binomial null asserted every comparison in a session is an independent draw at one common
+      rate; disagreement propensity is in fact a property of the INSTRUMENT, which is what the
+      24.45% self-inconsistent-bracket figure measures, and what made a no-broken-join session
+      produce ~594 false refusals of 9,000 against the 121 seen. Replaced by a **beta-binomial null
+      whose intra-instrument correlation is estimated per session** by a Pearson-chi-square method
+      of moments, with **exact leave-one-out in `O(1)`** per instrument via four running sums — the
+      dispersion is left out as well as the rate, since an instrument that disagrees on everything
+      inflates the dispersion it is judged against and a raised dispersion widens the null for
+      every instrument at once. `B1` needed no separate fix: `smallest_trials_that_can_reject` was
+      always right and was reading the wrong distribution. `binomial_tail` renamed
+      `disagreement_upper_tail` (`R.14`); the store records `null_model` and `rho-hat` beside every
+      verdict, for the reason `B6` forced the staleness quantile to be recorded.
+      **`R.05` PASSED on all three sessions** (`docs/research/242`): refusals on 2026-08-11 fell
+      **121 -> 20** (0.22% against a 1% significance), `rho-hat` measured 0.0399-0.0738 — small,
+      positive, stable — and every falsification check in `docs/research/241` §5 passes:
+      `HINDPETRO` survives on all three at 0.95099 and `XCHANGING` on 2026-08-11 at 0.96959.
+      Backlog `M29` downgraded from risk to known property: the estimator's saturation needs an
+      exactly-clean session and real tapes disagree at 2-3%.
+      **`B1` CLOSED SEPARATELY by `A.124`, and it was not what I said it was.** The `R.05` pass
+      confirmed the bar stays at 2 (15 instruments verified on two bars, 136 on <=10 of 3,204), and
+      the adversarial review showed the real mechanism is a ZERO null giving a bar of **1** — one
+      agreeing bar of 100 read as `JOIN_VERIFIED`. Diagnosis: one gate doing two opposite jobs.
+      `smallest_trials_that_can_reject` is a SIZE question and the right gate for `JOIN_REFUTED`;
+      `JOIN_VERIFIED` needs a POWER question. Fixed by `smallest_trials_that_can_verify`, applied
+      AFTER the test so refusals cannot move, with the claim as a third operator policy input
+      (`--minimum-detectable-disagreement-rate`, no default). See task `1.30e`.*
+- [x] **1.30e** **THE VERIFICATION CLAIM — a power gate on `JOIN_VERIFIED`** — `L0.36` · `A.124`,
+      spec `docs/research/242` §2. Closes `B1`, which the beta-binomial did NOT close.
+      `BetaBinomialDisagreementNull.smallest_trials_that_can_verify` returns the fewest comparisons
+      at which an instrument disagreeing at the operator's stated rate would be refused with
+      probability `1 - significance` — the same error rate the size gate obeys on the other side,
+      so no second policy number is invented. Applied AFTER the test, so `refuted_instruments()` is
+      unchanged by construction and a test asserts refusals do not move with the claim. The rate is
+      a REQUIRED input with no default: it is not a threshold on the data, it is the definition of
+      what `JOIN_VERIFIED` claims. Measured bars: 22/19/25 at a 0.5 claim across sessions of 9,000,
+      1,420 and 652 instruments — stable — against 298/136/525 at 0.25, and 2 at 1.0. The zero-null
+      case resolves with no special case: still refutes on one disagreeing bar, now needs 7 agreeing
+      ones. 9 new tests including test-plan item 8 of `docs/research/241` §6, which was specced,
+      never written, and was the one test that would have caught this before the review did.
+      **`R.05` PASSED on all three sessions** (`docs/research/242` §6.5): `on<=2`/`on<=5`/`on<=10`
+      all **zero**, fewest bars behind a verified verdict 2 -> 22 / 7 -> 21 / 4 -> 25, and refusals
+      **byte-identical** on every session including the token list. 350 instrument-sessions moved
+      from verified to unverifiable; none of them was refused, so none was trading a broken join —
+      they were trading an unexamined one.
+      **`R.23(c)` review of the power gate itself: 1 HIGH + 6 MEDIUM, all fixed and
+      mutation-verified.** `H1` was live in the store — power is NOT monotone in `n`, so the
+      `n >= bar` form admitted **10 instruments at n=24 with power 0.9887** against a required
+      0.99, while the dashboard printed the claim over them. Replaced by `has_power_to_verify`
+      asked at the instrument's own comparison count against its own leave-one-out null, which
+      also closes `M1` (pooled-vs-LOO bar: 35 against 167, true power 0.795) and re-mechanises
+      `M6`. `M3`: the scan cost 82-240s per session and 143s inside one unit test, all of it above
+      the largest reachable `n` — now bounded by the session's own maximum, **82s -> 0.03s**.
+      `M4`/`M5`/`L1` fixed; 6 of the 8 surviving mutations were on the store/surface side, whose
+      write -> read -> render chain was untested end to end.
+      **`R.05` re-run confirms the fix to the instrument**: 2026-08-11 2,906 -> **2,896** verified,
+      exactly the ten `H1` named, with 2026-08-12 and 2026-08-13 unchanged and refusals identical
+      on all three. Full suite **2,227 tests, 0 failures**. Dashboard verified live and
+      screenshotted (`20260816T111933Z_a124_after_review`). Records: `docs/research/242` §7,
+      `O.105`, `O.106`.
+      **BOTH FOLLOW-UPS CLOSED 2026-08-16 by `A.125`** (spec `docs/research/243`), operator-
+      delegated. `M31`: the loop filtered on refusals ALONE, so an undecided instrument traded like
+      a cleared one — new reader `instruments_not_cleared_for` beside `refuted_instruments_for`
+      (both kept; they answer different questions and the `A.41` partition must survive in the
+      consumer). **My published cost was wrong by five times** — "67% of the universe" is really
+      **8.7% / 0.4% / 1.2%**, because 5,673 of the 6,084 unverifiable have no bars in the store and
+      `instruments_priced_on` requires `EXISTS(price_bars)`, so they were never candidates.
+      `M32`: the ALTERNATIVE was Binomial, reinstating the independence assumption the null had
+      just removed — now beta-binomial at the session's own `rho-hat`, so both sides of the test
+      make one assumption. A 0.5 claim is unreachable on two of three sessions once corrected, so
+      the operating claim moves to **0.75** (bars 12/9/12, CHEAPER than the flawed model's
+      22/19/25). At claim 1.0 the two models coincide — where every observed defect sits.
+      **Third `R.23(c)` review: 1 HIGH + 7 MEDIUM.** `H1` falsified §2.2's own safety claim — the
+      dependent correction does NOT only raise the bar; at `k* = n` its `P(K=n)` decays
+      polynomially where the binomial's decays geometrically, so at `p=0.021679, rho=0.6, claim
+      0.995` the dependent bar is **3** against the independent **7**. The gate now requires power
+      under BOTH readings and takes the weaker; operating bars unchanged. `M6`: the whole consumer
+      change was UNTESTED — three mutations survived — now extracted as `admit_instruments_for`
+      and pinned. `M7`: a test asserted the opposite of its own name and passed via an `or` for two
+      rounds. `M16`: the scan-cap constant survived mutation a THIRD consecutive round, on the
+      constant round two's fix was meant to pin — *a test that passes a parameter explicitly does
+      not pin that parameter's default*. Records: `docs/research/243` §4, `O.107`-`O.109`.
+      ⚠️ **Also recorded: backlog `M33` — I destroyed uncommitted work from a previous session with
+      `git checkout --`, and recovered it from a surviving `.pyc` (docstring verbatim). Cannot
+      prove those two files held ONLY the recovered changes.**
+- [x] **1.30d** **PRICE-BASIS PROVENANCE on the bar store** — `L0.37` · `A.126`, spec
+      `docs/research/239`, review `docs/research/244`. **BUILT 2026-08-16.**
+      `price_bars.adjustment_basis_as_of` records what a stored price MEANS: traded iff the basis
+      date equals the session, adjusted-after-the-session if later, UNKNOWN if unrecorded — the
+      `A.41` three-way partition pushed down into the store. Writer records it at fetch time (the
+      fetch date IS the basis, no corporate-action feed needed); a consumer rule arms itself on
+      evidence (`R.04`); `/microstructure` carries a five-tile panel; the five-minute backfill and
+      a basis report now run in the DAILY pass, which is what actually closes the gap — that
+      backfill was run by hand, and `_reconcile_daily_bars` writes DAILY bars to a different store.
+      **`R.05`: 0.0% of bars on the traded basis on every session — all 1,022,751 rows UNKNOWN and
+      permanently so.** That is the feature reporting a fact the schema could not express, not a
+      failure; the panel says it in words rather than rendering a reassuring zero.
+      **Review: 4 HIGH.** `H1` the daily timer fires TWICE and the 08:15 firing targets YESTERDAY,
+      so "traded basis by construction" held only for the evening run — and `date.today()` was the
+      UTC date on a GMT box. `H2` my `R.04` ladder armed on ONE traded bar and, on a partial
+      backfill, withheld **3,322 of 3,327 instruments at 0.1% coverage**. `H3` one impossible row
+      raised out of a surface aggregate → HTTP 500 on `/replay`. `H4` `INSERT OR IGNORE` returns
+      rowcount 0, so a re-run could never annotate the existing rows. All fixed; 26 tests; full
+      suite 2,270 green. **13 of 30 mutations survived and every one was WIRING** — three writer
+      mutations that make the feature a rubber stamp passed 17/17 (`O.110`).
+      **CRITERION 3 CLOSED 2026-08-16 by `A.127`, and closing it found a bigger defect.** The
+      backfill's universe was the DEPTH TAPE's, whose instrument set is chosen by a DISK BUDGET
+      (`admitted 652 of 9,891 | 0.33 GiB of a 0.33 GiB budget`) — so bar coverage was hostage to
+      how much disk another subsystem got, and 2026-08-14, a trading Friday with no capture, held
+      **zero bars** (`R.16`). Now `cash_equity_universe` (NSE/EQ, 10,197 tokens, ~113 min paced)
+      unioned with the tape; the capture is an input, never a gate.
+      **Real run:** Kite session regenerated via the daily run's own automated TOTP step, then
+      `_backfill_five_minute_bars_for(2026-08-14)` wrote **77,532+ bars into a session that had
+      zero**, every one carrying `adjustment_basis_as_of` = the IST fetch date and correctly
+      classified `ADJUSTED_AFTER_THE_SESSION` — `H1`'s fix on real data. The admission rule on that
+      session reported **unarmed yet still withholding**, which is `H2`'s design exactly: absence
+      of evidence does not withhold, presence of it does.
+      ⏳ Dated expectation, not a blocker: the SAME-DAY traded-basis outcome first occurs on the
+      next trading evening; it could not be forced on a Saturday.
 - [x] **1.31** Point-in-time market rules + calendar history — `L0.31` · bitemporal rule store: 16 families, effective-time × belief-time, interval reconciliation with conflicts SURFACED not resolved away, and `RuleCoverageError` rather than substituting today's regime. Seeded from `research/61`'s dated circulars — 11 of 16 families covered, 5 deliberately uncovered because no admissible source exists. Spec `docs/research/215`; 34 tests incl. a `portion` differential property test and an R.05 pass against the exchange's own contracts (`A.80`). Surface at `/rules`. **Observed-fact path built same day** (`A.81`): `InstrumentMasterRuleObserver` derives tick/lot history from the daily instrument-master snapshots by run-compression, lazy per symbol (0.02s against 227,535 rows), registered as an `ObservationalRuleSource`; `tick_size`/`lot_size` now **observed only**, `session_hours` seeded — **14 of 16 covered, 2 left and both BLOCKED** (`per_stock_price_band`, `dynamic_price_band` appear in no circular; forward capture only). +12 tests, and a full-universe key sweep: 1,668 ambiguous symbol-days symbol-only, 0 with `segment` pinned (`O.58`)
 - [x] **1.32** Clock sync + drift alert — `L0.32` · offset/skew ESTIMATOR, not a monitor: the Moon-Skelly-Towsley lower-envelope LP (`scipy` HiGHS) over the depth tape, exact-reduced by per-exchange-second minima + lower convex hull (11.4M rows → 20,086 observations → **15 hull vertices**); NTP arm (`ntplib` + a hand-built Marzullo intersection — no packaged implementation exists on PyPI) brackets host-minus-UTC; ADWIN + permutation-calibrated Page-Hinkley date the change points; SQLite carries fits/consensuses/alerts across days. Changes behaviour via `DepthPacketIntegrityClassifier`'s host-error-corrected staleness; wired into `run_daily_operations`; surface at `/clock`. Real-data pass on both tape sessions found TWO defects no hermetic test could (a fabricated 2-server "consensus", and illiquidity read as delay). Spec `docs/research/216`; 87 tests. **Adversarial review (`R.23(c)`) found 7 reproduced defects against 70 passing tests** — 2 critical (a permutation threshold calibrated against a statistic the detector never computed: 100/100 null false alarms, now 1/100; and a verdict ladder comparing two different quantities, making REFUSE unreachable) — all fixed with regression tests, and the LP fix moved the feed-derived skew to within **0.85 ppm of chrony's independent measurement**. `A.82`, `A.83`, `O.59`, `O.60`, `O.61`
 - [x] **1.33** Multi-broker consolidated feed with liquidity-weighted cross-check — `L0.33` · captured live (Kite + Angel One, 128,640 rows, 67 instruments) then fused: alignment into comparable windows, inverse-variance x liquidity weighting with per-source noise from the **three-cornered hat** (Gray & Allan 1974 — the first design was mathematically unidentifiable with two sources and a property test proved it), synthetic NBBO, robust median with refusal, and a per-instrument broker ranking. Carried state in SQLite (pairwise variances in bps, availability, freshness, frozen-while-others-moved). **Real session: 80,180 groups, 98.10% resolved, 955 crossed, 92.5% exact midpoint agreement, Kite best on 54/67 driven by Angel One freezing 13.20% vs 10.08%.** Wired: daily-runner step, `/feed` surface, and an admissibility gate the microstructure replay refuses on. Adversarial review found **11 reproduced defects, one critical** (a rounding call had been reporting 29,030 of 86,306 unchanged quotes as movement) — all fixed with regression tests. Spec `docs/research/217`; 39 tests. **Third feed added same day** (`A.86` — the Upstox blocker was an untested credential, not an expired one), which made per-source noise identifiable (`angel_one` 0.074 bps², `kite` 0.342) and exposed a data defect two brokers had hidden: 25,761 rows where the top of book is an NSE ±3% price-band order, not a touch (`A.87`). Rejecting self-crossed books moved resolved from 86.29% to **95.97%** and refusals from 13,552 to **332**. `A.84`-`A.87`, `O.62`-`O.66`
@@ -517,7 +744,27 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 
 **— L2 —**
 
-- [ ] **2.1** Honest trial registry — `L2.01`
+- [~] **2.1** Honest trial registry — `L2.01` · `A.128`, spec `docs/research/245`, review
+      `docs/research/246`. **BUILT 2026-08-16**, first engine of `F06`. Append-only, hash-chained,
+      four terminal outcomes all counted (`COMPLETED`/`ABANDONED`/`ERRORED`/`DISCARDED`);
+      `verify_chain()` returns WHERE a break is, never a boolean, and an append-only witness
+      sidecar catches a truncated tail the chain alone cannot see. Surface at `/trials` (`R.08`).
+      **Sourcing rejected every tracker on mechanical evidence** — `mlflow`'s `search_runs` returned
+      4 of 5 after one `delete_run` (the flattered count is its DEFAULT), `aim` has
+      `Repo.delete_run`, `sacred` does not own its storage; `optuna`'s state model adopted, not
+      vendored. Nothing on PyPI is tamper-evident because none of them is trying to be.
+      **`R.05`: 3,481 retained trades -> 5 provable hypotheses**, chain verified. Counting the
+      trades as trials would have inflated `N` by three orders of magnitude — the OPPOSITE failure,
+      and just as wrong. Recorded as a FLOOR: trials abandoned before they produced a trade left no
+      trace.
+      **Review: 4 HIGH, 26 of 43 mutations survived**, and two findings were my own claims being
+      false — the chain could not see a truncated tail (the only edit an under-reporter needs), and
+      "checkable by a reader who does not trust the author" was an overclaim broken in twelve lines.
+      Both fixed; the threat model is now stated honestly. My structural test was also a tautology
+      that a live `UPDATE` method passed 15/15; replaced with an AST audit. 33 tests.
+      ⚠️ **`[~]` per `R.11`: no `F06` GATE consumes the count yet** — by design
+      (`docs/research/245` §6: the registry counts, it must not judge), with `L2.08` named as the
+      first consumer. Backlog `M35`.
 - [ ] **2.2** Holdout custodian — `L2.02`
 - [ ] **2.3** Deflated Sharpe Ratio as in-loop fitness — `L2.03`
 - [ ] **2.4** Combinatorial Purged Cross-Validation (CPCV) — `L2.04`
@@ -530,7 +777,10 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **2.11** Mechanism declaration — `L2.11`
 - [ ] **2.12** Regime-coverage gate — `L2.12`
 - [ ] **2.13** Multi-strategy validated promotion pipeline — `L2.13`
-- [ ] **2.14** Strategy trial registry store — `L2.14`
+- [~] **2.14** Strategy trial registry store — `L2.14` · built with `2.1` as the same engine's
+      storage: SQLite at `~/.nse_algo_trader/trial_registry.sqlite3`, WAL, `BEGIN IMMEDIATE` per
+      append, a `sequence` primary key, and **no `UPDATE` or `DELETE` statement anywhere in the
+      module** — asserted by parsing the source, not by grepping it. Same `R.11` caveat as `2.1`.
 - [ ] **2.15** Strategy-family promotion registry — `L2.15`
 - [ ] **2.16** Hansen SPA test at the promotion gate — `L2.16`
 - [ ] **2.17** White's Reality Check / bootstrap-vs-random-walk null for pattern candidates — `L2.17`
@@ -581,14 +831,23 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **2.56** Structured audit log of every decision — `L3.24`
 - [ ] **2.57** Blue-green deploy + config versioning and rollback — `L3.25`
 - [ ] **2.58** Safety-incident forensic store — `L3.26`
-- [~] **2.59a** SCHEDULED DAILY OPERATIONS — systemd user timer — `L3.28` — *built 2026-08-11 (`A.61`).
+- [x] **2.59a** SCHEDULED DAILY OPERATIONS — systemd user timer — `L3.28` — *built 2026-08-11 (`A.61`).
       Fires twice per session day: 19:00 IST (same-day bhavcopy + next day's ban list) and 08:15 IST
       (overnight MWPL). A **USER** unit with linger, because SELinux denies `init_t` reading
       `user_home_t` — a system unit failed 203/EXEC and could not execute the venv at all. Logs to a
       FILE as well as journald, because `journalctl --user` captures nothing from user units on this
       host. `Persistent=true` (missed firings run on boot — rolling sources are unrecoverable) and
-      `RandomizedDelaySec=600`. Enabled and active; next firing verified. `[~]` until a full run has
-      been observed end to end.*
+      `RandomizedDelaySec=600`. Enabled and active; next firing verified. ~~`[~]` until a full run has
+      been observed end to end.~~ **TICKED 2026-08-17: a full run HAS now been observed end to end.**
+      The 2026-08-15 06:56 UTC firing completed **22 of 23 steps** — 3,464 cash and 35,089 F&O
+      bhavcopy rows ingested, 88,219 identity observations, a replay leakage guard over 1,036,513
+      rows, 24 reversion calibrations fitted from 129,604 events across 329 symbols, and cost floors
+      derived over 392 instruments. The one failure was the final screenshot step
+      (`/history returned HTTP 503`), which is **not reproducible today** — `/history`, `/wall`,
+      `/costs`, `/trials`, `/sizing` and `/clock` all return 200 on live probe. Two defects the same
+      run exposed are tracked separately and do NOT hold this item open: `fo_ban_list` ingest failing
+      with `BitemporalIngestStoreError` (BACKLOG, blocks `1.25`), and the `/microstructure` 500 fixed
+      on 2026-08-17.*
 - [x] **2.59** Systemd service management for the dashboard — `L3.27` · user unit + linger, `Restart=always`, crash-recovery verified by `kill -9` (`A.62`)
 - [ ] **2.60** Kite-decoupled architecture guard — `L3.29` — *renumbered from `L3.28`, which the
       catalogue used for TWO different entries: this guard and the systemd timer at `2.59a`. Any
@@ -895,9 +1154,26 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 
 **— L10 —**
 
-- [ ] **4.9** 24/7 continuous paper-trading loop — `L10.01` — *unblocked 2026-08-15: `4.10` built
-      the session this loop would run repeatedly. What is missing is only the scheduler and the
-      multi-day state that carries between sessions, not the session itself.*
+- [~] **4.9** 24/7 continuous paper-trading loop — `L10.01` · *built 2026-08-18, spec
+      `docs/research/265`, closes `B33`.* **Running live under `nse-continuous-loop.service`**,
+      verified by `kill -9` (PID 237631 -> 237762, still ticking) rather than by `is-active`.
+      **What it owns — the three things `4.9` said were missing:** bots that live for the life of
+      the PROCESS rather than of a request (the first live run observed 1,845 instruments and
+      tracked ZERO, because a universe is what a bot iterates and the tape only supplies prices);
+      a four-state phase machine off `NseTradingSessionCalendar`, cross-checked against
+      `pandas_market_calendars` 5.4.0 on the real dates 2026-08-10..20 — **nine sessions, exact
+      agreement**, the library independently confirming the 09:15/15:30 boundaries; and an
+      append-only liveness record the dashboard READS (`/loop`), because `A.143`'s failure was a
+      job whose only evidence was a log nobody opened.
+      **`SQUARING_OFF` is a first-class phase, not a branch** — `R.01` makes square-off the failure
+      mode, and a state that exists only as a condition inside another state is a state that gets
+      skipped.
+      **`R.05` LIVE, market open:** 3,835 cash instruments, **1,845 priced off the live tape**,
+      tape lag **7-29s**, phase `trading`, zero failing ticks. Cadence is the strategy's own
+      five-minute bar, imported not typed. 24 tests including the calendar cross-check.
+      **`[~]`:** `B40` — it OBSERVES but does not yet PROPOSE, because the regime brain is fitted on
+      five-minute bars while this ticks on the tape, and feeding it a belief from a different clock
+      is the `A.106` defect. Also `B41`, live order placement (`A.108`'s recorded cost).
 - [x] **4.10** Market-closed real-market replay engine (§53) — `L10.02` — ***`F04` — the first
       thing in this rebuild that produces a trading DAY rather than a component.*** Built and
       **`R.05`-passed 2026-08-15** on the real 2026-08-11 session, full universe: **2,882
@@ -1078,7 +1354,47 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **5.38** JARVIS system view — `L13.26`
 - [ ] **5.39** Dashboard delivery stack sourcing — `L13.27`
 - [x] **5.40** Screenshot-verify loop — `L13.28` · `dashboard/dashboard_surface_screenshot_capture.py` + `scripts/capture_dashboard_screenshots.py`, tested, and run nightly by `nse-daily-operations`; built across `1a751b2`/`ec5392a`/`9cc592f` without citing this ID, found by the `A.75` audit
-- [ ] **5.41** THE DECISION-TRACE CONTRACT — `L13.29`
+- [x] **5.41** THE DECISION-TRACE CONTRACT — `L13.29` · *built 2026-08-17, spec
+      `docs/research/257`, review `docs/research/258`, decisions `A.136` and `A.137`.*
+      **Ticked 2026-08-17: all three queued consumers built.** `/traces` is the `R.08` surface;
+      the emitter now supplies the sizer's five bounds and one gate per refusing risk rule, so
+      binding gates went from one to five and **341 traces compare gates in different units** —
+      the normalisation had never run on production data. Skipped traces are counted and
+      reported. `B20` is now closed — two of its three checks were built and then DELETED after a
+      review measured them (`O.120`): the "a refusing gate means it abstained" rule was justified
+      on 21,270 traces when only **11** had acted, and this very entry already recorded that 11.
+      Refusals are ENTRY vetoes, so a halt-latch square-off correctly acts through one. What
+      shipped is the action vocabulary (`permitted_actions`, persisted) and the removal of a
+      read-time landmine: `_load` re-ran the write-time refusals, so one non-conforming row killed
+      the whole session's panel and the append-only triggers made it undeletable. Reads now
+      reconstruct rather than re-decide. `B21`-`B22` and the new `M25` (exits emit no trace at all)
+      record what remains.
+      **`M25` (exits) built + `R.05`-verified 2026-08-17** — spec `docs/research/259`, review
+      `O.121`. Replaying the real session: 152,745 traces, of which **29 exits across the exactly
+      8 symbols the session independently reported exiting** (AFIL and AGI each held two
+      positions), every one attributed to `holding_horizon`, **0 unexplained and 0 skipped**. One
+      position (ADVANIHOTR, 3,254 shares) took **19 separate square-off decisions** — which is why
+      the trace key needed a `decision_ordinal`: with the instant alone, 18 of those 19 were
+      refused as "already recorded" and the record understated the exited quantity while blaming a
+      duplicate. The adversarial review also caught a positional `INSERT` that, on the live store's
+      `ALTER`-grown column order, wrote `null_action` into `earliest_knowable` and would have
+      turned tracing OFF entirely while reporting every write as a duplicate instant.
+      An append-only point-in-time record of inputs consulted **with provenance and timestamps**,
+      candidates considered, gates and outcomes, chosen action, confidence, mechanism, and **the
+      counterfactual** — which gate came closest to changing the outcome, comparable across gates in
+      different units by normalising each margin against its own threshold. Emitted from inside the
+      runner at the decision instant, never assembled from the report afterwards.
+      **`R.05`:** 21,270 traces from the real 2026-08-17 session; the traces say 11 acted and the
+      session independently reported `placed: 11` — they agree, which is what distinguishes a record
+      from a reconstruction.
+      **The review found the emitter producing exactly the fiction `A.29` forbids.**
+      `RiskGateVerdict` has no `.verdict` attribute, so the risk gate could never register as
+      refusing and **380 traces blamed `deviation_band`, which had passed, for abstains the
+      order-rate limiter caused**. Also: the chosen action was back-filled into the candidate set,
+      making the contract's own refusal unreachable; `GateVerdict.UNPRICEABLE` read as PASSING; and
+      an abstain with no refusal was blamed on the tightest passing gate. Fixed and re-measured on
+      the same session — binding on `pre_trade_risk_gate` **0 → 380**, and 4 traces now say plainly
+      they do NOT explain their outcome. Tests **20 → 32**.
 - [ ] **5.42** Level 0 — `L13.30`
 - [ ] **5.43** Level 1 — `L13.31`
 - [ ] **5.44** Level 2 — `L13.32`
@@ -1098,13 +1414,178 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 
 **— L5 —**
 
-- [ ] **6.1** Segment holons — `L5.25`
-- [ ] **6.2** Cash-intraday bot — `L5.26`
-- [ ] **6.3** Index-option bot — `L5.27`
-- [ ] **6.4** Stock-option bot — `L5.28`
-- [ ] **6.5** Segment-bot protocol — `L5.29`
-- [ ] **6.6** Pod paper lifecycle engine — `L5.30`
-- [ ] **6.7** Trade-quality floor + per-trade evidence card — `L5.31`
+- [~] **B23** The quality floor BLOCKS an order, not just records one — two-pass entry loop in
+      `paper_trading_session_runner`, `PaperSignal.expected_move_fraction`, pre-send cost pricing,
+      and `ClosedPaperTrade.stated_win_probability` with an in-place migration. `R.05`: the
+      2026-08-13 session ran clean and 10 of 20 stored trades now carry a forecast. 5 new tests.
+      **`[~]`:** activation is held off until `B28` closes.
+
+- [~] **6.1** Segment holons — `L5.25` · *built 2026-08-18, spec `docs/research/263`, decision
+      `A.141`.* `SegmentBotFoundation` — carried per-instrument state, maturity read off the bot's
+      OWN closed record through `L5.30`'s ladder, a bounded `[0,1]` relevance model, a
+      cross-sectional cut derived from the day's own dispersion, and a `DecisionCadence` carried on
+      every bot so a daily decision can never be read back as an intraday one. Plus
+      `segment_universe_assembler` (the spine's I/O, since `L5.29` forbids a bot reading anything)
+      and `segment_bot_registry` (the `L5.29` gate run at registration, on throwaway instances).
+      **`[~]`:** no closed trade from a new bot yet — that needs the live loop, `B33`.
+- [~] **6.2** Cash-intraday bot — `L5.26` · *built 2026-08-18.* Real `IntradayMeanReversionEngine`
+      per instrument, regime veto applied BEFORE the deviation, edge in basis points DERIVED from
+      the instrument's own dispersion (the probe's constant bps-per-sigma is exactly the magic
+      number `R.03` forbids), conviction from the instrument's own learned band. INTRADAY — the only
+      segment with intraday data. Universe: **3,966** real cash instruments.
+      **Two defects in my own code, found by probing rather than reviewing** (`docs/research/263`
+      §5): one constant standing for two different measurements, and an invented `0.45` threshold
+      against a quantity that tops out near 0.34 on real beliefs, which made the bot abstain on
+      every instrument and look like working caution.
+- [~] **6.3** Index-option bot — `L5.27` · *built 2026-08-18.* New
+      `BlackScholesOptionAnalyticsEngine` (`vollib` 1.0.12, adopted over QuantLib 1.43 on measured
+      grounds, every Greek convention checked against a numerical derivative) and new
+      `VarianceRiskPremiumEngine` — implied volatility inverted from the traded premium, realised
+      volatility as an EWMA of log returns annualised by the exchange's OWN session count (**246**
+      in 2026, not the folklore 252), and the premium standardised against that underlying's own
+      history. Sells rich, buys cheap. Universe: **5,042** real IDO contracts over 5 spots.
+- [~] **6.4** Stock-option bot — `L5.28` · *built 2026-08-18.* Same engine, its own null, plus the
+      exchange's F&O ban list enforced before any short premium. Universe: **25,785** real STO
+      contracts over 208 spots.
+- [~] **6.4b** Index-future, stock-future and MCX bots — **NEW 2026-08-18 (`A.141`)**, inserted here
+      because `A.130` names six bots and only three had numbered tasks. All three run one new
+      `FuturesBasisCarryEngine`: basis, implied carry ANNUALISED over the remaining life (a 20-point
+      basis eight sessions out and forty sessions out are not the same claim), standardised against
+      the contract's own carry history, with the four-way open-interest buildup taxonomy bounded to
+      a +/-15% conviction modifier because this project holds 36 sessions of open interest.
+      Universes: **622** real STF contracts, **15** IDF (only 540 rows exist at all — `B31`), and
+      **zero** MCX. **The MCX bot is built WHOLE and activates on nothing** (`R.04`): identical
+      algorithm, identical conformance, no data — `B30`, deferred by the operator in `A.142`.
+- [x] **6.4c** `/bots` surface — **NEW 2026-08-18 (`R.08`)**. All six rendered from measurements
+      taken on the request: rung off each bot's own closed record, the `L5.29` conformance suite
+      re-run against a probe that includes an EMPTY universe, and each bot's readiness against its
+      REAL assembled universe. The column that matters is the named DATA BLOCKER beside the
+      readiness bar — a bot with nothing to trade and a bot that has not proven itself both sit at
+      `COLD_START` and need completely different things. Live at HTTP 200, registered for
+      screenshot capture.
+- [~] **6.4d** Segment-bot paper session — **NEW 2026-08-18 (`B33`, `A.145`)**. The loop the six
+      bots decide into: warm up over 25 prior sessions (each assembling that session's OWN universe,
+      point-in-time), propose at the close of `T`, exit at the close of `T+1`, both legs priced
+      through `NseTransactionCostEngine`, accrued to `PaperTrackRecordStore` per bot identity. Does
+      NOT touch `PaperTradingSessionRunner`, whose `PaperSignal` carries a `MeanReversionDecision`
+      by type and which holds `F04`'s real-data verification.
+      **`R.05` ran and found TWO defects in this module, which is the only reason it is now right.**
+      (1) The docstring claimed capital was "allocated equally" and the code applied no constraint
+      at all: 22 stock-future positions at one lot each, several crore of book against Rs 10 lakh,
+      **-Rs 1,98,600 in one session**. (2) The first repair over-corrected in exactly the shape
+      `docs/research/261` records — a net-directional bound stated as a fraction of gross cannot be
+      met by the FIRST position, so it refused 23 of 23. Now bounded on the DIRECTION OF TRAVEL, so
+      a trade on the lighter side is always admitted and the book converges.
+      **`[~]`:** blocked on `B36` — futures consume MARGIN, not notional, and the F&O SPAN file
+      could not be located after three rounds of probing (`R.21`). The 18 defect-produced rows were
+      purged on operator instruction (`A.145`), backup retained.
+- [x] **6.5** Segment-bot protocol — `L5.29` · *built 2026-08-17, spec `docs/research/248`, review
+      `docs/research/250`.*
+      **Ticked only after the `R.23c` adversarial review, and it did not survive the first pass.**
+      I ticked it once before the review returned — the exact self-report `R.23c` forbids — and the
+      review then broke it: **15 of 18 non-conforming bots passed the suite clean, 12 of 24 source
+      mutations survived**, and three CRITICALs came back. Fixed: six missing checks with a
+      regression test built from each of the reviewer's own bots; `R.01` carry enforcement, which had
+      been **provably unreachable dead code** checking the fact table instead of the bot; and a
+      **~4× cost understatement** where a carried cash position was priced as intraday when STT
+      follows settlement, not the order tag (₹132.36 vs ₹533.96 per ₹2,40,000, through this project's
+      own engine). Tests **38 → 67**, 20 of them adversarial. Three
+      modules under `src/nse_algo_trader/segment_bots/`: the `TradingSegment` taxonomy (a SECOND axis
+      beside `ChargeableSegment`, mapped totally onto it, carrying denominator · settlement · expiry ·
+      strike · Greeks · venue calendar · carry rule as sourced regulatory facts per `R.23e`); the
+      protocol itself (segment · identity · `observe` · `propose` · `relevance` · `maturity`, emitting
+      the existing `PricedSignal`, performing no I/O); and the shared conformance suite that returns
+      violations rather than asserting, so it gates registration at runtime as well as in CI.
+      `BotMaturity` **refuses to construct `GRADUATED`** — `R.22`'s two-key rule made unavailable in
+      the type rather than discouraged in prose. **38 tests**, six of them deliberately
+      non-conforming bots that must FAIL the suite.
+      **`R.05` real-data pass:** `scripts/verify_segment_bot_protocol_on_real_data.py` runs a bot
+      driven by the real `IntradayMeanReversionEngine` over the **real 10,061-instrument NSE equity
+      universe** — **3,618 instruments carry closes, 2,844 engines mature, 16 signals proposed**
+      after a derived cross-sectional cut, conformance clean.
+      *An earlier version of this line reported 0 signals and blamed missing bar history. That was
+      wrong: the probe had read `BitemporalBarStore`'s near-empty `price_bar` table instead of
+      `price_bars`, which holds 1,246,985 bars. Corrected as `A.132` / `O.114`; the real defect it
+      exposed — two bar stores, the point-in-time-safe one empty — is `B12`.*
+      The re-run also tripped the suite's own **`proposal-size-is-sane`** check on real data: a
+      1-sigma floor over the full universe named **1,594 instruments at one instant**. That check
+      existed only because an adversarial reviewer's synthetic bot had exposed its absence hours
+      earlier — a synthetic attack predicting a real failure.
+- [x] **6.6** Pod paper lifecycle engine — `L5.30` · *built 2026-08-17, spec `docs/research/255`,
+      review `docs/research/256`, decision `A.134`.* **Ticked 2026-08-17 (`A.135`): both queued consumers
+      are now built, so `R.06` is satisfied and `R.08` has a surface.** The daily run gained a
+      `paper session` step that trades, accrues and reports the rung (`R.05`: 3,531 instruments, 71
+      of 76 steps with a book, 12 orders, 10 trades accrued), and `/ladder` renders every bot's
+      assessment measured from the store. That first real run also caught a defect in my own cost
+      attribution — session costs apportioned by notional made a trade's cost depend on the
+      session's composition; now priced per trade through `NseTransactionCostEngine` (`O.118`).
+      Breaks the cold-start deadlock `B15` measured — twelve daily steps, none of which traded, and
+      a paper ledger holding 13 events ever, so every bot was permanently `COLD_START`.
+      **What it is:** an append-only per-bot track record, plus a ladder that infers each bot's rung
+      from **its own** closed trades by Bayesian bootstrap on `P(mean net P&L > 0)`, with a
+      break-even derived from that bot's own payoffs and costs reported as evidence. A count is not
+      evidence: the previous system did 3,481 trades and lost ₹3.3 lakh.
+      **Validated on that real record** — it RETIRES `opening_range_breakout_v1` (3,049 trades,
+      −₹356,631), OBSERVES `directional_option_orb_v1` (+₹4,104, posterior 0.530) and promotes
+      `credit_spread_v1` (+₹21,213, posterior 0.953) **which wins only 46.3% of its trades**, so any
+      fixed 50% rule would have rejected the profitable one.
+      **`R.05` live:** today's session accrued 10 closed trades under
+      `cash_intraday_mean_reversion_bot` via the new `--record-as`; re-running accrued **0**
+      (idempotent on real data, not a fixture).
+      **The review broke the first promotion rule three ways** — non-monotonic in both directions,
+      blind to magnitude concentration, and systematically overconfident — plus negative costs
+      promoting a gross loss, a non-finite posterior falling through to the most permissive rung,
+      losing days padding the sustained-session count, and `INSERT OR IGNORE` hiding 196 of 260
+      trades. All fixed; a `RETIRED` rung was added to `L5.29` so a proven loser is no longer
+      indistinguishable from a bot that never traded. Tests **16 → 25**.
+      **Queued consumers:** the daily paper-session step (`B15`) and a bot/dashboard consumer of
+      `assess()` (`B16`).
+- [~] **6.7** Trade-quality floor + per-trade evidence card — `L5.31` · *built 2026-08-17, spec
+      `docs/research/260`, decision `A.139`.*
+      **`[~]` and not `[x]`, deliberately (`R.11`):** the gate records verdicts and surfaces them, but
+      does not yet BLOCK an order — `paper_trading_session_runner` does not consume it. See `B23`.
+      **What it is:** the pre-trade minimum standard every one of the six bots proposes through, built
+      once, segment-blind, performing no I/O. Six modules under `src/nse_algo_trader/trade_quality/` —
+      an evidence card written for REFUSALS as well as admissions (they are the only control group a
+      floor can ever be shown wrong by); an isotonic calibrator of each bot's stated win probability
+      against its own record, time-blocked out of fold by session, with a Murphy decomposition of the
+      Brier score and empirical-Bayes shrinkage to its segment; a Bayesian-bootstrap estimator of the
+      gross win and loss magnitudes; a gross expectancy posterior reporting
+      `P(expectancy > the binding floor)`; three DERIVED floors — priced round-trip cost, the cost this
+      bot has actually paid per round trip, and a Deflated-Sharpe expected-maximum-of-`n` selection
+      correction that rises with scan breadth; and an append-only store that joins each card to the
+      outcome it admitted. One stated operator confidence is the only number not measured (`R.03`).
+      **Why it cannot be a win-rate rule:** `credit_spread_v1` won **46.3%** of its trades and made
+      ₹21,213; `opening_range_breakout_v1` won 35.0% and lost ₹3,56,631. The two are separated by the
+      payoff ratio, not the rate.
+      **`R.05` on the 3,481 retained closed trades:** REFUSES `opening_range_breakout_v1` (P = 0.000),
+      leaves `directional_option_orb_v1` undecided (P = 0.537, it made ₹13/trade), ADMITS
+      `credit_spread_v1` (P = 0.941). Re-running recorded **0** new cards — idempotent on real data.
+      The real 500-name five-minute cross-section prices the selection correction at **2.51% of
+      notional, ₹680 on a ₹27,090 position**.
+      **The real-data run found three defects the spec and a green suite had both passed over**, all
+      the same shape — costs charged twice, uncertainty charged twice, and the selection correction
+      measured on the wrong axis (rupees rather than per-notional fractions, which over 500 real
+      instruments produced a ₹1,582 floor that refused everything). A fourth was in the verification
+      script: it had imposed a cash-equity scan on two options strategies that never ran one.
+      **It also corrected `docs/research/254`:** `credit_spread_v1`'s payoff ratio is **2.866**, not
+      3.450 — that figure counted its 11 scratch trades as losses. Both numbers are now pinned by tests.
+      33 tests; ruff + mypy + full suite green. Surface at `/quality`; daily step `trade quality floor`.
+      **It caught something on its first honest run:** the cost engine prices **₹29.03** for a ₹27,090
+      intraday round trip while all three retained strategies actually paid **₹41.90 / ₹49.95 /
+      ₹61.77**, so the realised-cost floor BINDS on every one. Not yet a proven mispricing — the corpus
+      mixes cash and option trades and this probe prices them all as `EQUITY_INTRADAY` — but it is the
+      first time the cost model has been checked against a measurement rather than against itself.
+      **FAILED its `R.23c` adversarial review the same day (`docs/research/261`, `A.140`) — six
+      CRITICALs, with the engine byte-identical and all 33 tests green.** It admitted **32.6–36.8% of
+      zero-skill money-losing bots**, and got worse with more data. All six repaired and re-measured
+      (admission rate now 0.8% thin / 0.0% thick); tests 33 → 39; full suite green. The gate is
+      **HELD OFF from production** at `QUALITY_FLOOR_HELD_OFF_PENDING_REVIEW_REPAIRS` until the
+      re-review returns clean — `B23` had already wired it into the entry loop.
+      **Open:** `B28` (the review repairs and the flip back), `B29` (`_size_scale` uncapped),
+      `B24` (no notionals, so no size rescaling), `B25` (regime-conditional floor not estimable —
+      1,781 of 3,481 trades carry `market_regime='unknown'`), `B26` (priced cost below realised
+      cost), `B27` (cards carry no engine-version provenance).
 - [ ] **6.8** Profit-trail gating + MFE/MAE excursion tracking — `L5.32`
       *(NOT A BUILD UNIT — DROP -> `L11.125`. The plan: "a static gate, now a learning organ". Recorded by `A.94`.)*
 - [ ] **6.9** Proportionate entry gates — `L5.33`
@@ -1146,7 +1627,39 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 - [ ] **6.41** Full option universe — `L6.27`
 - [ ] **6.42** Live multi-broker option-chain feed — `L6.28`
 - [ ] **6.43** Underlying intraday price source — `L6.29`
-- [ ] **6.44** SPAN + exposure margin calculator — `L6.30`
+- [~] **6.44** SPAN + exposure margin ESTIMATOR — `L6.30` · *built 2026-08-18, spec
+      `docs/research/264`.* **Renamed from "calculator" deliberately** (`R.23b`): SPAN is a scenario
+      grid whose scanning ranges live in a file NSE serves only from an interactive page, so calling
+      this a calculator would claim an accuracy it does not have.
+      **What it is:** `norm.ppf(0.99) x sigma_daily x sqrt(horizon)` plus NSE's own published
+      extreme-loss table (index 2% · stock 3.5% · deep-OTM index 3% · deep-OTM stock 5.25% ·
+      long-dated index 5% · expiry-day +2%), all sourced from
+      `nseindia.com/products-services/equity-derivatives-margins` with the URL on every estimate.
+      The 99% quantile is DERIVED, never typed; the futures/option horizon ratio is exactly
+      `sqrt(2)`, which is NSE's two-day-versus-one-day rule showing through.
+      **`R.05`:** fitted on NSE's real `CMVOLT` file (303,648 bytes, **4,767 underlyings**) —
+      RELIANCE **7.94%**, TATASTEEL **9.09%**, ASHOKLEY **11.00%** of notional at Rs 5 lakh, ordered
+      by their own sigma.
+      **Behaviour-changing (`R.06`):** wired into `SegmentBotPaperSession` as the capital bound. The
+      stock-futures bot went from **0 trades to a real two-sided book** — Rs 27.2 lakh of notional on
+      Rs 10 lakh of capital at **6.3% net directional** against a 25% bound.
+      **`[~]`:** `B36` (the authoritative `.spn` file is an OPERATOR download) and `B37` (index
+      underlyings have no published volatility, so index derivatives are still unsized) both open.
+      19 tests, and the exposure rule is pinned from BOTH ends because its first two versions failed
+      in opposite directions.
+      **`B37` CLOSED same day — index volatility recovered on NSE's EXACT convention.** No index
+      volatility file exists (`FOVOLT`/`FAOVOLT`/`INDEXVOLT` all 404), so it is computed — but the
+      decay is **printed in the header of the file this project already downloads**:
+      `E = Sqrt(0.995*D*D + 0.005*C*C)`, annualised `E*Sqrt(365)`. Verified by replaying the
+      recursion over the real file: **4,881 of 4,881 published sigmas reproduced within 1e-4**,
+      below NSE's own four-decimal precision. Index sigmas from `underlying_price` (already
+      ingested, zero fetches): NIFTY 17.56% · BANKNIFTY 20.91% · FINNIFTY 21.87% · NIFTYNXT50
+      19.92% · MIDCPNIFTY 18.62%, correctly ordered. **An index future now trades**
+      (`MIDCPNIFTY26AUGFUT`). A fit had swept 0.90-0.98 monotonically without turning and would have
+      shipped 0.98 as "calibrated" (`O.133`).
+      **New blockers:** `B38` (index margin understated ~2x — the SPAN scan-range floor is not
+      publishable from any primary source and lives in the `.spn` file) and `B39` (the
+      net-directional bound is per-bot; the portfolio-level one belongs to `L3.05`/`L7.02`).
 - [ ] **6.45** Physical-settlement handling for stock F&O — `L6.31`
 - [ ] **6.46** Expiry / pin-risk management — `L6.32`
 - [ ] **6.47** Auto delta-hedge scheduler — `L6.33`

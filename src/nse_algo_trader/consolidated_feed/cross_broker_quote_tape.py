@@ -26,9 +26,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-DEFAULT_CROSS_BROKER_TAPE_PATH = Path(
-    "~/.nse_algo_trader/cross_broker_quotes.sqlite3"
-).expanduser()
+DEFAULT_CROSS_BROKER_TAPE_PATH = Path("~/.nse_algo_trader/cross_broker_quotes.sqlite3").expanduser()
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS broker_quote (
@@ -109,9 +107,7 @@ class BrokerQuoteObservation:
         """A price of zero is not a price. A broker returning 0 for an untraded instrument
         would otherwise fold a ~-20,000 bps difference into the pooled pair variance."""
         return (
-            self.failure is None
-            and self.last_price_paise is not None
-            and self.last_price_paise > 0
+            self.failure is None and self.last_price_paise is not None and self.last_price_paise > 0
         )
 
     @property
@@ -173,14 +169,11 @@ class CrossBrokerQuoteTape:
         finally:
             connection.close()
 
-    def record(
-        self, observations: Sequence[BrokerQuoteObservation], *, session_date: date
-    ) -> int:
+    def record(self, observations: Sequence[BrokerQuoteObservation], *, session_date: date) -> int:
         """Store a poll's observations. Returns how many rows were written."""
         with self._connect() as connection:
             connection.executemany(
-                "INSERT OR REPLACE INTO broker_quote VALUES "
-                "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT OR REPLACE INTO broker_quote VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 [
                     (
                         session_date.isoformat(),
@@ -238,8 +231,7 @@ class CrossBrokerQuoteTape:
         """Rows per broker for one session — the first thing to check before trusting a fit."""
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT broker, COUNT(*) FROM broker_quote WHERE session_date = ? "
-                "GROUP BY broker",
+                "SELECT broker, COUNT(*) FROM broker_quote WHERE session_date = ? GROUP BY broker",
                 (session_date.isoformat(),),
             ).fetchall()
         return {str(broker): int(count) for broker, count in rows}

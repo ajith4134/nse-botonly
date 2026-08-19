@@ -201,9 +201,7 @@ def check_live_spread(signal: PricedSignal, fill: ExpectedFill) -> PreconditionR
     )
 
 
-def check_range_width(
-    range_width_bps: Decimal | None, hurdle_bps: Decimal
-) -> PreconditionResult:
+def check_range_width(range_width_bps: Decimal | None, hurdle_bps: Decimal) -> PreconditionResult:
     """A range is tradeable only when it is wider than the cost of trading it (`L11.99`).
 
     The plan states this as `range_width_bps > cost_bps x 1.5`, with `A.12` recording the 1.5 as

@@ -767,8 +767,7 @@ class OrderSubmissionRateLimiter:
             table = self._table_for(exchange)
             with self._store_lock:
                 self._connection.execute(
-                    f'CREATE TABLE IF NOT EXISTS "{table}" '
-                    f"(name VARCHAR, item_timestamp INTEGER)"
+                    f'CREATE TABLE IF NOT EXISTS "{table}" (name VARCHAR, item_timestamp INTEGER)'
                 )
                 self._connection.execute(
                     f'CREATE INDEX IF NOT EXISTS "{table}_by_timestamp" '
@@ -831,9 +830,7 @@ def _rates_from(windows: Sequence[RateLimitWindow]) -> list[Rate]:
 def _window_description(window: RateLimitWindow | None) -> str:
     if window is None:
         return "unattributed"
-    return (
-        f"{window.permitted_orders}-orders-per-{window.window_seconds}s {window.scope.value}"
-    )
+    return f"{window.permitted_orders}-orders-per-{window.window_seconds}s {window.scope.value}"
 
 
 def _validated_exchange(exchange: str) -> str:

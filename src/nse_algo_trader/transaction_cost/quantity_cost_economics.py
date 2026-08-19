@@ -243,9 +243,7 @@ def minimum_viable_quantity(
     return lot_size * low
 
 
-def capital_bounded_lots(
-    capital_paise: Decimal, price_paise: Decimal, lot_size: int
-) -> int:
+def capital_bounded_lots(capital_paise: Decimal, price_paise: Decimal, lot_size: int) -> int:
     """How many whole lots the capital can actually pay for.
 
     The other half of the same question: `minimum_viable_quantity` says what size costs allow,

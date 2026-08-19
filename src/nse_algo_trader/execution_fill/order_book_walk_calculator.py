@@ -159,9 +159,7 @@ def _whole_book_quantity_for(snapshot: BookSnapshot, side: TradeLeg) -> int:
     return snapshot.total_sell_quantity if side is TradeLeg.BUY else snapshot.total_buy_quantity
 
 
-def walk_order_book(
-    snapshot: BookSnapshot, side: TradeLeg, quantity: int
-) -> OrderBookWalk:
+def walk_order_book(snapshot: BookSnapshot, side: TradeLeg, quantity: int) -> OrderBookWalk:
     """Consume the visible ladder for `quantity` units, stopping when it runs out.
 
     Raises:
@@ -233,7 +231,5 @@ def quantity_for_notional(notional_paise: Decimal, reference_price_paise: Decima
     into the book than the money reaches.
     """
     if reference_price_paise <= 0:
-        raise OrderBookWalkError(
-            f"reference price must be positive, got {reference_price_paise}"
-        )
+        raise OrderBookWalkError(f"reference price must be positive, got {reference_price_paise}")
     return int(notional_paise / reference_price_paise)

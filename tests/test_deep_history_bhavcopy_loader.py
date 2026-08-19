@@ -25,9 +25,7 @@ from nse_algo_trader.deep_history.deep_history_bhavcopy_reader import (
     RowQuarantineReason,
 )
 
-CASH_V1_HEADER = (
-    "SYMBOL,SERIES,OPEN,HIGH,LOW,CLOSE,LAST,PREVCLOSE,TOTTRDQTY,TOTTRDVAL,TIMESTAMP,"
-)
+CASH_V1_HEADER = "SYMBOL,SERIES,OPEN,HIGH,LOW,CLOSE,LAST,PREVCLOSE,TOTTRDQTY,TOTTRDVAL,TIMESTAMP,"
 CASH_V2_HEADER = (
     "SYMBOL,SERIES,OPEN,HIGH,LOW,CLOSE,LAST,PREVCLOSE,TOTTRDQTY,TOTTRDVAL,TIMESTAMP,"
     "TOTALTRADES,ISIN,"
@@ -88,9 +86,7 @@ def _zip_with(tmp_path: Path, name: str, member: str, text: str) -> Path:
         (UDIFF_HEADER, BhavcopyVariant.UDIFF),
     ],
 )
-def test_every_real_header_resolves_to_its_variant(
-    header: str, expected: BhavcopyVariant
-) -> None:
+def test_every_real_header_resolves_to_its_variant(header: str, expected: BhavcopyVariant) -> None:
     assert BhavcopyVariantResolver().resolve(header.split(",")) is expected
 
 
@@ -106,9 +102,7 @@ def test_the_option_type_synonym_is_aliased_not_date_branched() -> None:
     roughly half of them, and wrong in a way that reads as a missing column."""
     resolver = BhavcopyVariantResolver()
     assert resolver.resolve(FO_LEGACY_HEADER.split(",")) is BhavcopyVariant.FO_LEGACY
-    assert (
-        resolver.resolve(FO_LEGACY_SYNONYM_HEADER.split(",")) is BhavcopyVariant.FO_LEGACY
-    )
+    assert resolver.resolve(FO_LEGACY_SYNONYM_HEADER.split(",")) is BhavcopyVariant.FO_LEGACY
 
 
 def test_a_header_missing_its_trailing_comma_still_resolves() -> None:
@@ -353,8 +347,7 @@ def test_a_traded_row_with_a_zero_high_is_still_impossible(tmp_path: Path) -> No
         tmp_path,
         "cash_2005-01-03.csv.zip",
         "cm03JAN2005bhav.csv",
-        CASH_V1_HEADER + "\nBROKEN,EQ,100.00,0,0,105.00,105.00,104.00,500,52500.00,"
-        "3-JAN-2005,\n",
+        CASH_V1_HEADER + "\nBROKEN,EQ,100.00,0,0,105.00,105.00,104.00,500,52500.00,3-JAN-2005,\n",
     )
     reader = DeepHistoryBhavcopyReader()
     assert reader.read_file(archive) == ()

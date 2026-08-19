@@ -185,9 +185,7 @@ def test_a_refused_edit_is_rendered_as_a_refusal_and_not_as_a_success(
     monkeypatch.setattr(dashboard_server, "read_access_token", lambda: None)
     monkeypatch.setenv("NSE_TRADING_CAPITAL_RUPEES", "1000000")
     with TestClient(dashboard_server.build_dashboard_app()) as client:
-        rubbish = client.post(
-            "/paper-capital", data={"balance_rupees": "lots", "reason": "typo"}
-        )
+        rubbish = client.post("/paper-capital", data={"balance_rupees": "lots", "reason": "typo"})
         negative = client.post(
             "/paper-capital", data={"balance_rupees": "-5", "reason": "negative"}
         )
@@ -240,9 +238,7 @@ def test_a_refused_edit_still_shows_the_book_that_was_not_changed(
     monkeypatch.setattr(dashboard_server, "read_access_token", lambda: None)
     monkeypatch.setenv("NSE_TRADING_CAPITAL_RUPEES", "1000000")
     with TestClient(dashboard_server.build_dashboard_app()) as client:
-        client.post(
-            "/paper-capital", data={"balance_rupees": "750000", "reason": "the real book"}
-        )
+        client.post("/paper-capital", data={"balance_rupees": "750000", "reason": "the real book"})
         refused = client.post(
             "/paper-capital", data={"balance_rupees": "seven lakh", "reason": "typo"}
         )

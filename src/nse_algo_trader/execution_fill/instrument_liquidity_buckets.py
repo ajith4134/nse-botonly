@@ -127,9 +127,7 @@ class UniverseLiquidityBucketing:
 
     def members_of(self, bucket: LiquidityBucket) -> tuple[int, ...]:
         return tuple(
-            token
-            for token, assigned in self.bucket_by_instrument.items()
-            if assigned == bucket
+            token for token, assigned in self.bucket_by_instrument.items() if assigned == bucket
         )
 
     def bucket_median_spread_bps(self, bucket: LiquidityBucket) -> Decimal:

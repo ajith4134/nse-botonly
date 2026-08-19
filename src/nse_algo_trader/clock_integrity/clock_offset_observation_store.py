@@ -152,8 +152,7 @@ class ClockOffsetObservationStore:
         stamped_at = recorded_at or datetime.now(UTC)
         with self._connect() as connection:
             connection.execute(
-                "INSERT OR REPLACE INTO clock_offset_fit VALUES "
-                "(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT OR REPLACE INTO clock_offset_fit VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     session_date.isoformat(),
                     fit.fitted_from.isoformat(),

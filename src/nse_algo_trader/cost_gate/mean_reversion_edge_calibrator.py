@@ -354,9 +354,7 @@ def calibrate_from_events(
     )
 
 
-def shrink_toward_pooled(
-    own: ReversionCapture, pooled: ReversionCapture
-) -> ReversionCapture:
+def shrink_toward_pooled(own: ReversionCapture, pooled: ReversionCapture) -> ReversionCapture:
     """Empirical-Bayes blend of an instrument's own calibration with the universe's.
 
     Weight is `tau^2 / (tau^2 + se^2)` — the same estimator the impact model uses, for the same
@@ -375,9 +373,9 @@ def shrink_toward_pooled(
     denominator = between_variance + own_variance
     weight = Decimal(0) if denominator <= 0 else between_variance / denominator
     blended = weight * own.mean_captured_bps + (Decimal(1) - weight) * pooled.mean_captured_bps
-    blended_error = weight * own.standard_error_bps + (
-        Decimal(1) - weight
-    ) * pooled.standard_error_bps
+    blended_error = (
+        weight * own.standard_error_bps + (Decimal(1) - weight) * pooled.standard_error_bps
+    )
     return ReversionCapture(
         deviation_bucket=own.deviation_bucket,
         horizon_bars=own.horizon_bars,
@@ -561,6 +559,6 @@ class ReversionCalibrationStore:
 
     def calibration_count(self) -> int:
         with closing(self._connect()) as connection:
-            return int(connection.execute(
-                "SELECT COUNT(*) FROM reversion_calibration"
-            ).fetchone()[0])
+            return int(
+                connection.execute("SELECT COUNT(*) FROM reversion_calibration").fetchone()[0]
+            )

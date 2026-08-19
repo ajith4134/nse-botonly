@@ -61,6 +61,7 @@ from nse_algo_trader.cost_gate.per_segment_edge_floor import (
 from nse_algo_trader.cost_gate.reversion_calibration_fitter import (
     DEFAULT_CALIBRATION_HORIZONS,
 )
+from nse_algo_trader.dashboard.bot_maturity_surface_renderer import render_bot_maturity_page
 from nse_algo_trader.dashboard.clock_integrity_surface_renderer import (
     ClockIntegritySurfaceState,
     render_clock_integrity_page,
@@ -68,6 +69,13 @@ from nse_algo_trader.dashboard.clock_integrity_surface_renderer import (
 from nse_algo_trader.dashboard.consolidated_feed_surface_renderer import (
     ConsolidatedFeedSurfaceState,
     render_consolidated_feed_page,
+)
+from nse_algo_trader.dashboard.continuous_loop_surface_renderer import (
+    ContinuousLoopSurfaceState,
+    render_continuous_loop_page,
+)
+from nse_algo_trader.dashboard.decision_trace_surface_renderer import (
+    render_decision_trace_page,
 )
 from nse_algo_trader.dashboard.deep_history_surface_renderer import (
     DeepHistoryMarketCoverage,
@@ -105,15 +113,29 @@ from nse_algo_trader.dashboard.regime_brain_read_model import (
 from nse_algo_trader.dashboard.regime_brain_surface_renderer import (
     render_regime_brain_page,
 )
+from nse_algo_trader.dashboard.segment_bot_surface_renderer import (
+    SegmentBotSurfaceRow,
+    render_segment_bot_page,
+)
 from nse_algo_trader.dashboard.sizing_surface_renderer import (
     SizingSurfaceState,
     absent_sizing_surface_state,
     render_sizing_page,
 )
+from nse_algo_trader.dashboard.trade_quality_surface_renderer import render_trade_quality_page
 from nse_algo_trader.dashboard.transaction_cost_surface_renderer import (
     SegmentPricingAssumption,
     build_transaction_cost_surface_state,
     render_transaction_cost_page,
+)
+from nse_algo_trader.dashboard.trial_registry_surface_renderer import render_trial_registry_page
+from nse_algo_trader.decision_trace.decision_trace_record import DecisionTraceStore
+from nse_algo_trader.historical_bars.bar_price_basis_provenance import (
+    price_basis_coverage_for,
+)
+from nse_algo_trader.market_depth.bar_tape_join_verdict_store import (
+    refuted_instruments_for,
+    verification_coverage_for,
 )
 from nse_algo_trader.market_depth.market_depth_tape_store import (
     DepthTapeStoreError,
@@ -140,6 +162,25 @@ from nse_algo_trader.paper_capital_ledger import (
     PaperCapitalError,
     PaperCapitalLedger,
 )
+from nse_algo_trader.paper_loop.bot_maturity_ladder import (
+    BotMaturityLadder,
+    LadderPolicy,
+    PaperTrackRecordStore,
+)
+from nse_algo_trader.paper_loop.continuous_paper_trading_scheduler import (
+    SchedulerLivenessStore,
+)
+from nse_algo_trader.segment_bots.segment_bot_protocol import (
+    SegmentBotContext,
+    SegmentRelevance,
+)
+from nse_algo_trader.segment_bots.segment_bot_registry import (
+    BALANCED_REGISTRATION_REGIME,
+    build_all_segment_bots,
+    conformance_violations_by_identity,
+)
+from nse_algo_trader.segment_bots.segment_trading_taxonomy import TradingSegment
+from nse_algo_trader.segment_bots.segment_universe_assembler import assemble_for
 from nse_algo_trader.sizing.pre_trade_risk_gate import (
     PreTradeRiskGate,
     PriceCollarUnavailableError,
@@ -166,6 +207,7 @@ from nse_algo_trader.sizing.volatility_targeted_position_sizer import (
     PositionSizingError,
     VolatilityTargetedPositionSizer,
 )
+from nse_algo_trader.trade_quality.trade_quality_evidence_store import TradeQualityEvidenceStore
 from nse_algo_trader.transaction_cost.charge_reconciliation_ledger import (
     ChargeReconciliationLedger,
 )
@@ -173,6 +215,7 @@ from nse_algo_trader.transaction_cost.chargeable_market_segments import Chargeab
 from nse_algo_trader.transaction_cost.nse_transaction_cost_engine import (
     NseTransactionCostEngine,
 )
+from nse_algo_trader.validation.honest_trial_registry import HonestTrialRegistry
 
 EQUAL_SEGMENT_COUNT = 6
 """`R.10` — the six segments are equal by default, so each may carry one concurrent position."""
@@ -349,6 +392,8 @@ SURFACED_MODULES: frozenset[str] = frozenset(
         "nse_algo_trader.regime.soft_regime_weighting_brain",
         "nse_algo_trader.regime.market_regime_state",
         "nse_algo_trader.strategy.intraday_mean_reversion_engine",
+        "nse_algo_trader.validation.honest_trial_registry",
+        "nse_algo_trader.dashboard.trial_registry_surface_renderer",
         "nse_algo_trader.market_depth.order_book_snapshot_replay_engine",
         "nse_algo_trader.dashboard.order_book_replay_surface_renderer",
         "nse_algo_trader.market_rules.point_in_time_market_rule_store",
@@ -443,6 +488,76 @@ def discover_engine_modules(package_name: str = "nse_algo_trader") -> list[Manif
     return sorted(entries, key=lambda entry: entry.module_name)
 
 
+def _measure_segment_bots() -> tuple[SegmentBotSurfaceRow, ...]:
+    """Build all six bots, drive them over their REAL universes, and report what the code just said.
+
+    **Measured, never maintained** (`R.08`). The rung comes off each bot's own closed trades, the
+    conformance count is the shared `L5.29` suite actually executed here against a probe that
+    includes an EMPTY universe, and the readiness columns come from each bot observing the same
+    universe the paper loop would hand it — assembled by `segment_universe_assembler` from
+    `price_bars` for cash and `fo_bhavcopy_contracts` for the derivatives.
+
+    **The universe is real and the read is bounded.** A page load cannot observe 25,785 stock-option
+    contracts and stay a page, so the read is capped and the cap is PRINTED in the assembler's own
+    note rather than applied silently — `R.09`'s failure mode is a sample that looks like a board.
+    An earlier version of this function reported the registration probe's two synthetic instruments
+    instead, which made every bot look equally ready and made `commodity_mcx` — which has no data at
+    all — indistinguishable from the five that do. That is precisely the confusion this page exists
+    to prevent, so it is recorded here rather than quietly corrected.
+
+    Never raises. A dashboard that 500s because one bot could not be built tells the operator less
+    than a page that says which one.
+    """
+    now = datetime.now(IST)
+    try:
+        # The gate runs on throwaway instances; these bots are FRESH, so nothing they carry came
+        # from the probe's synthetic prices.
+        violations_by_identity = conformance_violations_by_identity(at=now)
+        bots = build_all_segment_bots()
+    except Exception:  # noqa: BLE001 — the page reports a broken registry, it does not become one
+        return ()
+
+    rows: list[SegmentBotSurfaceRow] = []
+    for bot in bots:
+        try:
+            universe = assemble_for(
+                bot.trading_segment, as_of=now, limit=SEGMENT_SURFACE_INSTRUMENT_LIMIT
+            )
+            context = SegmentBotContext(
+                decision_instant=now,
+                tradeable_universe=universe.instruments,
+                regime=BALANCED_REGISTRATION_REGIME,
+                carried_memory=universe.carried_memory(),
+            )
+            bot.observe(context)
+            relevance = bot.relevance(context)
+            note = universe.note
+        except Exception as failure:  # noqa: BLE001 — one unreadable store is one row, not the page
+            relevance = SegmentRelevance(
+                applicability=0.0, reason=f"universe could not be assembled: {failure}"
+            )
+            note = str(failure)
+        maturity = bot.maturity()
+        blocker = SEGMENT_DATA_BLOCKERS.get(bot.trading_segment, "")
+        rows.append(
+            SegmentBotSurfaceRow(
+                bot_identity=bot.bot_identity,
+                trading_segment=bot.trading_segment,
+                cadence=bot.cadence,
+                rung=maturity.rung,
+                closed_trades=maturity.closed_trades_observed,
+                sessions=bot.track_record.sessions,
+                instruments_tracked=bot.instruments_tracked,
+                instruments_mature=bot.instruments_mature,
+                relevance=relevance.applicability,
+                relevance_reason=f"{relevance.reason} — {note}",
+                conformance_violations=len(violations_by_identity.get(bot.bot_identity, ())),
+                data_blocker=blocker,
+            )
+        )
+    return tuple(rows)
+
+
 def _measure_latest_depth_session(
     instrument_limit: int, staleness_quantile: float
 ) -> InstrumentCoverageReport:
@@ -467,7 +582,16 @@ def _measure_latest_depth_session(
 
 
 def inadmissible_depth_instruments(session_date: date) -> frozenset[int]:
-    """Instrument tokens `L0.33` measured the DEPTH BROKER as unreliable on, that session.
+    """Every instrument this session's evidence refuses, from BOTH gates.
+
+    Two independent refusals, unioned because they answer different questions and either one is
+    disqualifying:
+
+    - `L0.33` — the consolidated feed measured the DEPTH BROKER as divergent or frozen on this
+      instrument, so its recorded book describes the feed rather than the market;
+    - `M14` — the bar store and the depth tape were measured to describe different markets on
+      this instrument, so a signal taken from one and filled against the other is a join of two
+      unrelated series (`docs/research/236`).
 
     This is where the consolidated feed's verdict becomes a behaviour change: the depth tape
     is recorded from Kite, so Kite's own admissibility decides which instruments the
@@ -476,6 +600,7 @@ def inadmissible_depth_instruments(session_date: date) -> frozenset[int]:
     same table the recorder subscribed by — so a symbol the master does not know is simply
     not gated rather than silently dropped.
     """
+    join_refusals = refuted_instruments_for(session_date)
     admissibility = ConsolidatedFeedSessionRunner().engine.admissibility(session_date)
     unreliable_symbols = {
         symbol
@@ -483,7 +608,7 @@ def inadmissible_depth_instruments(session_date: date) -> frozenset[int]:
         if broker == DEPTH_TAPE_BROKER and not admissible
     }
     if not unreliable_symbols:
-        return frozenset()
+        return join_refusals
     with sqlite3.connect(f"file:{MARKET_DATA_DATABASE}?mode=ro", uri=True) as connection:
         placeholders = ",".join("?" for _ in unreliable_symbols)
         rows = connection.execute(
@@ -492,7 +617,57 @@ def inadmissible_depth_instruments(session_date: date) -> frozenset[int]:
             f"WHERE tradingsymbol IN ({placeholders}) AND segment = 'NSE'",
             tuple(unreliable_symbols),
         ).fetchall()
-    return frozenset(int(row[0]) for row in rows)
+    return join_refusals | frozenset(int(row[0]) for row in rows)
+
+
+SEGMENT_SURFACE_INSTRUMENT_LIMIT = 1500
+"""How many instruments this PAGE observes per bot. A rendering bound, never a trading one.
+
+The stock-option chain alone is 25,785 contracts; observing all of them on every page load would
+make this a batch job rather than a surface. The paper loop passes `limit=None` and sees the whole
+board (`R.09`). The assembler prints the bound in its own note whenever it bites, so a reader is
+never shown a sample that looks like a board.
+"""
+
+SEGMENT_DATA_BLOCKERS: dict[TradingSegment, str] = {
+    TradingSegment.INDEX_OPTIONS: (
+        "no intraday tape: the depth capture has never subscribed an NFO token "
+        "(2,135,786 ticks today, all NSE cash). Daily bhavcopy only until A.142 fills."
+    ),
+    TradingSegment.STOCK_OPTIONS: (
+        "no intraday tape: same NFO gap as index options. 1,220,678 STO rows of daily history."
+    ),
+    TradingSegment.INDEX_FUTURES: (
+        "no intraday tape, and only 540 IDF rows of daily history — B31. A low rung here is the "
+        "ladder working, not the bot failing."
+    ),
+    TradingSegment.STOCK_FUTURES: (
+        "no intraday tape; 22,561 STF rows of daily history — the healthiest of the "
+        "derivative three."
+    ),
+    TradingSegment.COMMODITY_MCX: (
+        "NO DATA AT ALL — B30. Zero MCX rows in fo_bhavcopy_contracts and no MCX token has ever "
+        "been in the depth tape. The bot is built whole and activates on nothing until MCX "
+        "ingestion lands (operator deferred it, A.142)."
+    ),
+}
+"""Why a bot cannot act, per segment, when the reason is DATA rather than judgement.
+
+Every figure was measured on 2026-08-18 and is quoted so a reader can re-check it. Kept beside the
+page rather than inside the bots because a bot must not know about the ingestion pipeline — that is
+the spine's business, and `L5.29` forbids a bot reading anything at all.
+"""
+
+DASHBOARD_LADDER_POLICY = LadderPolicy(
+    promotion_confidence=0.95,
+    sustained_sessions_required=20,
+    minimum_trades_for_a_posterior=30,
+)
+"""The same policy the daily run applies, so the board and the report cannot disagree.
+
+`R.08` says status is MEASURED, never hand-authored — a surface computing a rung under a laxer
+policy than the one that governs would be hand-authoring the most consequential number on it.
+"""
 
 
 def build_dashboard_app() -> FastAPI:
@@ -570,7 +745,132 @@ def build_dashboard_app() -> FastAPI:
             return HTMLResponse(
                 f"<h1>Cannot replay the depth tape</h1><p>{failure}</p>", status_code=503
             )
-        response = HTMLResponse(render_order_book_replay_page(report))
+        response = HTMLResponse(
+            render_order_book_replay_page(
+                report,
+                join_coverage=verification_coverage_for(report.session_date),
+                price_basis=price_basis_coverage_for(report.session_date, MARKET_DATA_DATABASE),
+            )
+        )
+        _remember_key(response, request)
+        return response
+
+    @app.get("/trials", response_class=HTMLResponse)
+    def trial_registry_surface(request: Request) -> HTMLResponse:
+        """`L2.01`'s surface: how large the search really was, and whether the record still holds.
+
+        Every number is measured from the registry itself, so a trial recorded tomorrow appears
+        here with no edit, and a chain broken by a removed trial turns this page red by itself.
+        """
+        if not _is_authorised(request):
+            return _unauthorised_html()
+        registry = HonestTrialRegistry()
+        response = HTMLResponse(
+            render_trial_registry_page(
+                exists=registry.exists(),
+                cumulative=registry.cumulative_trials(),
+                by_outcome=registry.trials_by_outcome(),
+                broken_at=registry.verify_chain(),
+            )
+        )
+        _remember_key(response, request)
+        return response
+
+    @app.get("/ladder", response_class=HTMLResponse)
+    def bot_maturity_surface(request: Request) -> HTMLResponse:
+        """`L5.30`'s surface: where each paper-trading bot stands on the activation ladder.
+
+        Measured from the track record on every request, so a trade recorded by tonight's paper
+        session moves this page with no edit. The rung is the FIRST of `R.22`'s two keys, and a
+        gate nobody looks at is a gate nobody notices going wrong.
+        """
+        if not _is_authorised(request):
+            return _unauthorised_html()
+        store = PaperTrackRecordStore()
+        ladder = BotMaturityLadder(store)
+        assessments = tuple(
+            ladder.assess(identity, DASHBOARD_LADDER_POLICY)
+            for identity in store.bot_identities()
+        )
+        response = HTMLResponse(render_bot_maturity_page(assessments))
+        _remember_key(response, request)
+        return response
+
+    @app.get("/loop", response_class=HTMLResponse)
+    def continuous_loop_surface(request: Request) -> HTMLResponse:
+        """`L10.01`'s surface: is the loop alive, what is it seeing, how stale is its data.
+
+        Read from the loop's own append-only record on every request. The two numbers that matter
+        are the time since the last HEALTHY tick — a process can be up and failing every iteration —
+        and the tape lag, which catches the failure that looks most like success: a live loop
+        reading a dead capture, where every iteration succeeds and nothing is true.
+        """
+        if not _is_authorised(request):
+            return _unauthorised_html()
+        try:
+            store = SchedulerLivenessStore()
+            state = ContinuousLoopSurfaceState(
+                measured_at=datetime.now(IST),
+                iterations=store.recent(),
+                last_healthy_at=store.last_healthy_at(),
+            )
+        except Exception:  # noqa: BLE001 — an unreadable record renders as "never ran", not a 500
+            state = ContinuousLoopSurfaceState(
+                measured_at=datetime.now(IST), iterations=(), last_healthy_at=None
+            )
+        response = HTMLResponse(render_continuous_loop_page(state))
+        _remember_key(response, request)
+        return response
+
+    @app.get("/bots", response_class=HTMLResponse)
+    def segment_bot_surface(request: Request) -> HTMLResponse:
+        """`L5.26`-`L5.28` and the three futures bots: all six holons, measured on this request.
+
+        Everything is produced by running the code, not read from a status anybody maintains: the
+        six are built by the registry, each carrying its own track record off `BotMaturityLadder`;
+        the `L5.29` conformance suite is re-run against a probe that includes an EMPTY universe; and
+        each bot's relevance is its own carried state answering.
+
+        The column that matters is `universe readiness` against the data blocker beside it. A bot
+        with nothing to trade and a bot that has not proven itself both sit at `COLD_START`, and
+        they need completely different things (`A.141`, `A.142`).
+        """
+        if not _is_authorised(request):
+            return _unauthorised_html()
+        response = HTMLResponse(render_segment_bot_page(_measure_segment_bots()))
+        _remember_key(response, request)
+        return response
+
+    @app.get("/quality", response_class=HTMLResponse)
+    def trade_quality_surface(request: Request) -> HTMLResponse:
+        """`L5.31`'s surface: every proposal the quality floor judged, admitted and refused alike.
+
+        Measured from the evidence store on every request, so a verdict recorded by tonight's run
+        moves this page with no edit. The refusals are the point: they are the only record that can
+        ever show the floor was too high.
+        """
+        if not _is_authorised(request):
+            return _unauthorised_html()
+        store = TradeQualityEvidenceStore()
+        sessions = store.sessions_recorded()
+        cards = store.cards_for_session(sessions[-1]) if sessions else ()
+        response = HTMLResponse(render_trade_quality_page(cards))
+        _remember_key(response, request)
+        return response
+
+    @app.get("/traces", response_class=HTMLResponse)
+    def decision_trace_surface(request: Request) -> HTMLResponse:
+        """`L13.29`'s surface: what the bot was thinking, from records written at the instant.
+
+        `A.29` required the trace to exist BEFORE this page, so that nothing here is reconstructed
+        from what was traded afterwards.
+        """
+        if not _is_authorised(request):
+            return _unauthorised_html()
+        store = DecisionTraceStore()
+        sessions = store.sessions_recorded()
+        summary = store.session_summary(sessions[0]) if sessions else None
+        response = HTMLResponse(render_decision_trace_page(summary))
         _remember_key(response, request)
         return response
 
@@ -622,9 +922,7 @@ def build_dashboard_app() -> FastAPI:
         today = datetime.now(IST).date()
         calibrations = []
         for horizon in DEFAULT_CALIBRATION_HORIZONS:
-            for bucket in calibration_store.calibrated_buckets(
-                horizon_bars=horizon, as_of=today
-            ):
+            for bucket in calibration_store.calibrated_buckets(horizon_bars=horizon, as_of=today):
                 try:
                     calibrations.append(
                         calibration_store.capture_for(
@@ -775,9 +1073,7 @@ def build_dashboard_app() -> FastAPI:
 
         def refused(failure_text: str) -> HTMLResponse:
             return HTMLResponse(
-                render_paper_capital_page(
-                    with_refusal(_paper_capital_state(now), failure_text)
-                ),
+                render_paper_capital_page(with_refusal(_paper_capital_state(now), failure_text)),
                 status_code=400,
             )
 
@@ -914,9 +1210,7 @@ def build_dashboard_app() -> FastAPI:
                 traded_value_percentile_rupees=capital.total_rupees,
                 realised_move_percentile_fraction=collar,
                 segment_margin_fraction=CASH_INTRADAY_MARGIN_FRACTION,
-                registration_threshold_orders_per_second=(
-                    REGISTRATION_THRESHOLD_ORDERS_PER_SECOND
-                ),
+                registration_threshold_orders_per_second=(REGISTRATION_THRESHOLD_ORDERS_PER_SECOND),
             )
             resting = session_state or SessionRiskState(
                 session_date=session_date,

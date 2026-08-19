@@ -241,9 +241,7 @@ class OneIntentOneOrder(RuleBasedStateMachine):
         self.clock += timedelta(seconds=30)
         BrokerTruthReconciler(
             journal=self.journal, venue=self.venue, namespace=OrderNamespace.SIMULATED
-        ).reconcile(
-            session_date=_SESSION, now=self.clock
-        )
+        ).reconcile(session_date=_SESSION, now=self.clock)
 
     @invariant()
     def no_intent_ever_becomes_two_orders(self) -> None:

@@ -74,9 +74,7 @@ def recorded_arrivals(journal_path: Path) -> list[datetime]:
     return [datetime.fromisoformat(str(row[0])) for row in rows]
 
 
-def replay_one_session(
-    session_date: date, arrivals: list[datetime]
-) -> tuple[int, int, list[str]]:
+def replay_one_session(session_date: date, arrivals: list[datetime]) -> tuple[int, int, list[str]]:
     """Push one session's arrivals through a real limiter; return grants, refusals and breaches."""
     if not arrivals:
         return 0, 0, []
@@ -146,11 +144,7 @@ def main() -> int:
         granted, refused, breaches = replay_one_session(session_date, arrivals)
         sessions_checked += 1
         total_breaches += len(breaches)
-        span = (
-            f"{(arrivals[-1] - arrivals[0])}"
-            if len(arrivals) > 1
-            else "a single instant"
-        )
+        span = f"{(arrivals[-1] - arrivals[0])}" if len(arrivals) > 1 else "a single instant"
         print(
             f"{session_date.isoformat()}: {len(arrivals)} recorded arrivals over {span} — "
             f"{granted} granted, {refused} refused, {len(breaches)} breach(es)"

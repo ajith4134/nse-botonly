@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import sqlite3
 from collections import Counter
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -40,6 +41,16 @@ from nse_algo_trader.capital_configuration import load_trading_capital_from_envi
 from nse_algo_trader.cost_gate.mean_reversion_edge_calibrator import ReversionCalibrationStore
 from nse_algo_trader.cost_gate.per_instrument_reversion_horizon_selector import (
     PerInstrumentReversionHorizonSelector,
+)
+from nse_algo_trader.decision_trace.decision_trace_record import DecisionTraceStore
+from nse_algo_trader.historical_bars.bar_price_basis_provenance import (
+    admit_on_traded_price_basis,
+)
+from nse_algo_trader.market_depth.bar_tape_join_verdict_store import (
+    instruments_not_cleared_for,
+    price_basis_divergences_for,
+    refuted_instruments_for,
+    verification_coverage_for,
 )
 from nse_algo_trader.market_depth.market_depth_tape_store import MarketDepthTapeReader
 from nse_algo_trader.market_depth.order_book_snapshot_replay_engine import (
@@ -51,12 +62,17 @@ from nse_algo_trader.order_path.simulated_order_execution_venue import (
     SimulatedOrderExecutionVenue,
 )
 from nse_algo_trader.paper_capital_ledger import PaperCapitalLedger
+from nse_algo_trader.paper_loop.bot_maturity_ladder import (
+    ClosedPaperTrade,
+    PaperTrackRecordStore,
+)
 from nse_algo_trader.paper_loop.paper_session_signal_source import (
     MeanReversionPaperSignalSource,
 )
 from nse_algo_trader.paper_loop.paper_trading_session_runner import (
     PaperInstrument,
     PaperSessionPolicy,
+    PaperSessionReport,
     PaperTradingSessionRunner,
 )
 from nse_algo_trader.paper_loop.replayed_depth_book_source import SteppedRecordedBookSource
@@ -64,13 +80,31 @@ from nse_algo_trader.paper_loop.simulated_time_submission_rate_gate import (
     SimulatedTimeSubmissionRateGate,
 )
 from nse_algo_trader.replay_session_clock import ReplaySessionClock, session_for
+from nse_algo_trader.segment_bots.segment_trading_taxonomy import TradingSegment
 from nse_algo_trader.sizing.session_risk_state_store import SessionRiskStateStore
 from nse_algo_trader.sizing.sizing_inputs_from_real_stores import (
     DEFAULT_MARKET_DATA_PATH,
     RealStorePaths,
 )
-from nse_algo_trader.transaction_cost.chargeable_market_segments import ChargeableSegment
-from nse_algo_trader.transaction_cost.nse_transaction_cost_engine import NseTransactionCostEngine
+from nse_algo_trader.trade_quality.realized_payoff_distribution_estimator import (
+    RealisedPayoffDistributionEstimator,
+    RealisedTradeOutcome,
+)
+from nse_algo_trader.trade_quality.stated_probability_calibrator import (
+    SESSIONS_NEEDED_FOR_OUT_OF_FOLD,
+    ForecastOutcome,
+    StatedProbabilityCalibrator,
+)
+from nse_algo_trader.trade_quality.trade_quality_evidence_store import TradeQualityEvidenceStore
+from nse_algo_trader.trade_quality.trade_quality_floor_engine import (
+    QualityFloorPolicy,
+    TradeQualityFloorEngine,
+)
+from nse_algo_trader.transaction_cost.chargeable_market_segments import ChargeableSegment, TradeLeg
+from nse_algo_trader.transaction_cost.nse_transaction_cost_engine import (
+    NseTransactionCostEngine,
+    TradeSpecification,
+)
 
 DEFAULT_DEPTH_TAPE_ROOT = Path("~/nse_archive/depth_tape").expanduser()
 
@@ -119,6 +153,214 @@ def instruments_priced_on(
     return instruments[:limit] if limit is not None else instruments
 
 
+@dataclass(frozen=True, slots=True)
+class JoinAdmission:
+    """What the bar/tape verification lets this run trade, and what it held back.
+
+    Extracted from `main` by the `A.125` review (`M31`), which found the whole consumer change
+    untested: three separate mutations of the inline version — reverting the filter to refusals
+    only, mis-counting the split, and gutting the unrun-session warning — all survived the suite,
+    because no test imports this script.
+    """
+
+    instruments: list[PaperInstrument]
+    refused: int
+    undecided: int
+    coverage: object | None
+    inconsistent: bool
+
+    @property
+    def withheld(self) -> int:
+        return self.refused + self.undecided
+
+
+def admit_instruments_for(
+    instruments: list[PaperInstrument],
+    *,
+    refusals: frozenset[int],
+    uncleared: frozenset[int],
+    coverage: object | None,
+    internally_consistent: bool,
+) -> JoinAdmission:
+    """Decide which instruments this run may trade, given the join verification's answer.
+
+    **An UNRUN verification withholds nothing** — `uncleared` is empty for a session nobody
+    verified, so an empty set means "no information", never "everything is fine" (`A.41`). The
+    caller must branch on `coverage is None` and say so out loud; that is asserted by a test rather
+    than left to the reader.
+    """
+    if coverage is None:
+        return JoinAdmission(list(instruments), 0, 0, None, False)
+    if not internally_consistent:
+        return JoinAdmission([], 0, 0, coverage, True)
+    refused = sum(1 for one in instruments if one.instrument_token in refusals)
+    kept = [one for one in instruments if one.instrument_token not in uncleared]
+    return JoinAdmission(kept, refused, len(instruments) - len(kept) - refused, coverage, False)
+
+
+def _accrue_track_record(
+    bot_identity: str,
+    report: PaperSessionReport,
+    segment: ChargeableSegment,
+) -> int:
+    """Persist this session's CLOSED positions as evidence under one bot identity (`L5.30`).
+
+    Only closed positions count. A position still open at the close has no realised outcome, and
+    counting it would let a bot bank a paper gain it has not taken — the shape `R.13` catches.
+
+    **Costs are priced per trade through the real cost engine, not split from the session total.**
+    The first version apportioned `report.costs_rupees` across positions by notional, and the
+    track record's own collision guard caught it on the first real daily run: the same `ABB`
+    position recorded a different cost in a 200-instrument run than in the full-universe run,
+    because its share depended on which OTHER trades happened to be in the session. A trade's cost
+    is a property of that trade — its segment, quantity and both leg prices — and break-even is a
+    per-trade quantity, so an apportioned cost is not merely imprecise, it is the wrong kind of
+    number. `NseTransactionCostEngine` already prices exactly this and is what the gate uses.
+    """
+    store = PaperTrackRecordStore()
+    pricer = NseTransactionCostEngine(seeded_nse_market_rule_store())
+    closed = [position for position in report.positions if position.closed_at is not None]
+
+    written = 0
+    for position in closed:
+        entry = position.average_entry_paise or Decimal(0)
+        exit_price = position.average_exit_paise or entry
+        quantity = position.exit_filled_quantity or position.filled_quantity
+        if quantity <= 0 or entry <= 0:
+            continue  # nothing filled is nothing to learn from
+        direction = Decimal(1) if position.side == TradeLeg.BUY else Decimal(-1)
+        gross_rupees = (direction * (exit_price - entry) * Decimal(quantity)) / Decimal(100)
+        priced = pricer.price_round_trip(
+            TradeSpecification(
+                segment=segment,
+                quantity=quantity,
+                entry_price_paise=entry,
+                exit_price_paise=exit_price,
+                trade_date=report.session_date,
+                is_short_first=position.side is not TradeLeg.BUY,
+            )
+        )
+        written += store.append(
+            ClosedPaperTrade(
+                bot_identity=bot_identity,
+                session_date=report.session_date,
+                position_key=position.position_key,
+                instrument_token=position.instrument.instrument_token,
+                trading_symbol=position.instrument.trading_symbol,
+                side=str(position.side),
+                filled_quantity=quantity,
+                opened_at=position.opened_at,
+                closed_at=position.closed_at or position.opened_at,
+                close_reason=position.close_reason,
+                gross_rupees=gross_rupees,
+                costs_rupees=priced.total_rupees,
+                stated_win_probability=position.stated_win_probability,
+            )
+        )
+    return written
+
+
+DEFAULT_QUALITY_BOT_IDENTITY = "cash_intraday_mean_reversion_bot"
+"""Whose record `L5.31` is fitted on when the run is not recording under a named bot.
+
+The same identity `PaperTradingSessionRunner.trace_bot_identity` defaults to, so a verification run
+and the daily run judge the same bot rather than two that happen to share a loop.
+"""
+
+QUALITY_FLOOR_HELD_OFF_PENDING_REVIEW_REPAIRS: bool = True
+"""One switch, named for exactly why it is off — `A.140`, `docs/research/261`.
+
+`R.23c`'s adversarial review found six CRITICAL defects in `L5.31`, the worst of which admits about
+one in three money-losing bots and does not improve with data. `B23` had already wired the gate into
+the entry loop, so this seam is where an unsafe gate would reach a real session. It is held off HERE
+rather than by deleting the wiring, because the wiring is correct and the engine is not: the loop
+runs exactly as it did before `L5.31` landed, and flipping this back is the last step of the repair,
+not the first.
+"""
+
+ADMISSION_CONFIDENCE = 0.9
+"""Operator policy (`R.03`): how much posterior mass must sit above the binding floor to admit.
+
+Stated here rather than defaulted inside the engine, and deliberately the same shape as
+`LadderPolicy.promotion_confidence` so the per-trade gate and the per-bot ladder are answerable in
+one currency.
+"""
+
+
+def _quality_gate_if_the_record_supports_one(
+    bot_identity: str,
+) -> tuple[TradeQualityFloorEngine | None, str]:
+    """Attach `L5.31`'s floor only once this bot's own record can support it — `R.04`, not a switch.
+
+    **The deadlock this avoids.** The gate refuses a proposal whose calibrated posterior is too
+    wide, and a bot with no forecasts on record has the widest posterior there is. Placed in
+    front of the only thing that BUILDS the record, it would refuse every trade forever and
+    re-create `B15` — the cold-start deadlock that took twelve daily steps and zero trades to
+    notice. So activation climbs the maturity ladder rather than being switched on: the floor
+    attaches when the bot has both won and lost (a payoff ratio exists) and has forecasts
+    written down before their outcomes.
+
+    The full algorithm is built and unchanged either way (`R.04`); only its ACTIVATION is gated, and
+    the reason is printed so a run never silently has no floor.
+    """
+    if QUALITY_FLOOR_HELD_OFF_PENDING_REVIEW_REPAIRS:
+        return None, (
+            "L5.31 quality floor HELD OFF by A.140: the adversarial review (docs/research/261) "
+            "found SIX critical defects, including a calibrator that is in-sample despite its "
+            "name and admits ~1 in 3 money-losing bots. Activation is blocked at this seam until "
+            "every CRITICAL is fixed and the review re-run. The loop trades as it did before."
+        )
+
+    trades = PaperTrackRecordStore().closed_trades_for(bot_identity)
+    forecasts = [trade for trade in trades if trade.stated_win_probability is not None]
+    payoffs = RealisedPayoffDistributionEstimator(
+        [
+            RealisedTradeOutcome(
+                bot_identity=trade.bot_identity,
+                trading_segment=TradingSegment.CASH_INTRADAY,
+                session_date=trade.session_date,
+                gross_rupees=trade.gross_rupees,
+                costs_rupees=trade.costs_rupees,
+            )
+            for trade in trades
+        ]
+    )
+    if payoffs.posterior_for(bot_identity) is None:
+        return None, (
+            f"L5.31 quality floor NOT attached: {bot_identity} has {len(trades)} closed trades but "
+            f"has not yet both won and lost, so its payoff ratio is unmeasured rather than "
+            f"favourable. Running without a floor and recording the evidence that will attach one."
+        )
+    sessions = {trade.session_date for trade in forecasts}
+    if len(sessions) < SESSIONS_NEEDED_FOR_OUT_OF_FOLD:
+        return None, (
+            f"L5.31 quality floor NOT attached: only {len(forecasts)} of {len(trades)} closed "
+            f"trades carry a stated win probability, across {len(sessions)} session(s). The "
+            f"calibrator needs forecasts recorded before their outcomes, over at least two "
+            f"sessions, or every proposal is held to an uncalibrated posterior and nothing trades."
+        )
+    calibrator = StatedProbabilityCalibrator(
+        [
+            ForecastOutcome(
+                bot_identity=trade.bot_identity,
+                trading_segment=TradingSegment.CASH_INTRADAY,
+                occurred_at=trade.opened_at,
+                session_date=trade.session_date,
+                stated_probability=float(trade.stated_win_probability or 0.0),
+                was_win=trade.gross_rupees > 0,
+            )
+            for trade in forecasts
+        ]
+    )
+    return (
+        TradeQualityFloorEngine(
+            calibrator, payoffs, QualityFloorPolicy(admission_confidence=ADMISSION_CONFIDENCE)
+        ),
+        f"L5.31 quality floor ATTACHED: fitted on {len(trades)} closed trades, "
+        f"{len(forecasts)} of them carrying a stated probability across {len(sessions)} sessions.",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("session_date", help="the trading day to replay, YYYY-MM-DD")
@@ -131,6 +373,26 @@ def main() -> int:
         default=Path("~/.nse_algo_trader/paper_verification").expanduser(),
         help="where this run's journal, ledger and risk state are written",
     )
+    parser.add_argument(
+        "--trace-to",
+        type=Path,
+        default=None,
+        help=(
+            "record a point-in-time DECISION TRACE per decision to this store (`L13.29`). "
+            "Emitted from inside the runner at the instant, never assembled from the report "
+            "afterwards — `A.29` calls that a confident fiction."
+        ),
+    )
+    parser.add_argument(
+        "--record-as",
+        default=None,
+        help=(
+            "bot identity to accrue this session's closed trades under, in the PERSISTENT "
+            "paper track record (`L5.30`). Omitted, the run verifies and records nothing — "
+            "which is what this script did exclusively until 2026-08-17, and is why no bot "
+            "had a track record to climb the R.04 ladder with (`B15`)."
+        ),
+    )
     arguments = parser.parse_args()
     load_env_file_into_environ()
 
@@ -141,6 +403,87 @@ def main() -> int:
     if not instruments:
         print(f"no instrument has both a lot size and bars on {session_date.isoformat()}")
         return 1
+
+    # `M14`'s gate, and it is a behaviour change rather than a diagnostic: an instrument whose
+    # bar store and depth tape were MEASURED to describe different markets is one where the
+    # signal and the fill come from unrelated series, so the P&L it produces is not evidence
+    # about the strategy. Refused here rather than filtered inside the loop so the count is
+    # printed and the exclusion is visible (`R.11`).
+    join_refusals = refuted_instruments_for(session_date)
+    # `A.125`/`M31`. The loop used to filter on REFUSALS alone, so an instrument the verification
+    # could not decide about was treated exactly like one it cleared — and after `A.124` demoted
+    # the thin ones, that was 411 of 3,327 candidates on 2026-08-11. An unverified join is not a
+    # verified join (`A.41`), and a P&L produced over one is not evidence about the strategy.
+    join_uncleared = instruments_not_cleared_for(session_date)
+    join_coverage = verification_coverage_for(session_date)
+    if join_coverage is None:
+        print(
+            f"WARNING: the bar/tape join has NOT been verified for {session_date.isoformat()} — "
+            f"run scripts/verify_bar_tape_join_on_real_data.py. Proceeding UNVERIFIED (`R.05`)."
+        )
+    elif not join_coverage.is_internally_consistent:
+        # An interrupted sweep re-run at a different policy leaves rows from BOTH, and `B6` proved
+        # the threshold changes the verdicts. Two incomparable measurements are not one
+        # verification, so this refuses rather than averaging them.
+        print(
+            f"the join verdicts for {session_date.isoformat()} mix POLICIES — staleness quantiles "
+            f"{join_coverage.staleness_quantiles}, significances {join_coverage.significances}, "
+            f"nulls {join_coverage.null_models}, detectable-rate claims "
+            f"{join_coverage.minimum_detectable_disagreement_rates} "
+            f"({join_coverage.rows_without_a_staleness_quantile} / "
+            f"{join_coverage.rows_without_a_null_model} / "
+            f"{join_coverage.rows_without_a_minimum_detectable_rate} rows unrecorded). "
+            f"Two runs at two policies. Re-run "
+            f"scripts/verify_bar_tape_join_on_real_data.py for this session before relying on it."
+        )
+        return 1
+    else:
+        before = len(instruments)
+        admission = admit_instruments_for(
+            instruments,
+            refusals=join_refusals,
+            uncleared=join_uncleared,
+            coverage=join_coverage,
+            internally_consistent=True,
+        )
+        instruments = admission.instruments
+        print(
+            f"bar/tape join ({session_date.isoformat()}): "
+            f"{join_coverage.instruments_verified} verified, "
+            f"{join_coverage.instruments_refuted} refuted, "
+            f"{join_coverage.instruments_unverifiable} unverifiable — "
+            f"{admission.withheld} of this run's {before} instruments withheld "
+            f"({admission.refused} refused, {admission.undecided} undecided)"
+        )
+        # `M26`'s repair factors, surfaced rather than left in the store (`R.06` — the adversarial
+        # review found this reader had no consumer at all, and it carries the entire point of the
+        # addition: WHICH series is rescaled, and by what).
+        rescaled = price_basis_divergences_for(session_date)
+        if rescaled:
+            print(
+                f"  of those, {len(rescaled)} have a RESCALED bar series (`M26`) — the signal and "
+                f"the fill are denominated differently:"
+            )
+            for token, factor in sorted(rescaled.items(), key=lambda item: item[1]):
+                print(f"    token {token}: bar_close = {factor:.5f} x traded price")
+        if not instruments:
+            print("no instrument in this run has a VERIFIED bar/tape join")
+            return 1
+
+    # `L0.37`. The signal comes from `price_bars` and every fill from the depth tape; if the bars
+    # are on a LATER adjusted basis the strategy is being measured against a market that did not
+    # happen. Armed only on evidence (`R.04`) — with no bar recording a basis the rule cannot
+    # distinguish anything, and it says so rather than withholding the universe.
+    basis_admission = admit_on_traded_price_basis(
+        session_date, [one.instrument_token for one in instruments], arguments.market_data
+    )
+    print(basis_admission.describe())
+    if basis_admission.armed:
+        allowed = set(basis_admission.instruments)
+        instruments = [one for one in instruments if one.instrument_token in allowed]
+        if not instruments:
+            print("no instrument in this run has bars known to be on the traded price basis")
+            return 1
 
     capital = load_trading_capital_from_environment()
     state_directory = arguments.state_directory / session_date.isoformat()
@@ -197,6 +540,9 @@ def main() -> int:
     rate_gate = SimulatedTimeSubmissionRateGate(
         clock=clock, store_path=state_directory / "rate.sqlite3"
     )
+    quality_gate, quality_gate_reason = _quality_gate_if_the_record_supports_one(
+        arguments.record_as or DEFAULT_QUALITY_BOT_IDENTITY
+    )
     runner = PaperTradingSessionRunner(
         policy=PaperSessionPolicy(
             session_date=session_date,
@@ -213,6 +559,9 @@ def main() -> int:
             tradeable_window=tradeable_window,
         ),
         instruments=instruments,
+        decision_trace_store=(
+            DecisionTraceStore(arguments.trace_to) if arguments.trace_to else None
+        ),
         clock=clock,
         signal_source=MeanReversionPaperSignalSource(
             minimum_regime_concentration=MINIMUM_REGIME_CONCENTRATION,
@@ -234,8 +583,11 @@ def main() -> int:
         # One horizon for every instrument synchronises the exits and the wire refuses the wave
         # (`A.115`); this chooses the holding time from the fitted grid, per deviation.
         horizon_selector=PerInstrumentReversionHorizonSelector(ReversionCalibrationStore()),
+        trade_quality_gate=quality_gate,
+        trade_quality_store=TradeQualityEvidenceStore() if quality_gate else None,
     )
 
+    print(quality_gate_reason)
     print(
         f"replaying {session_date.isoformat()} over {len(instruments)} instruments "
         f"against Rs {capital.total_rupees}"
@@ -277,6 +629,17 @@ def main() -> int:
             f"{position.ordered_quantity} @ {position.average_entry_paise} paise, exited "
             f"{position.exit_filled_quantity} @ {position.average_exit_paise} — "
             f"{position.close_reason or 'never exited'}"
+        )
+
+    if arguments.record_as:
+        # The segment the session was configured with, so a cost is priced under the
+        # scope that actually applied rather than one inferred after the fact.
+        recorded = _accrue_track_record(
+            arguments.record_as, report, ChargeableSegment.EQUITY_INTRADAY
+        )
+        print(
+            f"\ntrack record: {recorded} closed trade(s) accrued for {arguments.record_as!r} "
+            f"(re-running this session records 0 more — the store is idempotent per position)"
         )
 
     fold = ledger.fold_from_events()

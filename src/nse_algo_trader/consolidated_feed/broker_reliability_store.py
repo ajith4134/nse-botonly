@@ -242,9 +242,7 @@ class BrokerReliabilityStore:
     def all_reliabilities(self) -> tuple[BrokerReliability, ...]:
         with self._connect() as connection:
             connection.row_factory = sqlite3.Row
-            rows = connection.execute(
-                "SELECT * FROM broker_reliability ORDER BY broker"
-            ).fetchall()
+            rows = connection.execute("SELECT * FROM broker_reliability ORDER BY broker").fetchall()
         return tuple(_reliability_from_row(row) for row in rows)
 
     def instrument_session_quality(
@@ -346,9 +344,7 @@ class BrokerReliabilityStore:
             unchanged = (row["unchanged_while_others_moved"] if row else 0) + (
                 1 if (others_moved and stayed_unchanged) else 0
             )
-            occasions = (row["others_moved_occasions"] if row else 0) + (
-                1 if others_moved else 0
-            )
+            occasions = (row["others_moved_occasions"] if row else 0) + (1 if others_moved else 0)
             if deviation_paise is not None:
                 state.update_deviation(deviation_paise)
                 observation_count += 1

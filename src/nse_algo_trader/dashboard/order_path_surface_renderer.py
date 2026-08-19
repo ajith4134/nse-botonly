@@ -398,9 +398,7 @@ def _format_quantity(quantity: int) -> str:
 def _format_paise(value: Decimal) -> str:
     """A paise figure with its rupee equivalent, because operators think in rupees."""
     quantised = value.quantize(_DISPLAY_PAISE_PRECISION, rounding=ROUND_HALF_EVEN).normalize()
-    rupees = (value / _PAISE_PER_RUPEE).quantize(
-        _RUPEE_DISPLAY_PRECISION, rounding=ROUND_HALF_EVEN
-    )
+    rupees = (value / _PAISE_PER_RUPEE).quantize(_RUPEE_DISPLAY_PRECISION, rounding=ROUND_HALF_EVEN)
     return f"{quantised:,f} p (₹{rupees:,})"
 
 
@@ -410,9 +408,7 @@ def _format_seconds(seconds: float) -> str:
 
 def _absent(word: str, explanation: str) -> str:
     """The one way this page renders nothing: a dashed badge carrying the reason."""
-    return (
-        f'<span class="badge badge-absent" title="{escape(explanation)}">{escape(word)}</span>'
-    )
+    return f'<span class="badge badge-absent" title="{escape(explanation)}">{escape(word)}</span>'
 
 
 def _state_badge(state: OrderLifecycleState | None) -> str:
@@ -485,7 +481,7 @@ def _open_blocker_banner() -> str:
     """
     return (
         '<div class="blocker">'
-        '<h2>OPEN BLOCKER — the real-fill verification has NOT been run</h2>'
+        "<h2>OPEN BLOCKER — the real-fill verification has NOT been run</h2>"
         "<p>The real-FILL lifecycle probe for <code>F02</code> is <strong>deferred by operator "
         "decision</strong> (<code>A.99</code>, 2026-08-13), to be run after the project is "
         "complete. This feature's <code>R.05</code> pass is READ-ONLY: real "
@@ -798,7 +794,7 @@ def _horizon_section(horizon: VisibilityHorizon) -> str:
             f"broker — Kite publishes no propagation-latency figure at all — and there are not "
             f"enough of them yet. Orders the broker has never shown are reported UNRESOLVED and "
             f"held, which is the honest answer rather than a convenient one.</p>"
-            f"<p class=\"muted\">{escape(horizon.detail)}</p>"
+            f'<p class="muted">{escape(horizon.detail)}</p>'
             f'<p class="muted">Observations recorded so far: '
             f"{escape(_format_quantity(horizon.observations))}.</p></div>"
         )

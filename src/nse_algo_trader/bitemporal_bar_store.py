@@ -221,7 +221,7 @@ class BarRecord:
 
 
 _SCHEMA: Final[str] = """
-CREATE TABLE IF NOT EXISTS price_bar (
+CREATE TABLE IF NOT EXISTS daily_reconciled_bar (
     exchange                TEXT NOT NULL,
     segment                 TEXT NOT NULL,
     tradingsymbol           TEXT NOT NULL,
@@ -243,10 +243,10 @@ CREATE TABLE IF NOT EXISTS price_bar (
     PRIMARY KEY (exchange, segment, tradingsymbol, bar_interval, bar_timestamp_utc)
 );
 -- Availability leads every read, so it leads the index.
-CREATE INDEX IF NOT EXISTS price_bar_by_availability
-    ON price_bar (available_from_utc, exchange, segment, tradingsymbol);
-CREATE INDEX IF NOT EXISTS price_bar_by_token
-    ON price_bar (instrument_token, bar_timestamp_utc);
+CREATE INDEX IF NOT EXISTS daily_reconciled_bar_by_availability
+    ON daily_reconciled_bar (available_from_utc, exchange, segment, tradingsymbol);
+CREATE INDEX IF NOT EXISTS daily_reconciled_bar_by_token
+    ON daily_reconciled_bar (instrument_token, bar_timestamp_utc);
 """
 
 _COLUMNS: Final = (
@@ -254,6 +254,22 @@ _COLUMNS: Final = (
     " bar_timestamp_offset, available_from_offset, instrument_token, open_price, high_price,"
     " low_price, close_price, volume, open_interest"
 )
+
+
+def _refuse_two_objects_under_both_names(existing: set[str]) -> None:
+    """Both names present means the legacy object holds rows this store will never read.
+
+    Its own function because the check sits inside a transaction, and a `raise` buried there reads
+    as control flow rather than as the refusal it is.
+    """
+    if "daily_reconciled_bar" not in existing:
+        return
+    raise BarStoreError(
+        "both `price_bar` and `daily_reconciled_bar` exist. The legacy object was renamed in a "
+        "previous run, so a second object under the old name holds rows this store cannot see. "
+        "Merge or drop it deliberately — silently skipping the rename is exactly how those rows "
+        "were lost the first time (adversarial review, 2026-08-17)"
+    )
 
 
 @dataclass(slots=True)
@@ -274,7 +290,59 @@ class BitemporalBarStore:
             self.database_path, timeout=self.busy_timeout_seconds, check_same_thread=False
         )
         self._connection.execute("PRAGMA journal_mode=WAL")
+        self._rename_legacy_table_if_present()
         self._connection.executescript(_SCHEMA)
+        self._connection.commit()
+
+    def _rename_legacy_table_if_present(self) -> None:
+        """Rename the legacy `price_bar` object to `daily_reconciled_bar` in place (`R.14`).
+
+        The old name differed from the unrelated `price_bars` table by a single character, and the
+        two hold different datasets at different resolutions — this store holds `bar_interval='day'`
+        cross-broker reconciled bars, while `price_bars` holds five-minute backfilled bars. That one
+        character cost two wrong findings in a single session (`O.115`, `A.132`).
+
+        **Everything defensive here was put in by an adversarial review that broke the first
+        version** (2026-08-17):
+
+        * `BEGIN IMMEDIATE` wraps the look-then-rename, because it was a TOCTOU race: six processes
+          opening the store together produced **five crashes** with `no such table: price_bar`, and
+          the store's own docstring advertises concurrent multi-process use. This fires exactly once
+          per database — on the first open after deploying, which is when the dashboard, the ingest
+          and the paper loop all restart at the same moment.
+        * Both objects existing is an **error**, not a skip. The first version silently left the
+          legacy rows behind: a 7-row `price_bar` beside the live table produced no error, no log
+          and no merge, and those rows became permanently unreadable through this store.
+        * The lookup no longer filters `type='table'`, because a legacy **VIEW** of that name was
+          invisible to it — the store then created a fresh empty table beside 203 live rows and
+          wrote into the empty one.
+        * The legacy INDEX names are dropped. `ALTER TABLE ... RENAME TO` renames the table and not
+          its indexes, so the live database carried `price_bar_by_availability` and
+          `price_bar_by_token` **alongside** their new-name duplicates: `R.14` satisfied in Python
+          and violated in the schema, with two identical indexes rebuilt on every insert.
+
+        A raw `sqlite3.OperationalError` from a read-only file is deliberately allowed to propagate:
+        a store that cannot complete its own migration must not pretend it opened cleanly.
+        """
+        self._connection.execute("BEGIN IMMEDIATE")
+        try:
+            existing = {
+                name
+                for (name,) in self._connection.execute(
+                    "SELECT name FROM sqlite_master WHERE name IN"
+                    " ('price_bar', 'daily_reconciled_bar')"
+                )
+            }
+            if "price_bar" in existing:
+                _refuse_two_objects_under_both_names(existing)
+                self._connection.execute("ALTER TABLE price_bar RENAME TO daily_reconciled_bar")
+            # Unconditional: RENAME leaves index names untouched, so these survive a migration that
+            # ran before this cleanup existed, and dropping a name that is not there is free.
+            self._connection.execute("DROP INDEX IF EXISTS price_bar_by_availability")
+            self._connection.execute("DROP INDEX IF EXISTS price_bar_by_token")
+        except Exception:
+            self._connection.rollback()
+            raise
         self._connection.commit()
 
     def close(self) -> None:
@@ -308,7 +376,7 @@ class BitemporalBarStore:
         try:
             with self._connection:
                 self._connection.executemany(
-                    f"INSERT OR REPLACE INTO price_bar ({_COLUMNS})"  # noqa: S608
+                    f"INSERT OR REPLACE INTO daily_reconciled_bar ({_COLUMNS})"  # noqa: S608
                     " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     [
                         (
@@ -362,7 +430,7 @@ class BitemporalBarStore:
         if as_of.tzinfo is None or as_of.utcoffset() is None:
             raise BarValidationError("as_of must carry a timezone")
 
-        query = f"SELECT {_COLUMNS} FROM price_bar WHERE available_from_utc <= ?"  # noqa: S608
+        query = f"SELECT {_COLUMNS} FROM daily_reconciled_bar WHERE available_from_utc <= ?"  # noqa: S608
         parameters: list[object] = [_utc_key(as_of)]
         if identity is not None:
             query += " AND exchange = ? AND segment = ? AND tradingsymbol = ?"

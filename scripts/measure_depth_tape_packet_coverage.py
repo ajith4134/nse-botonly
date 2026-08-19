@@ -33,7 +33,7 @@ import argparse
 import sqlite3
 import statistics
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from nse_algo_trader.market_depth.market_depth_tape_store import MarketDepthTapeReader
@@ -66,7 +66,7 @@ def traded_instruments(session_date: date, session_root: Path) -> set[int]:
 
 
 def packets_per_instrument(
-    session_date: date, tape_root: Path, decision_instants: list[date]
+    session_date: date, tape_root: Path, decision_instants: list[datetime]
 ) -> tuple[dict[int, int], dict[int, set[int]]]:
     """One streamed pass: packet counts, and which decision buckets each instrument has depth in."""
     reader = MarketDepthTapeReader(tape_root)

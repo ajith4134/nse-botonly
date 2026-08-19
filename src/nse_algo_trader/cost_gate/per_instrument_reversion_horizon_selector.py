@@ -136,9 +136,7 @@ class PerInstrumentReversionHorizonSelector:
 
         # Highest score wins; the SHORTER horizon breaks a tie, because holding longer for the same
         # measured capture buys nothing and occupies capacity the concentration cap is rationing.
-        best_horizon, best_score, best_capture = max(
-            scored, key=lambda row: (row[1], -row[0])
-        )
+        best_horizon, best_score, best_capture = max(scored, key=lambda row: (row[1], -row[0]))
         return SelectedHorizon(
             horizon_bars=best_horizon,
             capture=best_capture,

@@ -26,8 +26,10 @@ the dashboard. A group of entries that would land unable to do anything is not a
 
 ## WHAT EXISTS IN `src/` TODAY — the blocked-ness baseline
 
-**Exists:** `nse_ingest/` (16) · `market_depth/` (9, incl. the replay engine with
-Cont-Kukanov-Stoikov OFI, Stoikov micro-price, Lee-Ready) · `deep_history/` · `historical_bars/` ·
+**Exists:** `nse_ingest/` (16) · `market_depth/` (11, incl. the replay engine with
+Cont-Kukanov-Stoikov OFI, Stoikov micro-price, Lee-Ready, and `L0.36`'s bar/depth-tape join
+verification — `bar_tape_join_verification_engine` + `bar_tape_join_verdict_store`, whose refusals
+feed `inadmissible_depth_instruments` and the paper replay) · `deep_history/` · `historical_bars/` ·
 `consolidated_feed/` · `clock_integrity/` · `market_rules/` · `broker_sessions/` +
 `broker_credentials/` · `transaction_cost/` (7) · `regime/` (7) ·
 `strategy/intraday_mean_reversion_engine.py` · `dashboard/` (13 renderers) · plus

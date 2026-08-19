@@ -115,9 +115,7 @@ class SimulatedTimeSubmissionRateGate:
     @property
     def refusals_by_window(self) -> tuple[tuple[str, int], ...]:
         """Which ceiling did the refusing, most often first — what an operator reads first."""
-        return tuple(
-            sorted(self._refusals_by_window.items(), key=lambda pair: (-pair[1], pair[0]))
-        )
+        return tuple(sorted(self._refusals_by_window.items(), key=lambda pair: (-pair[1], pair[0])))
 
     def acquire(self, exchange: str, deadline: datetime) -> tuple[bool, str]:
         """Room at THIS instant, or a refusal naming the window that had none.
@@ -145,9 +143,8 @@ class SimulatedTimeSubmissionRateGate:
             return "the rate gate was never asked"
         share = self._refused / (self._granted + self._refused)
         breakdown = ", ".join(f"{key} x{count}" for key, count in self.refusals_by_window)
-        return (
-            f"rate gate: {self._granted} granted, {self._refused} refused "
-            f"({share:.1%})" + (f" — {breakdown}" if breakdown else "")
+        return f"rate gate: {self._granted} granted, {self._refused} refused ({share:.1%})" + (
+            f" — {breakdown}" if breakdown else ""
         )
 
     def close(self) -> None:

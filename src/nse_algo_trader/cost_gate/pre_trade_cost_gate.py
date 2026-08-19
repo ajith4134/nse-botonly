@@ -421,6 +421,7 @@ def _opposite_of(side: TradeLeg) -> TradeLeg:
     """The leg that closes a position opened on `side`, and therefore the other ladder."""
     return TradeLeg.SELL if side is TradeLeg.BUY else TradeLeg.BUY
 
+
 _BASIS_STRENGTH: dict[EdgeBasis, int] = {
     EdgeBasis.MEASURED_TRACK_RECORD: 3,
     EdgeBasis.CALIBRATED_MODEL: 2,

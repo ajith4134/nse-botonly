@@ -125,8 +125,17 @@ def apply_mutation(source: str, target_index: int) -> tuple[str, str, int] | Non
 def run_tests(working_directory: Path, test_paths: list[str]) -> bool:
     """True when the suite passes. A pass against a mutant means it SURVIVED."""
     completed = subprocess.run(  # noqa: S603
-        [sys.executable, "-m", "pytest", "-x", "-q", "--no-header", "-p", "no:randomly",
-         *test_paths],
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-x",
+            "-q",
+            "--no-header",
+            "-p",
+            "no:randomly",
+            *test_paths,
+        ],
         cwd=working_directory,
         capture_output=True,
         timeout=1800,

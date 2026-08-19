@@ -472,9 +472,7 @@ class NseTransactionCostEngine:
         except ChargeStructureError as error:
             raise CostCoverageError(str(error)) from error
         schedule = self.schedule_for(trade.trade_date)
-        line = self._line_for(
-            trade, trade.exit_leg, Decimal(0), structure, schedule, known_as_of
-        )
+        line = self._line_for(trade, trade.exit_leg, Decimal(0), structure, schedule, known_as_of)
         return LegCost(leg=trade.exit_leg, price_paise=Decimal(0), lines=(line,))
 
     def _applicable_structures(
@@ -651,9 +649,7 @@ class NseTransactionCostEngine:
                 f"{resolution.record.source_reference}; broker markup per "
                 f"{schedule.broker}: {schedule.source_reference}"
             ),
-            evidence_grade=min(
-                (resolution.grade, schedule.grade), key=evidence_grade_rank
-            ),
+            evidence_grade=min((resolution.grade, schedule.grade), key=evidence_grade_rank),
         )
 
     def _gst_line(

@@ -290,7 +290,7 @@ def test_a_malformed_stored_row_surfaces_as_a_store_error(tmp_path: Path) -> Non
     """
     with BitemporalBarStore(tmp_path / "bars.sqlite3") as store:
         store.write([_bar()])
-        store._connection.execute("UPDATE price_bar SET volume = 'not-a-number'")
+        store._connection.execute("UPDATE daily_reconciled_bar SET volume = 'not-a-number'")
         store._connection.commit()
         with pytest.raises(BarStoreError):
             store.bars_as_of(OPEN + timedelta(hours=1))

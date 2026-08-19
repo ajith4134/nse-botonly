@@ -726,9 +726,7 @@ class TransactionCostSurfaceState:
 
     @property
     def cells_indistinguishable_from_zero(self) -> tuple[ReversionCalibrationRow, ...]:
-        return tuple(
-            row for row in self.calibration_rows if not row.is_distinguishable_from_zero
-        )
+        return tuple(row for row in self.calibration_rows if not row.is_distinguishable_from_zero)
 
     @property
     def best_calibrated_cell(self) -> ReversionCalibrationRow | None:
@@ -779,9 +777,7 @@ class TransactionCostSurfaceState:
     @property
     def drifting_component_count(self) -> int:
         return sum(
-            1
-            for row in self.reconciliation_rows
-            if row.verdict is ReconciliationVerdict.DRIFTS
+            1 for row in self.reconciliation_rows if row.verdict is ReconciliationVerdict.DRIFTS
         )
 
     @property
@@ -1462,9 +1458,7 @@ def _staircase_svg(staircase: CostStaircase) -> str:
     axis_top = max(tread.cost_bps for tread in treads) * (Decimal(1) + _AXIS_HEADROOM_FRACTION)
 
     def horizontal(quantity: int) -> Decimal:
-        return _interpolate(
-            Decimal(quantity), quantity_low, quantity_high, _PLOT_LEFT, _PLOT_RIGHT
-        )
+        return _interpolate(Decimal(quantity), quantity_low, quantity_high, _PLOT_LEFT, _PLOT_RIGHT)
 
     def vertical(cost_bps: Decimal) -> Decimal:
         return _interpolate(cost_bps, Decimal(0), axis_top, _PLOT_BOTTOM, _PLOT_TOP)
@@ -1479,6 +1473,7 @@ def _staircase_svg(staircase: CostStaircase) -> str:
         f"{escape(_format_bps(axis_top * fraction))}</text>"
         for fraction in _GRIDLINE_FRACTIONS
     )
+
     def vertex(quantity: int, cost_bps: Decimal) -> str:
         return f"{_coordinate(horizontal(quantity))} {_coordinate(vertical(cost_bps))}"
 
@@ -1487,7 +1482,7 @@ def _staircase_svg(staircase: CostStaircase) -> str:
         path.append(f"L {vertex(later.quantity, earlier.cost_bps)}")
         path.append(f"L {vertex(later.quantity, later.cost_bps)}")
     marks = "".join(
-        f'<g><title>{escape(str(tread.quantity))} units — '
+        f"<g><title>{escape(str(tread.quantity))} units — "
         f"{escape(_format_bps(tread.cost_bps))} bps round trip</title>"
         f'<circle class="hit" cx="{_coordinate(horizontal(tread.quantity))}" '
         f'cy="{_coordinate(vertical(tread.cost_bps))}" r="{_coordinate(_HIT_RADIUS)}"></circle>'
@@ -1820,9 +1815,7 @@ def _floor_strip_svg(rows: Sequence[SegmentEdgeFloorRow]) -> str:
         """Log position, clamped into the plot so a zero-clamped band end cannot escape it."""
         if value <= 0:
             return _FLOOR_PLOT_LEFT
-        placed = _interpolate(
-            value.ln(), low.ln(), high.ln(), _FLOOR_PLOT_LEFT, _FLOOR_PLOT_RIGHT
-        )
+        placed = _interpolate(value.ln(), low.ln(), high.ln(), _FLOOR_PLOT_LEFT, _FLOOR_PLOT_RIGHT)
         return max(_FLOOR_PLOT_LEFT, min(_FLOOR_PLOT_RIGHT, placed))
 
     gridlines = "".join(
@@ -2151,9 +2144,7 @@ def _hurdle_section(state: TransactionCostSurfaceState) -> str:
             f"judgement, not an absence of cost — see the verdict panel below."
         )
     ceiling = state.hurdle_ceiling_bps
-    cards = "".join(
-        _hurdle_ladder_figure(ladder, ceiling) for ladder in state.hurdle_ladders
-    )
+    cards = "".join(_hurdle_ladder_figure(ladder, ceiling) for ladder in state.hurdle_ladders)
     return (
         f"{_hurdle_tiles(state)}{_HURDLE_LEGEND}"
         f'<p class="sub">Every ladder is drawn on the SAME axis, ending at '
@@ -2201,7 +2192,7 @@ _CALIBRATION_LEGEND = (
     "the mean: where it is negative, the evidence cannot rule out the strategy losing in that "
     "cell. Read <strong>skew</strong> next: a mean far above its median is carried by a thin "
     "tail of large reversions, so most trades will earn much less than the headline. A cell "
-    "marked <span class=\"badge badge-critical\">CONTINUES</span> reverted negatively — those "
+    'marked <span class="badge badge-critical">CONTINUES</span> reverted negatively — those '
     "deviations kept going, and the edge is <em>not</em> monotone in depth.</div>"
 )
 
@@ -2371,9 +2362,7 @@ def render_transaction_cost_page(state: TransactionCostSurfaceState) -> str:
     )
     # A heading over an empty grid reads as a chart that failed to draw. It did not: there was
     # nothing priceable to draw, which is a different statement and the reader needs that one.
-    staircase_body = "".join(
-        _staircase_figure(staircase) for staircase in state.staircases
-    ) or (
+    staircase_body = "".join(_staircase_figure(staircase) for staircase in state.staircases) or (
         '<div class="note muted">No segment could be priced on this date, so there is no '
         "staircase to draw. Every refusal is listed above with the fact it is missing.</div>"
     )

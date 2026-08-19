@@ -371,9 +371,7 @@ def availability_of_order_type(
         if effective_from <= on and restricted_origin in (None, origin)
     ]
     if not applicable:
-        raise OrderFacilityError(
-            f"no recorded fact covers {order_type} for {origin} on {on}"
-        )
+        raise OrderFacilityError(f"no recorded fact covers {order_type} for {origin} on {on}")
     return applicable[-1]
 
 

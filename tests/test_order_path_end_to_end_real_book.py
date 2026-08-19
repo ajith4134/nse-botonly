@@ -120,9 +120,7 @@ def test_a_real_book_becomes_one_order_that_fills_and_reconciles(tmp_path: Path)
             horizon_minutes=5,
         )
         try:
-            choice = selector.select(
-                ExpressionSelectionRequest(intent=intent, snapshot=snapshot)
-            )
+            choice = selector.select(ExpressionSelectionRequest(intent=intent, snapshot=snapshot))
         except Exception:  # noqa: BLE001 — a book this system refuses is an ordinary outcome here
             continue
         chosen = (intent, choice, snapshot, decided_at)

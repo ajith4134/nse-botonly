@@ -82,9 +82,7 @@ class CalibrationFitReport:
 
     @property
     def calibrations_written(self) -> int:
-        return (
-            self.pooled_calibrations + self.bucket_calibrations + self.instrument_calibrations
-        )
+        return self.pooled_calibrations + self.bucket_calibrations + self.instrument_calibrations
 
     def describe(self) -> str:
         return (
@@ -213,9 +211,7 @@ def fit_reversion_calibrations(
             trading_symbol=symbol,
         )
         written.append(
-            own
-            if shrinkage_target is None
-            else shrink_toward_pooled(own, shrinkage_target)
+            own if shrinkage_target is None else shrink_toward_pooled(own, shrinkage_target)
         )
         instrument_count += 1
 

@@ -12,6 +12,8 @@ import sys
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 # The same shim the sibling capture tests use. An importlib.util spec here would register a SECOND
 # module object under the same name, and whichever test file ran first would win — which is exactly
 # what happened: `test_depth_capture_rate_prior` passed alone and failed in the full suite.
@@ -35,7 +37,7 @@ def test_a_session_day_starts_the_capture() -> None:
     assert is_capture_worth_starting(trading_day, CalendarStub({trading_day}))
 
 
-def test_a_holiday_does_not(capsys) -> None:  # type: ignore[no-untyped-def]
+def test_a_holiday_does_not(capsys: pytest.CaptureFixture[str]) -> None:
     holiday = date(2026, 8, 15)
     assert not is_capture_worth_starting(holiday, CalendarStub(set()))
     assert "not an NSE session" in capsys.readouterr().out

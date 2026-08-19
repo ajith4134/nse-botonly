@@ -99,9 +99,7 @@ def _quantile(sorted_values: Sequence[Decimal], quantile: Decimal) -> Decimal:
         raise EdgeFloorError("no hurdles to take a quantile of")
     if not 0 < quantile <= 1:
         raise EdgeFloorError(f"quantile must be in (0, 1], got {quantile}")
-    rank = int(
-        (Decimal(len(sorted_values)) * quantile).to_integral_value(rounding="ROUND_CEILING")
-    )
+    rank = int((Decimal(len(sorted_values)) * quantile).to_integral_value(rounding="ROUND_CEILING"))
     return sorted_values[max(0, min(len(sorted_values) - 1, rank - 1))]
 
 

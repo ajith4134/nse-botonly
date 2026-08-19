@@ -311,9 +311,7 @@ class DepthTapeTouchExecutionObserver:
         counted = 0
         for row in rows:
             depletion = (
-                row.bid_queue_depletion
-                if resting_side is TradeLeg.BUY
-                else row.ask_queue_depletion
+                row.bid_queue_depletion if resting_side is TradeLeg.BUY else row.ask_queue_depletion
             )
             if depletion is None:
                 # The touch price moved: that queue was replaced rather than drained, and a
@@ -1310,8 +1308,10 @@ class OrderExpressionSelector:
             else min(entry.price_paise for entry in walk.consumptions)
         )
         implied = fill.pessimistic_price_paise
-        raw = max(deepest_consumed, implied) if side is TradeLeg.BUY else min(
-            deepest_consumed, implied
+        raw = (
+            max(deepest_consumed, implied)
+            if side is TradeLeg.BUY
+            else min(deepest_consumed, implied)
         )
         limit_price = _round_away_from_mid(raw, side, request.tick_size_paise)
         if limit_price <= 0:

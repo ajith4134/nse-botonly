@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from nse_algo_trader.market_depth.capture_liveness_record import (
+    CaptureLiveness,
     CaptureLivenessError,
     liveness_now,
     read_liveness_records,
@@ -33,7 +34,7 @@ def _record(
     ended: bool = False,
     rows: int = 2_373_256,
     stop_reason: str = "",
-):
+) -> CaptureLiveness:
     return liveness_now(
         session_date=SESSION,
         capture_run_id=run_id,

@@ -14,7 +14,13 @@ dependencies = [
   "requests",
   "python-dotenv",
   # numerics
-  "numpy",
+  # UPPER BOUND, added 2026-08-16, and it is load-bearing rather than cautious. Installing
+  # `scipy-stubs` silently pulled numpy 2.4.6 -> 2.5.2, and numpy 2.5's "generic unit for NumPy
+  # timedelta is deprecated" warning fires inside `exchange_calendars` at IMPORT time, on its own
+  # `pd.Timedelta("1h")`. With `filterwarnings = error` that is not a warning, it is 13 collection
+  # errors, and it is in a third-party import so there is nothing here to fix. `numba` independently
+  # requires numpy<2.5. Raise this only when `exchange_calendars` stops emitting it.
+  "numpy<2.5",
   "pandas",
   "scipy",
   # models
@@ -46,6 +52,17 @@ dev = [
   "hypothesis",
   "ruff",
   "mypy",
+  # Type information for scipy, added 2026-08-16 for `A.123`'s beta-binomial tests. Not cosmetic:
+  # with scipy untyped, EVERY scipy call in this repo resolved to `Any` and none was checked.
+  # Installing these immediately surfaced two real defects in `exchange_clock_offset_estimator` —
+  # an `linprog` method passed as a bare `str` (a typo would have failed at runtime inside the
+  # fit) and `solution.x` indexed without checking it is not `None`. Same argument as bringing
+  # `scripts/` into the gate after `A.65`.
+  "scipy-stubs",
+  # Pinned to the numpy-2.4 variant. `scipy-stubs` pulls this transitively and its default release
+  # DEMANDS numpy>=2.5rc1, which is what dragged numpy forward and broke collection above. The
+  # package publishes one release per numpy minor; this is the one matching the pin.
+  "numpy-typing-compat==20260602.2.4",
   # A differential-test ORACLE, never a runtime dependency: `L0.22`'s trade classifier is
   # checked against tclf's Lee-Ready on random books, and it found a real defect on its
   # first run (`research/214` §6). Pinned to git main because the PyPI artifact (0.0.9,
@@ -142,6 +159,9 @@ module = [
   "lightgbm.*", "hmmlearn.*", "river.*", "shap.*", "arch.*",
   "cvxpy.*", "statsmodels.*", "duckdb.*", "sklearn.*",
   "pyarrow.*",
+  # vollib carries Jaeckel's "Let's Be Rational" IV inversion and ships no py.typed.
+  # Wrapped behind ONE adapter (option_analytics/), so the untyped surface is a single file.
+  "vollib.*", "py_lets_be_rational.*",
 ]
 ignore_missing_imports = true
 
@@ -151,6 +171,11 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
+# `scripts/` on the path so a test can import the OPERATIONAL entry points, matching
+# `mypy_path = "scripts"` above. Without this they resolve under two module names and mypy reports
+# "Source file found twice". Added 2026-08-16 when the `A.125` review found the paper loop's
+# admission decision untested — three mutations of it survived the whole suite.
+pythonpath = ["scripts"]
 addopts = "-q --strict-markers --strict-config"
 markers = [
   "unit: isolated behaviour of one unit",

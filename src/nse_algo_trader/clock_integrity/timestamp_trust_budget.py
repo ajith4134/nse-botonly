@@ -168,9 +168,7 @@ class TimestampTrustBudget:
     ) -> TimestampTrustAssessment:
         """One verdict for `at`, from whatever evidence exists — and honest when none does."""
         host_error, host_half_width = self._host_error(consensus)
-        feed_floor = (
-            fit.apparent_offset_seconds - host_error if fit is not None else math.nan
-        )
+        feed_floor = fit.apparent_offset_seconds - host_error if fit is not None else math.nan
         skew_ppm = fit.skew_ppm if fit is not None else math.nan
         worst_case = self._worst_case_error(fit, consensus, at)
         degraded_above, refuse_above = self.derived_thresholds(before=at)
@@ -302,9 +300,7 @@ class TimestampTrustBudget:
                 refuse_above,
                 at,
             )
-        if worst_case >= refuse_above or any(
-            alert.detector == "page_hinkley" for alert in alerts
-        ):
+        if worst_case >= refuse_above or any(alert.detector == "page_hinkley" for alert in alerts):
             reason = (
                 f"worst-case timestamp error {worst_case * 1000:.1f}ms is at or beyond this "
                 f"host's {self._refuse_quantile:.0%} historical level "

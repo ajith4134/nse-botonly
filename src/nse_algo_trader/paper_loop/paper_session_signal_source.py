@@ -29,6 +29,7 @@ whole from the first bar and only its ACTIVATION waits for evidence.
 
 from __future__ import annotations
 
+import math
 import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -205,6 +206,22 @@ class PaperSignal:
     bars_observed: int
     bars_consumed_this_step: int
     latest_close_rupees: Decimal | None
+    expected_move_fraction: Decimal | None = None
+    """This candidate's expected move as a FRACTION of its own price — the scan's ranking score.
+
+    `L5.31`'s selection correction is the expected maximum of `n` **exchangeable** draws, and
+    candidates are only exchangeable once each is standardised onto its own notional. The engine's
+    `deviation` is scale-free in units of that instrument's own dispersion, which is a different
+    standardisation and not comparable to a rupee floor; multiplying it back by
+    `rolling_dispersion / latest_close` puts every candidate on one axis.
+
+    Computed here rather than in the runner because the closes live here, and because a consumer
+    that re-derived it from a different window would be scoring a scan the strategy never ran —
+    the same defect `A.106` recorded when a 120-close z-score was looked up against this engine's
+    20-close one.
+
+    `None` before the rolling window is full, matching the engine's own contract.
+    """
 
     @property
     def is_actionable(self) -> bool:
@@ -225,6 +242,26 @@ class PaperSignal:
             f"{self.decision.action.value} (conviction {self.decision.conviction:.2f}) — "
             f"{self.decision.reason} [{self.bars_observed} bars]"
         )
+
+
+def _expected_move_fraction(
+    state: InstrumentSignalState, decision: MeanReversionDecision
+) -> Decimal | None:
+    """`|deviation| x rolling_dispersion / latest_close` — the deviation, re-expressed per notional.
+
+    Every factor comes from the engine that defined it (`rolling_dispersion`, `latest_close`), never
+    re-derived here, so the score cannot be computed over a different window than the decision was.
+    `None` whenever any factor is missing or the price is non-positive: an absent score must reach
+    the caller as absent, because substituting a zero would report a scan with no dispersion and
+    silently erase the selection correction.
+    """
+    dispersion = state.strategy.rolling_dispersion()
+    close = state.strategy.latest_close()
+    if dispersion is None or close is None or close <= 0:
+        return None
+    if not math.isfinite(decision.deviation):
+        return None
+    return Decimal(str(abs(decision.deviation) * dispersion / close))
 
 
 @dataclass(slots=True)
@@ -307,4 +344,5 @@ class MeanReversionPaperSignalSource:
             bars_observed=state.bars_observed,
             bars_consumed_this_step=len(fresh),
             latest_close_rupees=state.last_close_price,
+            expected_move_fraction=_expected_move_fraction(state, decision),
         )

@@ -196,9 +196,7 @@ def _recorded_intent_ids_for_session(journal_path: Path, session_date: date) -> 
     on a read-only surface, and a read-only surface must be incapable of creating a journal, of
     migrating one, or of taking a write lock on a database the trading loop is writing to.
     """
-    with closing(
-        sqlite3.connect(f"file:{journal_path}?mode=ro", uri=True)
-    ) as read_only_connection:
+    with closing(sqlite3.connect(f"file:{journal_path}?mode=ro", uri=True)) as read_only_connection:
         return tuple(
             str(row[0])
             for row in read_only_connection.execute(

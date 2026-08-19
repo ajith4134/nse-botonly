@@ -122,9 +122,7 @@ def test_the_windows_are_derived_from_the_dated_fact_table_not_from_literals(
 ) -> None:
     """Nothing in the limiter may know 10, 400 or 5,000 — it must read them (`R.03`)."""
     facts = order_rate_limits(on=SESSION)
-    with OrderSubmissionRateLimiter(
-        SESSION, store_path=tmp_path / "rate.sqlite3"
-    ) as limiter:
+    with OrderSubmissionRateLimiter(SESSION, store_path=tmp_path / "rate.sqlite3") as limiter:
         windows = limiter.binding_windows
         assert [window.window_seconds for window in windows] == [1, 60, 86_400]
         published = {window.window_seconds: window.published_maximum_orders for window in windows}
@@ -208,9 +206,7 @@ def test_a_widening_jitter_measurement_widens_the_margin(tmp_path: Path) -> None
 @pytest.mark.unit
 def test_the_queue_bound_is_derived_from_the_windows(tmp_path: Path) -> None:
     """The bound is one full window of the longest ceiling that cycles inside a session."""
-    with OrderSubmissionRateLimiter(
-        SESSION, store_path=tmp_path / "rate.sqlite3"
-    ) as limiter:
+    with OrderSubmissionRateLimiter(SESSION, store_path=tmp_path / "rate.sqlite3") as limiter:
         assert limiter.queue_capacity == queue_capacity_from(limiter.binding_windows)
         assert limiter.queue_capacity == 400  # the minute ceiling, never the day one
 
@@ -553,7 +549,23 @@ def test_the_margin_never_closes_the_window_entirely() -> None:
 # --- the boundary defect Hypothesis found, and could not hold still (`A.113`) ------------------
 
 FALSIFYING_GAPS_MILLISECONDS = [
-    794, 451, 264, 0, 1305, 86, 0, 276, 327, 1237, 400, 1, 846, 259, 264, 1, 451,
+    794,
+    451,
+    264,
+    0,
+    1305,
+    86,
+    0,
+    276,
+    327,
+    1237,
+    400,
+    1,
+    846,
+    259,
+    264,
+    1,
+    451,
 ]
 """The arrival pattern that put 8 orders inside a 5-second window permitting 7.
 
@@ -585,9 +597,7 @@ def test_the_arrival_pattern_that_breached_a_five_second_window_no_longer_does(
         for gap in FALSIFYING_GAPS_MILLISECONDS:
             clock.advance(gap / 1_000)
             if limiter.acquire("NSE", clock.now + IMMEDIATE_VALIDITY).granted:
-                granted_at_milliseconds.append(
-                    int(clock.wall_clock_epoch_seconds() * 1_000)
-                )
+                granted_at_milliseconds.append(int(clock.wall_clock_epoch_seconds() * 1_000))
 
         for window in limiter.binding_windows:
             for index, stamp in enumerate(granted_at_milliseconds):

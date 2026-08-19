@@ -13,6 +13,11 @@ from nse_algo_trader.broker_sessions.kite_totp_auto_login import (
     generate_and_store_daily_kite_access_token,
 )
 
+# `refresh_kite_access_token` is deliberately NOT re-exported here. It is a `python -m`
+# entry point run from cron, and importing it into the package __init__ makes runpy warn
+# that the module was already in sys.modules before execution — a real double-import, not
+# a cosmetic warning. Import the submodule directly if you need its function.
+
 __all__ = [
     "KiteAccessTokenFileStore",
     "KiteAccessTokenRecord",

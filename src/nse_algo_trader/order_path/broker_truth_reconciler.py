@@ -302,9 +302,7 @@ class BrokerTruthReconciler:
             detail=conflict or "local and broker agree",
         )
 
-    def _record_first_sighting(
-        self, order: OrderRecord, report: VenueOrderReport
-    ) -> None:
+    def _record_first_sighting(self, order: OrderRecord, report: VenueOrderReport) -> None:
         """Feed the horizon estimator with how long this order took to become visible."""
         if order.broker_order_id is not None:
             return
@@ -568,9 +566,7 @@ def _adopt_external(report: VenueOrderReport) -> OrderReconciliation:
     )
 
 
-def _residual_price_paise(
-    order: OrderRecord, report: VenueOrderReport, missing: int
-) -> Decimal:
+def _residual_price_paise(order: OrderRecord, report: VenueOrderReport, missing: int) -> Decimal:
     """Price the units this system is inventing — not the units the broker already averaged.
 
     `average_price_paise` is the broker's average over ALL filled units. The inferred fill covers

@@ -526,8 +526,7 @@ def option_exercise_structure(
         if record.segment is segment
         and record.covers_date(as_of)
         and (
-            record.taxable_base is wanted_base
-            or segment is not ChargeableSegment.COMMODITY_OPTIONS
+            record.taxable_base is wanted_base or segment is not ChargeableSegment.COMMODITY_OPTIONS
         )
     ]
     if len(matches) != 1:

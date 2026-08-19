@@ -8,12 +8,25 @@
 > filter) and `F02` (the order path, `src/nse_algo_trader/order_path/`) are the two features
 > complete under the rebuild. Regenerating this map from the new tree is tracked in `BACKLOG.md`.
 >
-> **Added since, and not drawn below (2026-08-13):** `deployable_capital_resolver` (`L1.17` — live
-> sizing measured from the broker and bounded by the operator ceiling) and `paper_capital_ledger` +
-> `dashboard/paper_capital_surface_renderer` (`L1.18` — the paper trading book's event-sourced
-> virtual money, surfaced at `/paper-capital`). They are the live/paper halves of one decision and
-> expose the same four members so a sizing consumer picks a source by mode. `A.102` scopes the
-> resolver to LIVE: a real account in debit must not stop a book trading imaginary money.
+> **Added since, and not drawn below.** This list is appended to rather than rewritten, so the gap
+> between this map and the tree is always visible rather than merely known. Tree measured
+> **2026-08-16: 145 modules across 21 packages** (was 140 on 2026-08-13).
+>
+> - *2026-08-13* — `deployable_capital_resolver` (`L1.17` — live sizing measured from the broker
+>   and bounded by the operator ceiling) and `paper_capital_ledger` +
+>   `dashboard/paper_capital_surface_renderer` (`L1.18` — the paper trading book's event-sourced
+>   virtual money, surfaced at `/paper-capital`). The live/paper halves of one decision, exposing
+>   the same four members so a sizing consumer picks a source by mode. `A.102` scopes the resolver
+>   to LIVE: a real account in debit must not stop a book trading imaginary money.
+> - *2026-08-15* — `F04`'s paper loop end to end (`L10.02`), `capture_liveness_record` and the
+>   scheduled depth capture (`L0.33`, `A.118`/`A.119`), and `market_depth/
+>   bar_tape_join_verification_engine` + `bar_tape_join_verdict_store` (`L0.36`, `M14`) — the
+>   comparison of the bar store against the depth tape, whose refusals union into the replay
+>   engine's inadmissible set so a refuted join produces no paper fill.
+> - *2026-08-16* — the join engine's null replaced (`A.123`: beta-binomial with a per-session
+>   intra-instrument correlation, exact leave-one-out) and a POWER gate added to `JOIN_VERIFIED`
+>   (`A.124`: `smallest_trials_that_can_verify`, with what verified CLAIMS as a third operator
+>   policy input). Surfaced on `/microstructure`. Specs `docs/research/241`, `242`.
 
 
 **This is the single source of truth for how this project is built and how
@@ -676,6 +689,97 @@ queued, calibration-gated next slice (research/96).
 
 ## §4 · MAINTENANCE LEDGER
 
+- **2026-08-17 (`L5.31` FAILED its adversarial review, and the repairs — `A.140`,
+  `docs/research/261`)** — `R.23c`'s review found **six CRITICALs** with the engine byte-identical
+  and 33 tests green: the calibrator fitted **in sample** while named `isotonic_out_of_fold` (a
+  zero-skill bot calibrated to 0.9993); the Beta concentration was the bot's whole trade count, so
+  **adding losses raised admission**; the selection floor **fell** as breadth rose because the
+  proposing bot supplied the dispersion; the Monte-Carlo seed included the floor, so 300 identical
+  proposals split 142 ADMIT / 158 REFUSE; `fitted_on_trades` took OTHER bots' counts; and scratch
+  mass was unmodelled. Measured admission rate on zero-skill money-losing bots: **32.6–36.8%, worse
+  with more data.** 26 of 45 mutations survived, including deleting the priced-cost floor.
+  **Repaired the same day**, each verified by re-running the original attack: binned isotonic
+  (`floor(sqrt(n))` quantile bins) → 0.24–0.39 against true 0.20–0.30; `support_at()` as the
+  evidence count; `numpy.unique` for breadth and dispersion → padding moves the floor **not at all**;
+  a floor-independent seed at 60,000 draws → **0 of 1,999** monotonicity violations, sd 0.000000;
+  own-count only; `p_loss = (1-p_win)(1-scratch_share)` → +₹85.92 estimated against +₹83.33 true.
+  Admission rate **0.8% thin / 0.0% thick**. Store: UPDATE and REPLACE now blocked (REPLACE bypassed
+  the DELETE trigger entirely), `attach_realised_outcome` race and NaN hole closed, `content_hash`
+  widened. The orphaned `expectancy_posterior_for` is wired as `_model_contradicts_the_record` and
+  caught a 67%-vs-50% mismatch **inside one of my own test fixtures** on its first run.
+  Tests **33 → 39**. `credit_spread_v1` is now REFUSED, correctly: its ADMIT had rested on 121 trades
+  standing in for the 11 observations actually behind that stated value.
+  **`QUALITY_FLOOR_HELD_OFF_PENDING_REVIEW_REPAIRS = True`** in
+  `scripts/verify_paper_session_on_real_data.py` — `B23` had already wired the gate into the entry
+  loop, so that seam is where an unsafe gate would reach a real session. `B28` tracks the flip back.
+
+- **2026-08-17 (`B23` — a `REFUSE` now stops an order)** — `paper_trading_session_runner` gained a
+  **two-pass entry loop**: pass 1 asks every instrument and collects the actionable ones with their
+  per-notional scores, pass 2 acts. A one-pass loop could only ever report a scan breadth of one,
+  silently zeroing the largest of `L5.31`'s three floors. New: `PaperSignal.expected_move_fraction`
+  (`|deviation| x rolling_dispersion / latest_close`, every factor from the engine that defined it,
+  per `A.106`), `_price_entry_round_trip` (prices the proposal BEFORE it is sent; answers `None`,
+  never `Decimal(0)` — a zero cost floor licenses the marginal trade `D.01` calls decisively
+  negative), and `ClosedPaperTrade.stated_win_probability` with an in-place nullable migration (the
+  10 existing real rows survived and honestly report no forecast). `R.05`: the 2026-08-13 session ran
+  clean and **10 of 20 stored trades now carry a forecast**, populated from real decisions.
+  Activation climbs `R.04`'s ladder rather than being a switch, because a gate demanding a track
+  record in front of the only thing that builds one re-creates `B15`. 5 new tests, 27 in that file.
+
+- **2026-08-17 (`L5.31` — the pre-trade quality floor, and the three double-charges only real data
+  found)** — new package `src/nse_algo_trader/trade_quality/`, six modules: `trade_quality_evidence_card`
+  (`CalibratedProbability` with a Murphy Brier decomposition · `PayoffPosterior` with credible bounds
+  and a `break_even_win_rate` carried as EVIDENCE not a threshold · `GrossExpectancyPosterior` carrying
+  `P(expectancy > floor)` · `QualityFloor` with its derivation named · `TradeQualityEvidenceCard` with
+  a content hash); `stated_probability_calibrator` (isotonic, time-blocked out of fold BY SESSION,
+  empirical-Bayes shrinkage to segment, `BrierDecomposition`); `realized_payoff_distribution_estimator`
+  (Rubin Bayesian bootstrap over GROSS win/loss magnitudes, deterministic seed from the data);
+  `gross_expectancy_posterior` (joint Monte-Carlo of a Beta probability draw with two Dirichlet payoff
+  draws); `selection_corrected_quality_floor` (three DERIVED floors — priced cost, this bot's realised
+  cost per round trip, and the Deflated-Sharpe expected-maximum-of-`n` correction on **per-notional
+  fractions**); `trade_quality_evidence_store` (append-only SQLite, `RAISE(ABORT)` delete trigger,
+  idempotent on `content_hash`, joins each card to its realised outcome).
+  Surface: `/quality` (`dashboard/trade_quality_surface_renderer`), reusing the ladder's validated
+  status palette rather than defining a second one. Daily step `trade quality floor` in
+  `run_daily_operations.py`, running `scripts/verify_trade_quality_floor_on_real_data.py`.
+  **`R.05`:** fitted on the 3,481 retained closed trades it REFUSES `opening_range_breakout_v1`
+  (P=0.000, −₹3,56,631), leaves `directional_option_orb_v1` undecided (P=0.537), and ADMITS
+  `credit_spread_v1` (P=0.941, +₹21,213 on a 46.3% win rate); re-running records 0 new cards. The real
+  500-name 5-minute cross-section prices the selection correction at 2.51% of notional (₹680 on
+  ₹27,090). 33 tests. **Three defects the spec and a green suite both missed, all the same shape —
+  a quantity charged twice:** costs netted off the magnitudes AND applied as a floor; uncertainty
+  subtracted into a lower bound AND compared against a dispersion half-width; and the selection
+  correction scored in rupees, which tracked NSE share prices and produced a ₹1,582 floor that refused
+  everything. Also corrected `docs/research/254`: `credit_spread_v1`'s payoff ratio is **2.866**, not
+  3.450 — that figure counted its 11 scratches as losses. Spec `docs/research/260`, decision `A.139`.
+  **OPEN (`R.11`):** `B23` — a `REFUSE` records a verdict but does not yet stop an order, because
+  `paper_trading_session_runner` never assembles the candidate set a proposal won; `B24` — no
+  notionals in the record, so no size rescaling; `B25` — regime-conditional floor not estimable.
+
+- **2026-08-17 (`L13.29` — the decision-trace record, and `M25`: exits explain themselves)** — new
+  package `src/nse_algo_trader/decision_trace/` (`decision_trace_record`): `ConsultedInput`
+  (value + source + `as_of`, the instant the value became KNOWABLE), `CandidateAction`,
+  `GateEvaluation` (signed margin in the gate's own unit + its threshold), `GateOutcome`
+  (`PASSED`/`REFUSED`/**`NO_JUDGEMENT`** — "I do not know" is never "it is fine"), `DecisionKind`
+  (`ENTRY`/`EXIT`), `DecisionTrace`, and `DecisionTraceStore` (SQLite, append-only enforced by two
+  `RAISE(ABORT)` triggers rather than by the absence of an update method). The engine part is
+  `binding_constraint()`: the counterfactual — which gate came CLOSEST to changing the outcome,
+  ranked by normalising each margin against its own threshold so a gate measured in rupees and one
+  measured in seconds are comparable, plus an explicit "no gate bound" answer instead of naming the
+  tightest gate that passed. Emitted from inside the runner at the decision instant, never
+  assembled afterwards (`A.29`).
+  **Wired (Rule G):** `paper_trading_session_runner` emits at TWO chokepoints — `_record` for
+  entries and abstentions, `_emit_exit_decision_trace` (from `_square_off`) for every exit, whose
+  cause is recorded as a gate (`holding_horizon`, `session_clock`, `halt_latch`,
+  `signal_alignment`) rather than as prose. **Surface (Rule N):** `/traces`.
+  **Two rules deliberately NOT enforced, with tests saying why** (`O.120`): "a refusing gate implies
+  the null action" is false on exits (a halt square-off correctly acts THROUGH a refusing latch) and
+  unfalsifiable on entries; and `mechanism` free text is not string-matched against gate names,
+  which was measured as able only to destroy true records. **Reads reconstruct, they do not
+  re-decide:** `_load` bypasses the write-time refusals, because re-running them on read made one
+  non-conforming row take down a whole session's panel while the append-only triggers made it
+  undeletable.
+
 - **2026-08-12 (`L1.01` — NSE transaction-cost engine, the first `L1` slice)** — new package
   `src/nse_algo_trader/transaction_cost/` (7 modules + a TOML broker-schedule data file):
   `chargeable_market_segments` (the eight-segment charge vocabulary and the base/leg/rounding enums),
@@ -821,7 +925,7 @@ queued, calibration-gated next slice (research/96).
   `number_of_trials = len(all_scorecards)` (this batch only → optimistic DSR). Built via 3 PARALLEL opus
   coding agents (user-approved fan-out; all OSS rejected on mechanical facts — mlfinlab license-gated,
   optuna/mlflow wrong-shape, sklearn splitters don't enforce a seal): NEW
-  `paper_trading/strategy_trial_registry.py` (persistent SQLite honest cumulative-N + cross-trial Sharpe
+  `validation/honest_trial_registry.py` (rebuilt 2026-08-16 as `A.128`; the pre-reset path `paper_trading/strategy_trial_registry.py` no longer exists) — persistent SQLite honest cumulative-N + cross-trial Sharpe
   std, config-hash dedup), `paper_trading/holdout_custodian.py` (one-shot sealed holdout, refuses access
   until logged unseal), `paper_trading/minimum_backtest_length.py` (López de Prado MinBTL gate + CSCV PBO;
   reuses the in-repo expected-max-Sharpe benchmark). 295 modules, paper_trading 57→60. **Integrated (mine,

@@ -25,11 +25,21 @@ from typing import Literal
 
 from playwright.sync_api import ConsoleMessage, sync_playwright
 
+from nse_algo_trader.dashboard.rendered_surface_honesty_check import (
+    RenderedSurfaceFinding,
+    inspect_rendered_surface,
+)
+
 DEFAULT_BASE_URL = "http://127.0.0.1:8080"
 ACCESS_TOKEN_PATH = Path("~/.nse_algo_trader/dashboard_access_token.txt").expanduser()
 DEFAULT_OUTPUT_ROOT = Path("~/nse_archive/dashboard_screenshots").expanduser()
 
 ROUTES = (
+    # A hand-maintained list is the R.08 hole in this capture: a surface added without editing
+    # here is never screenshotted and never visually verified, which is how `/ladder` and
+    # `/traces` were both live and unphotographed on the day they shipped. `test_every_route_is_
+    # captured` in tests/ compares this tuple against the app's own registered routes so the list
+    # cannot silently fall behind again.
     "/wall",
     "/regime",
     "/manifest",
@@ -43,6 +53,12 @@ ROUTES = (
     "/paper-capital",
     "/sizing",
     "/paper-session",
+    "/trials",
+    "/ladder",
+    "/traces",
+    "/quality",
+    "/bots",
+    "/loop",
 )
 
 PAGE_LOAD_TIMEOUT_MILLISECONDS = 120_000
@@ -90,6 +106,13 @@ class CaptureResult:
     path: Path
     byte_count: int
     console_errors: tuple[str, ...]
+    rendered_findings: tuple[RenderedSurfaceFinding, ...] = ()
+    """Ways this page misleads a reader who is not checking it against the source (`A.137`).
+
+    The capture already loads every route in a real browser, so it is the one place that HAS the
+    rendered HTML. Checking it here costs nothing extra and runs every night, which is what turns
+    "render it and look at it" from an intention into a step.
+    """
 
     @property
     def is_credible(self) -> bool:
@@ -176,6 +199,11 @@ def capture_dashboard(
                     stem = route.strip("/").replace("/", "_") or "index"
                     destination = output_directory / f"{stem}_{theme}.png"
                     page.screenshot(path=str(destination), full_page=True)
+                    findings = (
+                        inspect_rendered_surface(route, page.content())
+                        if theme == THEMES[0]  # the HTML is the same in both themes
+                        else []
+                    )
                     results.append(
                         CaptureResult(
                             route=route,
@@ -183,6 +211,7 @@ def capture_dashboard(
                             path=destination,
                             byte_count=destination.stat().st_size,
                             console_errors=tuple(console_errors[before:]),
+                            rendered_findings=tuple(findings),
                         )
                     )
                 context.close()
@@ -202,11 +231,26 @@ def summarise_capture(results: Sequence[CaptureResult]) -> str:
         detail += " · BLANK: " + ", ".join(f"{r.route}[{r.theme}]" for r in blank)
     if noisy:
         detail += " · CONSOLE ERRORS: " + ", ".join(f"{r.route}[{r.theme}]" for r in noisy)
-    if not blank and not noisy:
-        detail += " · all painted, no console errors"
+    misleading = [result for result in results if result.rendered_findings]
+    if misleading:
+        detail += " · MISLEADING RENDER: " + "; ".join(
+            finding.describe()
+            for result in misleading
+            for finding in result.rendered_findings
+        )
+    if not blank and not noisy and not misleading:
+        detail += " · all painted, no console errors, nothing misleading"
     return detail
 
 
 def capture_failed(results: Sequence[CaptureResult]) -> bool:
-    """Whether the capture proves a problem — a blank frame or a console error."""
-    return any(not result.is_credible or result.console_errors for result in results)
+    """Whether the capture proves a problem — a blank frame, a console error, or a misleading page.
+
+    A misleading render counts as a failure rather than a warning. A page that prints a UTC clock on
+    an NSE dashboard is not degraded, it is wrong, and the whole reason these defects survived is
+    that nothing treated them as failures.
+    """
+    return any(
+        not result.is_credible or result.console_errors or result.rendered_findings
+        for result in results
+    )
