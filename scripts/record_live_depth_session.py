@@ -51,6 +51,11 @@ from nse_algo_trader.market_depth.capture_candidate_population_merger import (
     MergedCaptureCandidates,
     merge_capture_candidate_populations,
 )
+from nse_algo_trader.market_depth.capture_shard_population_planner import (
+    DEFAULT_GROUP_BY_POPULATION,
+    LOUD_GROUP,
+    plan_capture_shards,
+)
 from nse_algo_trader.market_depth.depth_capture_admission_controller import (
     DepthCaptureAdmissionController,
     InstrumentCaptureCandidate,
@@ -277,12 +282,35 @@ def make_shards(
     max_buffered_rows: int,
     max_seconds_between_flushes: float,
     capture_run_id: str,
+    population_by_token: dict[int, str] | None = None,
 ) -> list[ShardRuntime]:
-    """One feed, store and queue per Kite connection's worth of instruments."""
+    """One feed, store and queue per Kite connection's worth of instruments.
+
+    When populations are known, NO CONNECTION CARRIES TWO OF THEM. Measured on 2026-08-19: mixing
+    cash with the option chain on the same socket cut cash from 1,153,998 ticks over 2,295
+    instruments in 42 minutes to 1.3 ticks per instrument in 11 minutes, uniformly across all three
+    connections, because an option book updates two orders of magnitude more often and one socket
+    carries one stream. See `capture_shard_population_planner`.
+    """
     per_connection = KiteLiveDepthFeed.KITE_MAX_INSTRUMENTS_PER_CONNECTION
+    if population_by_token:
+        plan = plan_capture_shards(
+            tokens,
+            population_by_token,
+            instruments_per_connection=per_connection,
+            maximum_connections=KITE_MAX_WEBSOCKET_CONNECTIONS_PER_API_KEY,
+            first_shard_index=first_shard_index,
+        )
+        log(f"shard plan: {plan.describe()}")
+        token_groups = [list(assignment.tokens) for assignment in plan.assignments]
+    else:
+        token_groups = [
+            tokens[offset : offset + per_connection]
+            for offset in range(0, len(tokens), per_connection)
+        ]
+
     shards: list[ShardRuntime] = []
-    for offset in range(0, len(tokens), per_connection):
-        shard_tokens = tokens[offset : offset + per_connection]
+    for shard_tokens in token_groups:
         shard_index = first_shard_index + len(shards)
         feed = KiteLiveDepthFeed(
             kite_api_key=kite_api_key,
@@ -483,9 +511,24 @@ def main() -> int:
         log("session closed during calibration")
         return 0
 
-    connection_ceiling = (
-        KITE_MAX_WEBSOCKET_CONNECTIONS_PER_API_KEY
-        * KiteLiveDepthFeed.KITE_MAX_INSTRUMENTS_PER_CONNECTION
+    # One connection per CONTENTION GROUP, not per available socket. Measured on 2026-08-19: a
+    # cash-only run with 2,295 instruments on ONE connection delivered 1,153,998 ticks in 42
+    # minutes, and filling all three connections to 9,000 instruments cut cash to 2.1 ticks per
+    # instrument — even after the groups were separated onto their own sockets. Whatever the shared
+    # limit is (account bandwidth, client drain rate, or Kite's own full-mode budget), the
+    # configuration that demonstrably works is one moderately loaded connection per group, so that
+    # is what is asked for rather than the theoretical maximum.
+    contention_groups = len(
+        {
+            DEFAULT_GROUP_BY_POPULATION.get(population, LOUD_GROUP)
+            for population in merged_populations.size_by_population
+            if merged_populations.size_by_population[population] > 0
+        }
+    )
+    connection_ceiling = KiteLiveDepthFeed.KITE_MAX_INSTRUMENTS_ACROSS_ALL_CONNECTIONS
+    log(
+        f"subscription ceiling {connection_ceiling:,} instruments across all connections; "
+        f"{contention_groups} contention group(s)"
     )
     decision = controller.solve(
         valued,
@@ -515,6 +558,7 @@ def main() -> int:
         max_buffered_rows=arguments.max_buffered_rows,
         max_seconds_between_flushes=arguments.max_seconds_between_flushes,
         capture_run_id=capture_run_id,
+        population_by_token=dict(merged_populations.population_by_token),
     )
     log(f"{len(shards)} shard(s), {decision.admitted_count:,} instruments")
 

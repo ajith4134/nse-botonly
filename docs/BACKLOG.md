@@ -2527,3 +2527,55 @@ re-evaluated after a RESIZE.
   (`pre-UDiFF bhavcopy layout`) and counts it, rather than coercing. One session, from a 2020 deep
   history probe; no bot decides on it. Closing it means a second parser for the legacy layout plus a
   derived contract id, and it only becomes worth building if deep F&O history is backfilled.
+
+## The F&O tape exists for the first time, and the subscription ceiling is not what it says (2026-08-19, `A.146c`)
+
+- 🟢 **`A.142` is implemented and the tape carried NFO for the first time in this project's life.**
+  `derivative_capture_universe_selector` selects every live future plus each underlying's nearest
+  live option expiry, ranked by the contract's own traded value from the projected bhavcopy — so the
+  band around the money is measured, never an asserted strike count (`R.03`). Real-data pass:
+  **640 futures + 14,170 options across 214 underlyings**, and one capture run wrote
+  **NFO-OPT 6,272 tokens / 696,478 ticks · NFO-FUT 284 / 93,249** beside cash. `R.05` script:
+  `scripts/verify_derivative_capture_universe_on_real_data.py`. 12 tests.
+- 🟢 **`capture_candidate_population_merger` stops the option chain evicting cash.** An option's
+  turnover is notional exposure and a cash trade's is money changing hands, so the two are ranked
+  within their own populations and merged on standing (`R.13`, `R.10`). Measured: a raw rupee sort
+  leaves **223** cash names in the top 1,000; the merge leaves **404**. 12 tests.
+- 🟢 **`capture_shard_population_planner` keeps a loud feed off a quiet feed's connection**, with
+  connections shared proportionally and every non-empty group guaranteed one. 16 tests, both
+  measured failure directions asserted.
+
+- ⛔ **B45 — cash tick delivery collapsed when the subscription widened, and FIVE configurations
+  did not recover it. Stopped and reported per `R.21` rather than ground on.** Measured on
+  2026-08-19, same account, same session, same box:
+
+  | subscribed | connections | cash tokens | cash ticks | per cash instrument |
+  |---|---|---|---|---|
+  | 2,295 | 1, cash only | 2,295 | 1,153,998 in 42 min | **~503** |
+  | 9,000 | 3, mixed populations | 2,444 | 3,170 in 11 min | **1.3** |
+  | 9,000 | 3, cash alone on two | 6,000 | 12,496 in 7 min | **2.1** |
+  | 3,000 | 2, one per group | 2,867 | 3,319 in ~15 min | **1.2** |
+
+  **What was ruled out, mechanically.** The client is not the bottleneck: the recorder reported
+  **0 packets dropped to overflow** in every run, so the packets were never sent rather than
+  arriving and being discarded. Socket isolation is not the fix: cash alone on its own two
+  connections was as starved as cash mixed with options. And the account-wide 3,000 ceiling is not
+  the whole story either: 3,000 total is the same size as the run that worked, and it did not
+  recover.
+  **What is still untested, in order:** that Kite throttles an API key after repeated reconnects
+  (five in one hour by then, which would make this self-heal by the next session and is the leading
+  explanation); that `full` mode has a lower practical instrument budget than `quote`; and that the
+  first run's rate was inflated by something not yet examined. **The capture has been LEFT in the
+  known-good shape** — 2,867 cash plus 133 options on two connections — and no further restarts were
+  made, because each one is another reconnect against the hypothesis being tested.
+  **Consequence, stated rather than implied (`R.11`):** until this closes, the five derivative bots
+  decide once per session on projected daily closes exactly as `A.141` designed, and the cash bot's
+  intraday tape is thinner than it was this morning.
+
+- 🟠 **B46 — the admission controller ranks by value DENSITY even when the count ceiling, not the
+  byte budget, is what binds.** Measured at the 3,000 ceiling: budget utilisation **1%**, and the
+  ceiling capped everything — yet the greedy-by-density order admitted `index_futures` **0 of 18**
+  and `stock_futures` **0 of 622**, because a derivative tick costs more than a cash tick. Under a
+  pure COUNT constraint the value-maximising order is by VALUE, not value-per-byte, so whole
+  segments lose their tape to an objective that is not the one binding. `R.10` says the six segments
+  are equal by default; this is where that stops being true in practice.

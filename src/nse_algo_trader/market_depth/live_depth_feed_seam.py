@@ -136,6 +136,23 @@ class KiteLiveDepthFeed:
     """
 
     KITE_MAX_INSTRUMENTS_PER_CONNECTION = 3000
+
+    KITE_MAX_INSTRUMENTS_ACROSS_ALL_CONNECTIONS = 3000
+    """The subscription cap is per ACCOUNT, not per connection — opening more sockets adds
+    no capacity, and exceeding it starves subscribers silently rather than erroring.
+
+    Measured on 2026-08-19, three runs on the same account, session and box:
+
+    | subscribed | connections | cash instruments | cash ticks | per cash instrument |
+    |---|---|---|---|---|
+    | 2,295 | 1 | 2,295 | 1,153,998 in 42 min | ~503 |
+    | 9,000 | 3 (mixed) | 2,444 | 3,170 in 11 min | 1.3 |
+    | 9,000 | 3 (cash alone on two) | 6,000 | 12,496 in 7 min | 2.1 |
+
+    Isolating cash onto its own sockets did NOT recover it, and the recorder reported **0
+    packets dropped to overflow** in every run — so the client was keeping up and the packets
+    were never sent. Subscribing 9,000 does not fail loudly; it serves roughly one connection
+    worth and leaves the rest at a trickle, which is the quietest failure this feed can have."""
     """Kite's documented per-connection ceiling. An exchange-imposed fact."""
 
     def __init__(
