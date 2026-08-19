@@ -689,6 +689,26 @@ queued, calibration-gated next slice (research/96).
 
 ## §4 · MAINTENANCE LEDGER
 
+- **2026-08-19 (`A.146` — the six bots trade one live book; `docs/research/267`)** — the continuous
+  loop stopped being an observer. **New feature `portfolio`** (1 module):
+  `portfolio_proposal_supervisor` solves an LP across all six bots at once (`cvxpy`/`CLARABEL`) —
+  gross budget, a per-bot share, and a net-directional bound on the DIRECTION OF TRAVEL, closing
+  `B39`. **New modules in `paper_loop`**: `live_paper_book` (positions carried across ticks and
+  restarts, marked to the tape, squared off, accrued), `walk_forward_archive_replay` (the
+  closed-market walk, one archived session per tick, never repeating), `segment_bot_warm_start_seeding`
+  (closes `B43` — 80 five-minute instants for cash, 25 session closes for the daily-cadence bots).
+  **New in `nse_ingest`**: `derivative_contract_record_projection`, which materialises
+  `nse_bhavcopy_fo` into the contract table every derivative universe reads and which nothing in the
+  repository had been writing — it was 16 days stale. **New in `market_depth`**:
+  `derivative_capture_universe_selector`, `capture_candidate_population_merger`,
+  `capture_shard_population_planner`, implementing `A.142`'s F&O widening.
+  **New edges:** `paper_loop <- portfolio` (allocation), `paper_loop <- paper_capital_ledger`
+  (book size), `market_depth <- sizing`, `nse_ingest <- nse_trading_session_calendar`,
+  `portfolio <- cost_gate, transaction_cost`. **New surface `/trading`**, registered in
+  `SURFACED_MODULES` and the screenshot capture, folding `live_paper_book` +
+  `PaperTrackRecordStore` + the scheduler's liveness on every request.
+  Measured live: 376 proposals, 245 admitted, 463 positions open at +Rs 10,510 unrealised.
+
 - **2026-08-17 (`L5.31` FAILED its adversarial review, and the repairs — `A.140`,
   `docs/research/261`)** — `R.23c`'s review found **six CRITICALs** with the engine byte-identical
   and 33 tests green: the calibrator fitted **in sample** while named `isotonic_out_of_fold` (a
