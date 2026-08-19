@@ -1154,7 +1154,7 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
 
 **— L10 —**
 
-- [~] **4.9** 24/7 continuous paper-trading loop — `L10.01` · *built 2026-08-18, spec
+- [x] **4.9** 24/7 continuous paper-trading loop — `L10.01` · *built 2026-08-18, spec
       `docs/research/265`, closes `B33`.* **Running live under `nse-continuous-loop.service`**,
       verified by `kill -9` (PID 237631 -> 237762, still ticking) rather than by `is-active`.
       **What it owns — the three things `4.9` said were missing:** bots that live for the life of
@@ -1171,9 +1171,23 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       **`R.05` LIVE, market open:** 3,835 cash instruments, **1,845 priced off the live tape**,
       tape lag **7-29s**, phase `trading`, zero failing ticks. Cadence is the strategy's own
       five-minute bar, imported not typed. 24 tests including the calendar cross-check.
-      **`[~]`:** `B40` — it OBSERVES but does not yet PROPOSE, because the regime brain is fitted on
-      five-minute bars while this ticks on the tape, and feeding it a belief from a different clock
-      is the `A.106` defect. Also `B41`, live order placement (`A.108`'s recorded cost).
+      **`[x]` 2026-08-19 (`A.146`, spec `docs/research/267`): it PROPOSES, ALLOCATES and TRADES.**
+      `B40` and `B43` are both closed by warm-start seeding — the cash bot seeded on 80 five-minute
+      instants and the four data-carrying derivative bots on 25 session closes each, every step
+      assembling that session's OWN universe because replaying today's prices at yesterday's
+      timestamps gives a zero dispersion and makes every bot propose everything. Each bot now
+      decides over its own segment universe, priced off the live tape where it reaches and off the
+      projected close where it does not.
+      **`R.05` live, market open:** **376 proposals**, 245 admitted by the `B39` supervisor
+      (cash 230 · stock options 15), gross Rs 366,008, net exposure Rs 89,794 against a Rs 250,000
+      portfolio bound, 131 refused with named reasons, solver `CLARABEL`. The book then held **254
+      positions at +Rs 10,054.23 unrealised** with 3 of 6 bots holding, rendered at `/trading`.
+      While the exchange is shut the same six bots walk FORWARD through the archive
+      (`walk_forward_archive_replay`), never replaying a session twice, driving the
+      `SegmentBotPaperSession` that had been imported by nothing.
+      **Open:** `B41` live order placement (`A.108`'s recorded cost — no broker order is placed),
+      `B47` the intraday fill is priced at last-traded rather than by walking the L2 ladder, and
+      `B48` the live path passes no margin so the futures bots abstain until `B36`'s SPAN file.
 - [x] **4.10** Market-closed real-market replay engine (§53) — `L10.02` — ***`F04` — the first
       thing in this rebuild that produces a trading DAY rather than a component.*** Built and
       **`R.05`-passed 2026-08-15** on the real 2026-08-11 session, full universe: **2,882
@@ -1463,7 +1477,7 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       readiness bar — a bot with nothing to trade and a bot that has not proven itself both sit at
       `COLD_START` and need completely different things. Live at HTTP 200, registered for
       screenshot capture.
-- [~] **6.4d** Segment-bot paper session — **NEW 2026-08-18 (`B33`, `A.145`)**. The loop the six
+- [x] **6.4d** Segment-bot paper session — **NEW 2026-08-18 (`B33`, `A.145`)**. The loop the six
       bots decide into: warm up over 25 prior sessions (each assembling that session's OWN universe,
       point-in-time), propose at the close of `T`, exit at the close of `T+1`, both legs priced
       through `NseTransactionCostEngine`, accrued to `PaperTrackRecordStore` per bot identity. Does
@@ -1476,9 +1490,14 @@ proven money; pure vertical-slice produces the "code too thin" diagnosis in REDE
       `docs/research/261` records — a net-directional bound stated as a fraction of gross cannot be
       met by the FIRST position, so it refused 23 of 23. Now bounded on the DIRECTION OF TRAVEL, so
       a trade on the lighter side is always admitted and the book converges.
-      **`[~]`:** blocked on `B36` — futures consume MARGIN, not notional, and the F&O SPAN file
-      could not be located after three rounds of probing (`R.21`). The 18 defect-produced rows were
-      purged on operator instruction (`A.145`), backup retained.
+      **`[x]` 2026-08-19 (`A.146`):** it is no longer an orphan. `walk_forward_archive_replay`
+      is the consumer it was missing — while the exchange is shut the continuous loop walks FORWARD
+      through the archive, one unreplayed session per tick, driving exactly this engine with
+      `FuturesMarginEstimator` attached so the futures bots size on margin rather than notional.
+      A failing session is recorded and stepped over, so one malformed session cannot block the
+      archive behind it. The 18 defect-produced rows were purged on operator instruction (`A.145`),
+      backup retained. **Open:** `B36` still bounds how far the futures bots can be trusted — the
+      estimator is verified for stocks and understates index margin by roughly half (`B38`).
 - [x] **6.5** Segment-bot protocol — `L5.29` · *built 2026-08-17, spec `docs/research/248`, review
       `docs/research/250`.*
       **Ticked only after the `R.23c` adversarial review, and it did not survive the first pass.**

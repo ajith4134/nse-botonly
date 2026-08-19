@@ -82,6 +82,12 @@ from nse_algo_trader.dashboard.deep_history_surface_renderer import (
     DeepHistorySurfaceState,
     render_deep_history_page,
 )
+from nse_algo_trader.dashboard.live_trading_surface_renderer import (
+    LivePositionRow,
+    LiveTradingBotRow,
+    LiveTradingSurface,
+    render_live_trading_page,
+)
 from nse_algo_trader.dashboard.market_rule_coverage_surface_renderer import (
     render_market_rule_coverage_page,
 )
@@ -168,7 +174,13 @@ from nse_algo_trader.paper_loop.bot_maturity_ladder import (
     PaperTrackRecordStore,
 )
 from nse_algo_trader.paper_loop.continuous_paper_trading_scheduler import (
+    DepthTapeObservationSource,
     SchedulerLivenessStore,
+)
+from nse_algo_trader.paper_loop.live_paper_book import LivePaperBook
+from nse_algo_trader.paper_loop.segment_bot_paper_session import SegmentBotCapitalPolicy
+from nse_algo_trader.paper_loop.walk_forward_archive_replay import (
+    WalkForwardReplayCursorStore,
 )
 from nse_algo_trader.segment_bots.segment_bot_protocol import (
     SegmentBotContext,
@@ -265,6 +277,8 @@ DEPTH_TAPE_BROKER = "kite"
 that decides whose `L0.33` verdict gates the microstructure replay."""
 
 DEPTH_TAPE_ROOT = Path("~/nse_archive/depth_tape").expanduser()
+SCHEDULER_LIVENESS_PATH = Path("~/.nse_algo_trader/scheduler_liveness.sqlite3").expanduser()
+"""The continuous loop's own liveness record. Read, never written, by this process."""
 """Where the recorder writes. Outside the repository, like every other data root here —
 the tape is hundreds of megabytes a session and has no business in a git tree."""
 
@@ -447,6 +461,17 @@ SURFACED_MODULES: frozenset[str] = frozenset(
         "nse_algo_trader.sizing.sizing_inputs_from_real_stores",
         "nse_algo_trader.sizing.regulatory_facts_from_ingest_store",
         "nse_algo_trader.dashboard.sizing_surface_renderer",
+        # `A.146` — everything `/trading` actually draws.
+        "nse_algo_trader.paper_loop.live_paper_book",
+        "nse_algo_trader.portfolio.portfolio_proposal_supervisor",
+        "nse_algo_trader.paper_loop.walk_forward_archive_replay",
+        "nse_algo_trader.paper_loop.segment_bot_warm_start_seeding",
+        "nse_algo_trader.dashboard.live_trading_surface_renderer",
+        # `A.146` — the pipeline the derivative universes are assembled from.
+        "nse_algo_trader.nse_ingest.derivative_contract_record_projection",
+        "nse_algo_trader.market_depth.derivative_capture_universe_selector",
+        "nse_algo_trader.market_depth.capture_candidate_population_merger",
+        "nse_algo_trader.market_depth.capture_shard_population_planner",
         # `F04` — everything `/paper-session` actually draws.
         "nse_algo_trader.paper_loop.paper_trading_session_runner",
         "nse_algo_trader.paper_loop.paper_session_signal_source",
@@ -486,6 +511,181 @@ def discover_engine_modules(package_name: str = "nse_algo_trader") -> list[Manif
         if not module.ispkg and not module.name.rsplit(".", 1)[-1].startswith("_")
     ]
     return sorted(entries, key=lambda entry: entry.module_name)
+
+
+PORTFOLIO_NET_DIRECTIONAL_FRACTION = SegmentBotCapitalPolicy(
+    deployable_rupees=Decimal("1000000")
+).maximum_net_directional_fraction
+"""The bound the supervisor actually applies, imported from the policy that owns it rather than
+retyped here — a page that states a different bound from the one enforced is worse than no page."""
+
+_LIVE_TRADING_BLOCKERS: dict[str, str] = {
+    "commodity_mcx_basis_carry_bot": (
+        "B30 — no MCX data anywhere, so this bot is built whole and activates on nothing"
+    ),
+    "index_futures_basis_carry_bot": (
+        "B38 — index-future margin is understated by roughly half against broker quotes, so it "
+        "stays unsized until the SPAN file arrives (B36, one manual download)"
+    ),
+    "stock_futures_basis_carry_bot": (
+        "B36 — futures consume SPAN margin, not notional; sized on the estimator until the "
+        "risk-parameter file is downloaded"
+    ),
+}
+"""Named blockers, per bot. `R.11`: a bot holding nothing because it is blocked and a bot holding
+nothing because it saw no opportunity look identical, and they need completely different things."""
+
+_LIVE_TRADING_NOTES: tuple[str, ...] = (
+    "B47 — an intraday entry is filled at the tape's last traded price, not by walking the "
+    "recorded L2 ladder as the replay path does, so fills are optimistic where the book is thin.",
+)
+
+
+def _registered_identities() -> tuple[str, ...]:
+    """Every bot the registry builds, so a bot that has never traded still gets a row."""
+    try:
+        return tuple(bot.bot_identity for bot in build_all_segment_bots())
+    except Exception:  # noqa: BLE001 — a page that cannot list the six is still worth rendering
+        return ()
+
+
+def _segment_of(bot_identity: str) -> str:
+    for bot in _registered_bots_cached():
+        if bot.bot_identity == bot_identity:
+            return bot.trading_segment.value
+    return "unknown"
+
+
+def _registered_bots_cached() -> tuple[object, ...]:
+    try:
+        return tuple(build_all_segment_bots())
+    except Exception:  # noqa: BLE001
+        return ()
+
+
+def _live_prices_for(positions: tuple[object, ...]) -> dict[int, Decimal]:
+    """The live tape's latest price for each held instrument, or nothing when it cannot answer.
+
+    Nothing is invented when the tape is silent: `LivePositionRow` renders the position as UNPRICED,
+    which is a different claim from "it has not moved".
+    """
+    if not positions:
+        return {}
+    try:
+        source = DepthTapeObservationSource(DEPTH_TAPE_ROOT)
+        return source.latest_prices(datetime.now(IST).date())
+    except Exception:  # noqa: BLE001 — a silent tape is a rendered "unpriced", never a failed page
+        return {}
+
+
+def _latest_scheduler_iteration() -> object | None:
+    try:
+        recent = SchedulerLivenessStore(SCHEDULER_LIVENESS_PATH).recent(limit=1)
+    except Exception:  # noqa: BLE001
+        return None
+    return recent[0] if recent else None
+
+
+def _walk_forward_progress() -> str:
+    """What the closed-market walk has covered, read from its own cursor."""
+    try:
+        store = WalkForwardReplayCursorStore()
+        sessions = store.replayed_sessions()
+        accrued = store.total_trades_accrued()
+    except Exception:  # noqa: BLE001
+        return ""
+    if not sessions:
+        return "no archived session has been replayed yet"
+    return (
+        f"{len(sessions):,} session(s) replayed, {sessions[0].isoformat()} to "
+        f"{sessions[-1].isoformat()}, {accrued:,} trade(s) accrued"
+    )
+
+
+def _paper_book_capital_rupees() -> Decimal | None:
+    """What the paper ledger actually holds, or `None` when it cannot say.
+
+    `None` rather than a typed default (`R.03`): a page that asserts Rs 10,00,000 because the ledger
+    was unreadable states a capital nothing measured, and every fraction shown against it — the
+    exposure bar most of all — would then be a ratio of a real number to an invented one.
+    """
+    try:
+        fold = PaperCapitalLedger().fold_from_events()
+    except Exception:  # noqa: BLE001 — an unreadable ledger is reported, never guessed around
+        return None
+    return fold.balance_rupees if fold.balance_rupees > 0 else None
+
+
+def _measure_live_trading() -> LiveTradingSurface:
+    """Fold the live book, the track record and the loop's own liveness into one page.
+
+    Reads three stores and derives everything else. The loop process owns the book; this process
+    only reads it, which is why the numbers cannot drift apart — there is one book and one reader
+    of it per request.
+    """
+    book = LivePaperBook()
+    track_record = PaperTrackRecordStore()
+    try:
+        positions = book.open_positions()
+        prices = _live_prices_for(positions)
+        today = datetime.now(IST).date()
+
+        by_identity: dict[str, list[LivePositionRow]] = {}
+        for position in positions:
+            by_identity.setdefault(position.bot_identity, []).append(
+                LivePositionRow(
+                    trading_symbol=position.trading_symbol,
+                    side=str(position.side),
+                    quantity=position.quantity,
+                    entry_price_paise=position.entry_price_paise,
+                    last_price_paise=prices.get(position.instrument_token),
+                    opened_at=position.opened_at,
+                )
+            )
+
+        rows: list[LiveTradingBotRow] = []
+        identities = sorted(
+            set(by_identity) | set(track_record.bot_identities()) | set(_registered_identities())
+        )
+        for identity in identities:
+            closed = track_record.closed_trades_for(identity)
+            closed_today = [trade for trade in closed if trade.session_date == today]
+            rows.append(
+                LiveTradingBotRow(
+                    bot_identity=identity,
+                    trading_segment=_segment_of(identity),
+                    open_positions=tuple(by_identity.get(identity, ())),
+                    closed_today=len(closed_today),
+                    realised_today_rupees=sum(
+                        (trade.net_rupees for trade in closed_today), Decimal("0")
+                    ),
+                    closed_all_time=len(closed),
+                    realised_all_time_rupees=sum(
+                        (trade.net_rupees for trade in closed), Decimal("0")
+                    ),
+                    proposals_last_tick=None,
+                    blocker=_LIVE_TRADING_BLOCKERS.get(identity, ""),
+                )
+            )
+
+        iteration = _latest_scheduler_iteration()
+        capital = _paper_book_capital_rupees()
+        return LiveTradingSurface(
+            rows=tuple(rows),
+            session_date=iteration.session_date if iteration else today,
+            phase=str(iteration.phase) if iteration else "unknown",
+            observed_at=iteration.observed_at if iteration else None,
+            deployable_rupees=capital,
+            net_directional_bound_rupees=(
+                None if capital is None else capital * PORTFOLIO_NET_DIRECTIONAL_FRACTION
+            ),
+            tape_lag_seconds=iteration.tape_lag_seconds if iteration else None,
+            archive_progress=_walk_forward_progress(),
+            notes=_LIVE_TRADING_NOTES,
+        )
+    finally:
+        book.close()
+        track_record.close()
 
 
 def _measure_segment_bots() -> tuple[SegmentBotSurfaceRow, ...]:
@@ -838,6 +1038,24 @@ def build_dashboard_app() -> FastAPI:
         if not _is_authorised(request):
             return _unauthorised_html()
         response = HTMLResponse(render_segment_bot_page(_measure_segment_bots()))
+        _remember_key(response, request)
+        return response
+
+    @app.get("/trading", response_class=HTMLResponse)
+    def live_trading_surface(request: Request) -> HTMLResponse:
+        """`A.146`: what the six bots are holding RIGHT NOW, and what it is worth.
+
+        The page the operator asked for by name — *"where can I see these six bots open, closed or
+        trading"*. `/bots` says which of the six CAN act and `/ladder` says which have EARNED
+        anything; neither could show a position, because until `A.146` the loop opened none.
+
+        Folded from `live_paper_book` and `PaperTrackRecordStore` on this request. Nothing cached,
+        nothing hand-authored (`R.08`), and a position the tape cannot price is counted as unpriced
+        rather than marked flat.
+        """
+        if not _is_authorised(request):
+            return _unauthorised_html()
+        response = HTMLResponse(render_live_trading_page(_measure_live_trading()))
         _remember_key(response, request)
         return response
 

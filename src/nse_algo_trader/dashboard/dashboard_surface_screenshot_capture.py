@@ -59,6 +59,7 @@ ROUTES = (
     "/quality",
     "/bots",
     "/loop",
+    "/trading",
 )
 
 PAGE_LOAD_TIMEOUT_MILLISECONDS = 120_000

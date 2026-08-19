@@ -3683,3 +3683,65 @@ directly observed.
 and the moment a file is worth an hour it is worth staging. The broader habit — stage new files as
 soon as they parse, not when they are finished — is the cheap version of this lesson, and it is
 cheaper than the recovery I just did.
+
+## O.136 · 2026-08-19 · I widened the capture on a hypothesis and broke the one bot that was working
+
+**The opinion.** Isolating the cash feed onto its own websocket connections would recover the tick
+rate that collapsed when F&O was added. **It was wrong**, and it took three restarts to find out.
+
+**What actually happened.** Adding 6,556 derivative tokens dropped cash from ~503 ticks per
+instrument to 1.3. I reasoned that one socket carries one stream and its loudest subscriber sets
+what everyone else gets, built `capture_shard_population_planner` to keep populations apart, and
+restarted. Cash alone on two of its own connections: **2.1 ticks per instrument**. The reasoning was
+sound and the conclusion was false.
+
+**What I should have done first.** The decisive measurement was already in hand and I did not read
+it: **0 packets dropped to overflow, in every run**. The client was keeping up. That single number
+rules out every client-side explanation — queue depth, disk, sharding, drain rate — and leaves only
+"the packets were never sent". I built a module before I had excluded the cheap explanations.
+
+**Confidence: measured** on the four-configuration table in `B45`; the remaining hypothesis
+(Kite throttling an API key after five reconnects in an hour) is **reasoned**, not measured, and I
+stopped rather than testing it with a sixth reconnect against the very thing being tested (`R.21`).
+
+**What would change my mind:** tomorrow's scheduled capture recovering cash with no code change
+would confirm the throttle; it recovering only after the subscription is cut would point at a
+full-mode instrument budget instead.
+
+**The module is not wasted and that is not a justification.** One connection per contention group
+is correct regardless of what B45 turns out to be, and it is now tested in both failure directions.
+But it was built to fix something it did not fix, and the honest record is that I reached for a
+build when I should have reached for a measurement I already had.
+
+## O.137 · 2026-08-19 · A test that pinned a data gap failed when the gap was fixed
+
+**The opinion.** `test_the_retained_collection_gap_is_resolved_correctly` asserted
+`uncollected_sessions == (2026-07-28 … 07-31)`. The derivative contract projection filled those
+sessions from the ingest store, and the test went red on an improvement.
+
+**The distinction it missed.** The load-bearing claim was about the CODE — that 2026-06-26 is an NSE
+holiday and therefore not an outage. The four outage dates were about the DATA on that day, and data
+changes. A test that asserts a transient store state fails on progress and passes on stagnation,
+which is exactly backwards.
+
+Rewritten to assert what must hold whatever the collection window is: every date the classifier
+calls uncollected is a real trading session, and nothing observed falls on a non-session.
+
+**Confidence: measured** — the projection wrote 953,245 rows and the sessions the test named are now
+present. **What would change my mind:** nothing about this one; the general lesson is the useful
+part, and it is worth a sweep of other tests keyed on "what the store holds today".
+
+## O.138 · 2026-08-19 · The solver returned 0.9999999 and I would have shipped positions one unit short
+
+**The opinion.** Truncating a continuous allocation to whole lots is safe because rounding DOWN can
+only relax a constraint the solver already satisfied. True — and it silently cost a unit on every
+whole-admitted position, because `CLARABEL` returns `x = 0.9999999...` for a proposal it admitted
+in full and `int(0.9999999 * 50)` is 49.
+
+**Caught by a test asserting the boring case** (`the first position in an empty book is never
+refused`, expecting 50 and getting 49), not by review. An interior-point residual is invisible in
+reading and obvious in an assertion.
+
+**Confidence: measured.** The fix is an explicit `INTERIOR_POINT_RESIDUAL` named as the solver's
+convergence residual rather than a rounding fudge — it is not a market number, and mislabelling it
+as one would have made it look like exactly the magic constant `R.03` forbids.

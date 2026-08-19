@@ -44,12 +44,14 @@ from typing import Protocol
 
 import duckdb
 
+from nse_algo_trader.cost_gate.priced_signal import PricedSignal
 from nse_algo_trader.market_depth.live_tick_to_bar_aggregator import (
     PAISE_PER_RUPEE,
     CompletedBar,
     LiveTickToBarAggregator,
 )
 from nse_algo_trader.nse_trading_session_calendar import NseTradingSessionCalendar
+from nse_algo_trader.paper_loop.live_paper_book import BookMark, LivePaperBook
 from nse_algo_trader.paper_loop.paper_session_signal_source import (
     AvailableBar,
     InstrumentSignalState,
@@ -57,6 +59,11 @@ from nse_algo_trader.paper_loop.paper_session_signal_source import (
 from nse_algo_trader.paper_loop.walk_forward_archive_replay import (
     WalkForwardArchiveReplay,
     WalkForwardProgress,
+)
+from nse_algo_trader.portfolio.portfolio_proposal_supervisor import (
+    BotProposal,
+    PortfolioPlan,
+    PortfolioProposalSupervisor,
 )
 from nse_algo_trader.regime.market_regime_state import (
     MarketRegime,
@@ -338,6 +345,9 @@ class ContinuousPaperTradingScheduler:
         calendar: NseTradingSessionCalendar | None = None,
         square_off_window: timedelta = SQUARE_OFF_WINDOW,
         archive_replay: WalkForwardArchiveReplay | None = None,
+        book: LivePaperBook | None = None,
+        supervisor: PortfolioProposalSupervisor | None = None,
+        lot_size_by_token: Mapping[int, int] | None = None,
         universe_by_segment: Mapping[TradingSegment, Sequence[TradeableInstrument]] | None = None,
     ) -> None:
         if not bots:
@@ -367,6 +377,13 @@ class ContinuousPaperTradingScheduler:
         # keeps the old behaviour — alive and deciding nothing — so a caller that has not been
         # given an archive is not silently trading one.
         self._archive_replay = archive_replay
+        # `A.146`: the loop EXECUTES. `None` for either of these keeps the observe-only behaviour,
+        # so a caller that has not been given a book cannot silently start trading one.
+        self._book = book
+        self._supervisor = supervisor
+        self._lot_size_by_token: dict[int, int] = dict(lot_size_by_token or {})
+        self._last_plan: PortfolioPlan | None = None
+        self._last_mark: BookMark | None = None
         self._last_proposals_by_segment: dict[str, int] = {}
         self._segment_failures: dict[str, str] = {}
         self._prices_by_segment: dict[TradingSegment, dict[int, Decimal]] = {}
@@ -522,12 +539,14 @@ class ContinuousPaperTradingScheduler:
         )
         proposals = 0
         proposals_by_segment: dict[str, int] = {}
+        collected: list[BotProposal] = []
         for bot in self._bots:
             if bot.trading_segment is TradingSegment.CASH_INTRADAY:
                 if phase.may_open_a_position:
-                    count = len(bot.propose(context))
-                    proposals += count
-                    proposals_by_segment[bot.trading_segment.value] = count
+                    signals = bot.propose(context)
+                    proposals += len(signals)
+                    proposals_by_segment[bot.trading_segment.value] = len(signals)
+                    collected.extend(self._as_proposals(bot, signals))
                 continue
             # The other five decide on the cadence their own data supports (`A.141`). They are
             # OBSERVED every tick against their own universe so the surface can show what each one
@@ -569,16 +588,18 @@ class ContinuousPaperTradingScheduler:
                 carried_memory=carried,
             )
             try:
-                count = len(bot.propose(segment_context))
+                signals = bot.propose(segment_context)
             except Exception as failure:  # noqa: BLE001 — one bot must not stop the other five
                 proposals_by_segment[bot.trading_segment.value] = 0
                 self._segment_failures[bot.trading_segment.value] = (
                     f"{type(failure).__name__}: {failure}"
                 )
                 continue
-            proposals += count
-            proposals_by_segment[bot.trading_segment.value] = count
+            proposals += len(signals)
+            proposals_by_segment[bot.trading_segment.value] = len(signals)
+            collected.extend(self._as_proposals(bot, signals))
         self._last_proposals_by_segment = proposals_by_segment
+        traded = self._trade(collected, prices, local, session_date, phase)
 
         note = (
             f"{len(priced_universe):,} of {len(self._universe):,} priced; "
@@ -586,6 +607,8 @@ class ContinuousPaperTradingScheduler:
             if phase.may_open_a_position
             else "square-off window — flattening only, no new positions (`R.01`)"
         )
+        if traded:
+            note = f"{note} | {traded}"
         return SchedulerIteration(
             observed_at=local,
             phase=phase,
@@ -595,6 +618,72 @@ class ContinuousPaperTradingScheduler:
             tape_lag_seconds=lag,
             note=note,
         )
+
+    def _as_proposals(
+        self, bot: SegmentBotFoundation, signals: Sequence[PricedSignal]
+    ) -> list[BotProposal]:
+        """Wrap a bot's signals for the supervisor, carrying the lot size the exchange enforces.
+
+        `margin_rupees` is left `None` here and the supervisor then bounds on NOTIONAL. That is
+        deliberate and it is why the futures bots stay unsized on this path: `B36`'s SPAN file has
+        not arrived, and a leverage multiple guessed here would be exactly the invented number
+        `R.03` forbids (`A.145` measured what guessing costs — Rs 1,98,600 in one session).
+        """
+        return [
+            BotProposal(
+                bot_identity=bot.bot_identity,
+                signal=signal,
+                margin_rupees=None,
+                lot_size=self._lot_size_by_token.get(signal.instrument_token, 1),
+            )
+            for signal in signals
+        ]
+
+    def _trade(
+        self,
+        proposals: Sequence[BotProposal],
+        prices: Mapping[int, Decimal],
+        local: datetime,
+        session_date: date,
+        phase: SessionPhase,
+    ) -> str:
+        """Turn this tick's proposals into positions, and flatten the book in the square-off window.
+
+        Returns a one-line description for the liveness record, or an empty string when the loop is
+        observing only — a caller with no book and no supervisor behaves exactly as it did before.
+        """
+        if self._book is None:
+            return ""
+
+        parts: list[str] = []
+        if phase is SessionPhase.SQUARING_OFF:
+            # `R.01`: square-off is the failure mode, so it happens before anything else and is
+            # never conditional on the book looking healthy.
+            outcome = self._book.square_off(prices, at=local)
+            if outcome.closed or outcome.unclosable:
+                parts.append(outcome.describe())
+        elif proposals and self._supervisor is not None:
+            plan = self._supervisor.supervise(
+                proposals, book_net_rupees=self._book.net_exposure_rupees()
+            )
+            self._last_plan = plan
+            opened = self._book.admit(plan, at=local, session_date=session_date)
+            parts.append(f"{plan.describe()} · {opened} opened")
+
+        mark = self._book.mark(prices, at=local)
+        self._last_mark = mark
+        if mark.open_positions:
+            parts.append(mark.describe())
+        return " | ".join(parts)
+
+    @property
+    def last_plan(self) -> PortfolioPlan | None:
+        """The most recent allocation, for the surface to read rather than re-derive."""
+        return self._last_plan
+
+    @property
+    def last_mark(self) -> BookMark | None:
+        return self._last_mark
 
     def _walk_the_archive(
         self, local: datetime, phase: SessionPhase, session_date: date

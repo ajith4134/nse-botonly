@@ -22,19 +22,26 @@ import argparse
 import sqlite3
 from collections.abc import Sequence
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
+from nse_algo_trader.market_rules.nse_market_rule_history import (
+    seeded_nse_market_rule_store,
+)
 from nse_algo_trader.nse_ingest.derivative_contract_record_projection import (
     DerivativeContractRecordProjection,
 )
+from nse_algo_trader.paper_capital_ledger import PaperCapitalLedger
 from nse_algo_trader.paper_loop.bot_maturity_ladder import PaperTrackRecordStore
 from nse_algo_trader.paper_loop.continuous_paper_trading_scheduler import (
     ContinuousPaperTradingScheduler,
     DepthTapeObservationSource,
     SchedulerLivenessStore,
 )
+from nse_algo_trader.paper_loop.live_paper_book import LivePaperBook
 from nse_algo_trader.paper_loop.segment_bot_paper_session import (
     WARMUP_SESSIONS,
+    SegmentBotCapitalPolicy,
     SegmentBotPaperSession,
 )
 from nse_algo_trader.paper_loop.segment_bot_warm_start_seeding import (
@@ -45,6 +52,9 @@ from nse_algo_trader.paper_loop.segment_bot_warm_start_seeding import (
 from nse_algo_trader.paper_loop.walk_forward_archive_replay import (
     WalkForwardArchiveReplay,
     WalkForwardReplayCursorStore,
+)
+from nse_algo_trader.portfolio.portfolio_proposal_supervisor import (
+    PortfolioProposalSupervisor,
 )
 from nse_algo_trader.replay_session_clock import IST
 from nse_algo_trader.segment_bots.cash_intraday_mean_reversion_bot import (
@@ -59,6 +69,11 @@ from nse_algo_trader.segment_bots.segment_universe_assembler import (
 from nse_algo_trader.sizing.futures_margin_estimator import margin_estimator_for
 from nse_algo_trader.strategy.intraday_mean_reversion_engine import (
     MINIMUM_OBSERVATIONS_FOR_BANDS,
+)
+from nse_algo_trader.transaction_cost.chargeable_market_segments import TradeLeg
+from nse_algo_trader.transaction_cost.nse_transaction_cost_engine import (
+    NseTransactionCostEngine,
+    TradeSpecification,
 )
 
 DEFAULT_TAPE_ROOT = Path("~/nse_archive/depth_tape").expanduser()
@@ -118,6 +133,9 @@ def main() -> int:
             segment: assembled.instruments for segment, assembled in universe_by_segment.items()
         },
         archive_replay=_build_archive_replay(bots),
+        book=_build_live_book(),
+        supervisor=_build_supervisor(),
+        lot_size_by_token=_lot_sizes(universe_by_segment),
     )
     for segment, assembled in universe_by_segment.items():
         scheduler.replace_segment_universe(
@@ -172,6 +190,74 @@ def main() -> int:
             )
         _sleep(arguments.cadence_seconds)
     return 0
+
+
+def _build_live_book() -> LivePaperBook:
+    """The book the six bots trade into, with both legs priced through the real cost engine."""
+    cost_engine = NseTransactionCostEngine(seeded_nse_market_rule_store())
+
+    def costs_rupees_for(position: object, exit_price_paise: Decimal) -> Decimal:
+        """Both legs on the date they were in force. Raises when it cannot price — never zero.
+
+        A zero cost turns a gross loss into a net win, which is exactly the defect `L5.30`'s review
+        found in the maturity ladder. `LivePaperBook` leaves an unpriceable trade OPEN.
+        """
+        specification = TradeSpecification(
+            segment=position.segment,  # type: ignore[attr-defined]
+            quantity=position.quantity,  # type: ignore[attr-defined]
+            entry_price_paise=position.entry_price_paise,  # type: ignore[attr-defined]
+            exit_price_paise=exit_price_paise,
+            trade_date=position.session_date,  # type: ignore[attr-defined]
+            strike_paise=None,
+            option_right=None,
+            is_short_first=position.side is TradeLeg.SELL,  # type: ignore[attr-defined]
+        )
+        return Decimal(str(cost_engine.price_round_trip(specification).total_rupees))
+
+    return LivePaperBook(
+        track_record=PaperTrackRecordStore(), costs_rupees_for=costs_rupees_for
+    )
+
+
+def _build_supervisor() -> PortfolioProposalSupervisor:
+    """One book across the six bots, bounded portfolio-wide (`B39`, `A.146`).
+
+    The capital is whatever the paper book actually holds, resolved rather than typed (`R.03`), and
+    the directional bound is the project's own catalogued limit rather than a number chosen here.
+    """
+    policy = SegmentBotCapitalPolicy(deployable_rupees=_paper_book_balance_rupees())
+    return PortfolioProposalSupervisor(
+        deployable_rupees=policy.deployable_rupees,
+        net_directional_fraction=policy.maximum_net_directional_fraction,
+    )
+
+
+def _paper_book_balance_rupees() -> Decimal:
+    """What the paper ledger actually holds, folded from its own log rather than assumed.
+
+    Kite-decoupled on purpose: the paper book must size itself with the broker down, and the balance
+    the ledger replays is the honest figure. It REFUSES rather than defaulting (`R.03`): a loop that
+    invents a book size trades a number nothing measured, and every bound derived from it — the
+    portfolio exposure limit most of all — would be a fraction of a fiction.
+    """
+    fold = PaperCapitalLedger().fold_from_events()
+    if fold.balance_rupees <= 0:
+        raise SystemExit(
+            "the paper capital ledger folds to a non-positive balance, so there is no book to "
+            "allocate. Fund it before starting the loop rather than having the loop choose a size."
+        )
+    return fold.balance_rupees
+
+
+def _lot_sizes(
+    universe_by_segment: dict[TradingSegment, AssembledSegmentUniverse],
+) -> dict[int, int]:
+    """Every instrument's exchange lot size, so the supervisor can only admit whole lots."""
+    sizes: dict[int, int] = {}
+    for assembled in universe_by_segment.values():
+        for instrument in assembled.instruments:
+            sizes[instrument.instrument_token] = max(int(instrument.lot_size or 1), 1)
+    return sizes
 
 
 def _project_derivative_contracts() -> None:

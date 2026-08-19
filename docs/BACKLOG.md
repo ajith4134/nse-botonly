@@ -2579,3 +2579,42 @@ re-evaluated after a RESIZE.
   pure COUNT constraint the value-maximising order is by VALUE, not value-per-byte, so whole
   segments lose their tape to an objective that is not the one binding. `R.10` says the six segments
   are equal by default; this is where that stops being true in practice.
+
+## The six bots trade a live book, and the surface shows it (2026-08-19, `A.146`)
+
+- 🟢 **The live loop EXECUTES.** `B40` and `B43` are both closed by warm-start seeding: the cash bot
+  is seeded on 80 five-minute instants and the four data-carrying derivative bots on 25 session
+  closes each, so the first tick decides against a mature engine instead of an empty one. Measured
+  on a real tick: **376 proposals** against 0 on every tick since the loop was built.
+- 🟢 **`B39` CLOSED — the net-directional bound is applied ACROSS the six.**
+  `portfolio/portfolio_proposal_supervisor.py` solves an LP over every bot's proposals at once:
+  gross budget, a per-bot share (`R.10`), and the exposure bound stated on the DIRECTION OF TRAVEL
+  so a converging trade is never the thing refused (`docs/research/261`'s 23-of-23 failure).
+  `cvxpy` 1.9.2 with `CLARABEL`, already installed, no new dependency. Measured live: **376
+  proposals, 245 admitted** (cash 230 · stock options 15), gross Rs 366,008, net exposure
+  Rs 89,794 against a Rs 250,000 bound, 131 refused with named reasons. 16 tests.
+- 🟢 **`R.17` rejections, surfaced for double-check.** `riskfolio-lib`, `PyPortfolioOpt`,
+  `cvxportfolio` and `skfolio` were each installed and their real signatures read: all four require
+  `returns` / `expected_returns` + `cov_matrix` as CONSTRUCTOR arguments, so using them would mean
+  fabricating a covariance matrix this problem never produces; three also force `pandas` 2.3.3 to
+  3.0.5 plus `vectorbt`/`astropy`. Rejected on those mechanical facts, not on their READMEs.
+- 🟢 **`paper_loop/live_paper_book.py` carries the book across ticks and restarts**, marks it to
+  the live tape, squares off in the `SQUARING_OFF` phase (`R.01`), prices both legs through
+  `NseTransactionCostEngine` and accrues to `PaperTrackRecordStore` idempotently. 16 tests.
+- 🟢 **`/trading` is live** (HTTP 200), registered in `SURFACED_MODULES` and in the screenshot
+  capture. Measured on the running server: 254 open, +Rs 10,054.23 unrealised, 3 of 6 bots holding,
+  exposure 28.8% of the bound, and a NAMED blocker on each of the three that are idle.
+
+- 🟠 **B47 — an intraday fill is priced at the tape's last traded price, not by walking the L2
+  ladder.** The replay path (`SimulatedExecutionVenue`) walks the recorded book and gives a resting
+  order a queue position; the live book does not, because the tape's latest price is what the
+  scheduler already holds per tick. It is a REAL observed price rather than a fabricated mid, but it
+  is optimistic in exactly the instruments where the book is thin. Stated on the page itself rather
+  than only here.
+
+- 🟠 **B48 — the loop's proposals carry no margin, so the futures bots cannot size on this path.**
+  `_as_proposals` passes `margin_rupees=None` and the supervisor then bounds on NOTIONAL, which
+  `A.145` measured as the wrong constraint for futures by roughly tenfold. Deliberate rather than
+  forgotten: `B36`'s SPAN file has not arrived and a leverage multiple guessed here is the invented
+  number `R.03` forbids. The walk-forward path DOES pass `FuturesMarginEstimator`, so the futures
+  bots size correctly on archived sessions and abstain live.
